@@ -446,6 +446,7 @@ local okBoot, bootErr = xpcall(function()
 	Hub.Modules:Register(PlaceAnywhere)
 	Hub.Modules:Register(AutoClaim)
 	Hub.Config:SeedDefaults(Hub.Modules:ExportValues())
+	Hub.Config:EnsureMainConfig()
 
 	env.AEHub = Hub
 	env.__AEHubInstance = Hub
@@ -456,22 +457,16 @@ local okBoot, bootErr = xpcall(function()
 	log("UI ready")
 
 	BOOT_STEP = "autoload"
-	if Hub.Config.Prefs.AutoLoad == true then
-		local loadedOk, loadedOrErr = xpcall(function()
-			return Hub.Config:TryAutoLoad()
-		end, formatError)
-		if not loadedOk then
-			warnStep("AutoLoad crashed:\n" .. tostring(loadedOrErr))
-			pcall(function()
-				Hub.Config:SyncUiFromValues(false)
-			end)
-		elseif loadedOrErr then
-			Library.Notify(Hub.Window, "AEHub", "Auto-loaded your config")
-		else
-			pcall(function()
-				Hub.Config:SyncUiFromValues(false)
-			end)
-		end
+	local loadedOk, loadedOrErr = xpcall(function()
+		return Hub.Config:TryAutoLoad()
+	end, formatError)
+	if not loadedOk then
+		warnStep("AutoLoad crashed:\n" .. tostring(loadedOrErr))
+		pcall(function()
+			Hub.Config:SyncUiFromValues(false)
+		end)
+	elseif loadedOrErr then
+		Library.Notify(Hub.Window, "Anime Expeditions", "Loaded " .. tostring(Hub.Config:GetCurrentDisplayName() or "config"))
 	else
 		pcall(function()
 			Hub.Config:SyncUiFromValues(false)
@@ -485,7 +480,7 @@ local okBoot, bootErr = xpcall(function()
 	end
 
 	BOOT_STEP = "ready"
-	Library.Notify(Hub.Window, "AEHub", "Ready · RightControl toggles UI")
+	Library.Notify(Hub.Window, "Anime Expeditions", "Ready")
 	log("v" .. Library.Version .. " started (generation " .. tostring(Hub.Generation) .. ")")
 end, formatError)
 

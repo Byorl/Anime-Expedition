@@ -54,15 +54,23 @@ function Config:_loadUserPrefs()
 	local userId = player and player.UserId or 0
 	self.Prefs = Library.ReadJson(prefsPath(userId), {
 		LastConfigId = nil,
-		AutoLoad = false,
+		AutoLoad = true,
+		AutoSave = false,
 		UIScale = nil,
 	})
 	if typeof(self.Prefs) ~= "table" then
 		self.Prefs = {
 			LastConfigId = nil,
-			AutoLoad = false,
+			AutoLoad = true,
+			AutoSave = false,
 			UIScale = nil,
 		}
+	end
+	if self.Prefs.AutoSave == nil then
+		self.Prefs.AutoSave = false
+	end
+	if self.Prefs.AutoLoad == nil then
+		self.Prefs.AutoLoad = true
 	end
 end
 
@@ -103,6 +111,31 @@ function Config:SetValue(flag, value, opts)
 	if not opts.SkipUi and not self.Applying then
 		self:ApplyToElement(flag, value, false)
 	end
+
+	if not opts.SkipAutoSave and not self.Applying then
+		self:QueueAutoSave()
+	end
+end
+
+function Config:QueueAutoSave()
+	if self.Prefs.AutoSave ~= true then
+		return
+	end
+	if not self.CurrentId then
+		return
+	end
+	if self._autoSaveThread then
+		pcall(task.cancel, self._autoSaveThread)
+		self._autoSaveThread = nil
+	end
+	self._autoSaveThread = task.delay(0.35, function()
+		self._autoSaveThread = nil
+		if self.Prefs.AutoSave == true and self.CurrentId then
+			pcall(function()
+				self:Save(self.CurrentId)
+			end)
+		end
+	end)
 end
 
 function Config:GetValue(flag, fallback)
@@ -251,8 +284,7 @@ end
 function Config:GetDisplayNames()
 	local names = {}
 	for _, entry in self:ListConfigs() do
-		local owner = entry.OwnerName or tostring(entry.OwnerUserId or "?")
-		table.insert(names, ("%s  ·  %s"):format(entry.Name, owner))
+		table.insert(names, tostring(entry.Name))
 	end
 	return names
 end
@@ -261,7 +293,7 @@ function Config:FindByDisplayName(displayName)
 	for _, entry in self:ListConfigs() do
 		local owner = entry.OwnerName or tostring(entry.OwnerUserId or "?")
 		local label = ("%s  ·  %s"):format(entry.Name, owner)
-		if label == displayName or entry.Name == displayName then
+		if entry.Name == displayName or label == displayName then
 			return entry
 		end
 	end
@@ -282,8 +314,42 @@ function Config:GetCurrentDisplayName()
 	if not entry then
 		return nil
 	end
-	local owner = entry.OwnerName or tostring(entry.OwnerUserId or "?")
-	return ("%s  ·  %s"):format(entry.Name, owner)
+	return tostring(entry.Name)
+end
+
+function Config:EnsureMainConfig()
+	local list = self:ListConfigs()
+	if #list == 0 then
+		local ok, meta = self:Create("main")
+		if ok then
+			self.Prefs.AutoLoad = true
+			self.Prefs.LastConfigId = meta.Id
+			self:_saveUserPrefs()
+			return true, meta
+		end
+		return false, meta
+	end
+
+	local mainEntry
+	for _, entry in list do
+		if entry.Name == "main" then
+			mainEntry = entry
+			break
+		end
+	end
+	if not mainEntry then
+		mainEntry = list[1]
+	end
+
+	if not self.CurrentId then
+		self.CurrentId = mainEntry.Id
+	end
+	if not self.Prefs.LastConfigId then
+		self.Prefs.LastConfigId = mainEntry.Id
+		self.Prefs.AutoLoad = true
+		self:_saveUserPrefs()
+	end
+	return true, mainEntry
 end
 
 function Config:Create(name)
@@ -452,14 +518,19 @@ function Config:SetAutoLoadConfig(idOrDisplay)
 end
 
 function Config:TryAutoLoad()
-	if self.Prefs.AutoLoad ~= true then
+	if self.Prefs.AutoLoad == false then
 		return false
 	end
-	if self.Prefs.LastConfigId then
-		local entry = self:FindById(self.Prefs.LastConfigId)
+	local id = self.Prefs.LastConfigId or self.CurrentId
+	if id then
+		local entry = self:FindById(id)
 		if entry then
 			return self:Load(entry.Id)
 		end
+	end
+	local main = self:FindByDisplayName("main")
+	if main then
+		return self:Load(main.Id)
 	end
 	return false
 end

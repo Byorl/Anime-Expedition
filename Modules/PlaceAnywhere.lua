@@ -138,10 +138,6 @@ return {
 		local tab = tabs.Misc
 		local section = tab:Section({ Side = "Right" })
 		section:Header({ Text = "Place Anywhere" })
-		section:Paragraph({
-			Header = "Client placement unlock",
-			Body = "Bypasses UnitUtils.IsPlacementAllowed on the client. The server can still reject invalid spots.",
-		})
 
 		hub.UI:BindToggle(section, {
 			Name = "Place Anywhere",

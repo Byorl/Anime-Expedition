@@ -961,24 +961,20 @@ return {
 		local left = tab:Section({ Side = "Left" })
 
 		left:Header({ Text = "Auto Claim" })
-		left:Paragraph({
-			Header = "Per-reward toggles",
-			Body = "Each toggle claims only that reward type when it is actually claimable. Turning any on starts the claimer.",
-		})
 
 		local categories = {
-			{ "Quests", "Auto Claim Quests" },
-			{ "Achievements", "Auto Claim Achievements" },
-			{ "Calendar", "Auto Claim Calendar" },
-			{ "Battlepass", "Auto Claim Battlepass" },
-			{ "LevelMilestones", "Auto Claim Level Milestones" },
-			{ "ExpeditionBoard", "Auto Claim Expedition Board" },
-			{ "ExpeditionBuildings", "Auto Claim Expedition Buildings" },
-			{ "GroupRewards", "Auto Claim Group Rewards" },
-			{ "Tournament", "Auto Claim Tournament" },
-			{ "AfkMilestones", "Auto Claim AFK Milestones" },
-			{ "VillainHunt", "Auto Claim Villain Hunt" },
-			{ "PromoCodes", "Auto Claim Promo Codes" },
+			{ "Quests", "Quests" },
+			{ "Achievements", "Achievements" },
+			{ "Calendar", "Calendar" },
+			{ "Battlepass", "Battlepass" },
+			{ "LevelMilestones", "Level Milestones" },
+			{ "ExpeditionBoard", "Expedition Board" },
+			{ "ExpeditionBuildings", "Expedition Buildings" },
+			{ "GroupRewards", "Group Rewards" },
+			{ "Tournament", "Tournament" },
+			{ "AfkMilestones", "AFK Milestones" },
+			{ "VillainHunt", "Villain Hunt" },
+			{ "PromoCodes", "Promo Codes" },
 		}
 
 		for _, entry in categories do

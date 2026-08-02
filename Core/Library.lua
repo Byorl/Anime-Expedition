@@ -13,7 +13,7 @@ assert(Hub, "[AEHub] Hub context missing while loading Library")
 local Library = {}
 
 Library.Version = "1.0.0"
-Library.Name = "AEHub"
+Library.Name = "Anime Expeditions"
 Library.DataFolder = "AEHubData"
 Library.ConfigsFolder = "AEHubData/Configs"
 Library.PrefsFolder = "AEHubData/Prefs"
@@ -140,7 +140,7 @@ function Library.Notify(window, title, description)
 	if window then
 		local ok = pcall(function()
 			window:Notify({
-				Title = title or "AEHub",
+				Title = title or "Anime Expeditions",
 				Description = description or "",
 			})
 		end)
@@ -148,7 +148,7 @@ function Library.Notify(window, title, description)
 			return
 		end
 	end
-	print(("[AEHub] %s: %s"):format(tostring(title), tostring(description)))
+	print(("[Anime Expeditions] %s: %s"):format(tostring(title), tostring(description)))
 end
 
 function Library.DestroyUiInstances()
