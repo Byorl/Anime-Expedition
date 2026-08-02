@@ -135,7 +135,8 @@ function ModuleManager:OnFlagChanged(flag, value)
 		else
 			self:Disable(moduleId)
 		end
-	elseif module.Enabled and typeof(module.Definition.OnConfigChanged) == "function" then
+	elseif typeof(module.Definition.OnConfigChanged) == "function" then
+		-- Always notify — modules like AutoClaim start themselves from the first category toggle
 		pcall(module.Definition.OnConfigChanged, module.State, key, value, self.Hub)
 	end
 end

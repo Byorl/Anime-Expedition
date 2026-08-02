@@ -211,6 +211,25 @@ function UI:ApplySetting(flag, value)
 				self.Hub.Config:_saveUserPrefs()
 			end)
 		end
+	elseif flag == "Settings.UIToggleKey" then
+		local keyName = typeof(value) == "EnumItem" and value.Name or tostring(value or "")
+		local keyCode = Enum.KeyCode[keyName]
+		if not keyCode then
+			return
+		end
+		local window = self.Window or (self.Hub and self.Hub.Window)
+		if window and typeof(window.SetKeybind) == "function" then
+			pcall(function()
+				window:SetKeybind(keyCode)
+			end)
+		end
+		if self.Hub and self.Hub.Config then
+			self.Hub.Config.Prefs.UIToggleKey = keyName
+			self.Hub.Config.Values["Settings.UIToggleKey"] = keyName
+			pcall(function()
+				self.Hub.Config:_saveUserPrefs()
+			end)
+		end
 	end
 end
 
@@ -385,6 +404,30 @@ function UI:_buildSettingsTab(tab)
 		end,
 	})
 
+	do
+		local defaultKeyName = hub.Config.Prefs.UIToggleKey or "RightControl"
+		if typeof(hub.Config.Values["Settings.UIToggleKey"]) == "string" then
+			defaultKeyName = hub.Config.Values["Settings.UIToggleKey"]
+		end
+		local defaultKey = Enum.KeyCode[defaultKeyName] or Enum.KeyCode.RightControl
+		hub.Config.Values["Settings.UIToggleKey"] = defaultKey.Name
+
+		local keybind = right:Keybind({
+			Name = "Toggle UI",
+			Default = defaultKey,
+			onBinded = function(key)
+				if typeof(key) == "EnumItem" then
+					hub.Config:SetValue("Settings.UIToggleKey", key.Name, { SkipUi = true })
+				end
+			end,
+		})
+		pcall(function()
+			keybind.IgnoreConfig = true
+		end)
+		hub.Config:RegisterElement("Settings.UIToggleKey", keybind, "Keybind")
+		self.UIToggleKeybind = keybind
+	end
+
 	right:Button({
 		Name = "Unload",
 		Callback = function()
@@ -436,6 +479,9 @@ function UI:Build()
 	preferredScale = math.max(0.45, math.min(1.35, tonumber(preferredScale) or device.Scale))
 	hub.Config.Values["Settings.UIScale"] = preferredScale
 	hub.Config.Values["Settings.AutoSave"] = hub.Config.Prefs.AutoSave == true
+	local toggleKeyName = hub.Config.Prefs.UIToggleKey or "RightControl"
+	local toggleKey = Enum.KeyCode[toggleKeyName] or Enum.KeyCode.RightControl
+	hub.Config.Values["Settings.UIToggleKey"] = toggleKey.Name
 	self.CurrentScale = preferredScale
 
 	local okWindow, windowOrErr = pcall(function()
@@ -446,7 +492,7 @@ function UI:Build()
 			DragStyle = device.DragStyle,
 			DisabledWindowControls = {},
 			ShowUserInfo = false,
-			Keybind = Enum.KeyCode.RightControl,
+			Keybind = toggleKey,
 			AcrylicBlur = false,
 		})
 	end)

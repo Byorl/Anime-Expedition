@@ -12,8 +12,10 @@ assert(Hub and Hub.Core and Hub.Core.Library, "[AEHub] Hub context missing while
 local Library = Hub.Core.Library
 
 local MODULE_ID = "AutoClaim"
-local TARGET_PLACE_ID = 84515722934860
 local TRACK_PATH = Library.TrackFolder .. "/AutoClaim.json"
+-- Only block duplicate fires of the same claim key within a few frames (server still enforces real limits)
+local MIN_CLAIM_GAP = 0.05
+local SCAN_INTERVAL = 0.1
 
 local CATEGORY_KEYS = {
 	"Quests",
@@ -32,8 +34,6 @@ local CATEGORY_KEYS = {
 
 local DEFAULTS = {
 	Enabled = false,
-	PollInterval = 1,
-	ClaimCooldown = 2,
 	Quests = false,
 	Achievements = false,
 	Calendar = false,
@@ -49,12 +49,11 @@ local DEFAULTS = {
 }
 
 local function anyCategoryEnabled(state)
-	for _, key in CATEGORY_KEYS do
+	for _, key in ipairs(CATEGORY_KEYS) do
 		if state[key] == true then
 			return true
 		end
 	end
-	-- Back-compat for older configs that used Index
 	if state.Index == true then
 		return true
 	end
@@ -74,9 +73,18 @@ local function syncPowerFromCategories(state, hub)
 	if not module then
 		return
 	end
-	if shouldRun and not module.Enabled then
+
+	local alive = module.Enabled == true and module.Runtime and module.Runtime.Running == true
+	if shouldRun then
+		if alive then
+			return
+		end
+		-- Dead or never started — force a clean restart
+		if module.Enabled then
+			hub.Modules:Disable(MODULE_ID)
+		end
 		hub.Modules:Enable(MODULE_ID)
-	elseif not shouldRun and module.Enabled then
+	elseif module.Enabled then
 		hub.Modules:Disable(MODULE_ID)
 	end
 end
@@ -156,9 +164,8 @@ local function createController(state, runtime)
 	local pending = runtime.Pending
 
 	local function canFire(key)
-		local cooldown = tonumber(state.ClaimCooldown) or DEFAULTS.ClaimCooldown
 		local now = os.clock()
-		if pending[key] and now - pending[key] < cooldown then
+		if pending[key] and now - pending[key] < MIN_CLAIM_GAP then
 			return false
 		end
 		pending[key] = now
@@ -174,9 +181,9 @@ local function createController(state, runtime)
 			Nodes[nodeName]:FireServer(table.unpack(args, 1, args.n))
 		end)
 		if ok then
-			print(("[AEHub:AutoClaim] %s | %s"):format(nodeName, key))
+			print(("[Anime Expeditions:AutoClaim] %s | %s"):format(nodeName, key))
 		else
-			warn(("[AEHub:AutoClaim] Failed %s | %s | %s"):format(nodeName, key, tostring(err)))
+			warn(("[Anime Expeditions:AutoClaim] Failed %s | %s | %s"):format(nodeName, key, tostring(err)))
 		end
 		return ok
 	end
@@ -700,7 +707,7 @@ local function createController(state, runtime)
 			claimedOk = true
 		end
 		if claimedOk then
-			print("[AEHub:AutoClaim] VillainHunt milestones")
+			print("[Anime Expeditions:AutoClaim] VillainHunt milestones")
 		end
 	end
 
@@ -759,9 +766,9 @@ local function createController(state, runtime)
 
 					if success or already then
 						markCodeRedeemed(codeName)
-						print(("[AEHub:AutoClaim] CLAIM_CODE | %s"):format(codeName))
+						print(("[Anime Expeditions:AutoClaim] CLAIM_CODE | %s"):format(codeName))
 					else
-						warn(("[AEHub:AutoClaim] Code failed | %s | %s"):format(codeName, tostring(result)))
+						warn(("[Anime Expeditions:AutoClaim] Code failed | %s | %s"):format(codeName, tostring(result)))
 					end
 				end
 			end
@@ -795,11 +802,6 @@ return {
 	Defaults = DEFAULTS,
 
 	OnEnable = function(state, runtime, hub)
-		if game.PlaceId ~= TARGET_PLACE_ID then
-			Library.Notify(hub.Window, "Auto Claim", "Wrong place. Module stays idle here.")
-			return
-		end
-
 		stopRuntime(runtime)
 		runtime.Running = true
 		runtime.Pending = {}
@@ -825,25 +827,46 @@ return {
 				runtime.Peek = Fusion.peek
 			end)
 			if not okRequire then
-				warn("[AEHub:AutoClaim] Require failed: " .. tostring(errRequire))
+				warn("[Anime Expeditions:AutoClaim] Require failed: " .. tostring(errRequire))
 				runtime.Running = false
 				return
 			end
 
+			local function tryGetReplica()
+				local node = runtime.Nodes and runtime.Nodes.GET_PLAYER_REPLICA
+				if not node then
+					return nil
+				end
+				local ok, result = pcall(function()
+					return node:InvokeSelf()
+				end)
+				if ok and result then
+					return result
+				end
+				ok, result = pcall(function()
+					return node:InvokeSelf(runtime.LocalPlayer)
+				end)
+				if ok and result then
+					return result
+				end
+				return nil
+			end
+
 			local replica
+			local replicaWaitStart = os.clock()
 			while runtime.Running and not replica do
 				if hub and typeof(hub.IsCurrent) == "function" and not hub:IsCurrent() then
 					runtime.Running = false
 					return
 				end
-				local ok, result = pcall(function()
-					return runtime.Nodes.GET_PLAYER_REPLICA:InvokeSelf()
-				end)
-				if ok then
-					replica = result
-				end
+				replica = tryGetReplica()
 				if not replica then
-					task.wait(0.25)
+					if os.clock() - replicaWaitStart > 30 then
+						warn("[Anime Expeditions:AutoClaim] Timed out waiting for player replica")
+						runtime.Running = false
+						return
+					end
+					task.wait(0.1)
 				end
 			end
 			if not runtime.Running then
@@ -851,8 +874,20 @@ return {
 			end
 			runtime.Replica = replica
 
-			while runtime.Running and not next(runtime.Information.Quests.Categories) do
-				task.wait(0.25)
+			-- Don't hang forever if quest info is slow/empty — other claim types still work
+			local infoWaitStart = os.clock()
+			while runtime.Running do
+				local cats = runtime.Information
+					and runtime.Information.Quests
+					and runtime.Information.Quests.Categories
+				if typeof(cats) == "table" and next(cats) ~= nil then
+					break
+				end
+				if os.clock() - infoWaitStart > 5 then
+					warn("[Anime Expeditions:AutoClaim] Quest categories not ready yet — continuing")
+					break
+				end
+				task.wait(0.1)
 			end
 			if not runtime.Running then
 				return
@@ -897,18 +932,17 @@ return {
 				end
 			end
 
+			print(("[Anime Expeditions:AutoClaim] Active | place %s"):format(tostring(game.PlaceId)))
+			Library.Notify(hub.Window, "Auto Claim", "Enabled")
 			scanAndClaim()
+
 			local pollThread = task.spawn(function()
 				while runtime.Running do
-					local interval = tonumber(state.PollInterval) or DEFAULTS.PollInterval
-					task.wait(math.max(interval, 0.25))
+					task.wait(SCAN_INTERVAL)
 					if not runtime.Running then
 						break
 					end
 					if hub and typeof(hub.IsCurrent) == "function" and not hub:IsCurrent() then
-						break
-					end
-					if game.PlaceId ~= TARGET_PLACE_ID then
 						break
 					end
 					scanAndClaim()
@@ -918,9 +952,6 @@ return {
 			if typeof(runtime.TrackThread) == "function" then
 				runtime:TrackThread(pollThread)
 			end
-
-			Library.Notify(hub.Window, "Auto Claim", "Enabled")
-			print(("[AEHub:AutoClaim] Active on place %s"):format(tostring(TARGET_PLACE_ID)))
 		end)
 
 		runtime.BootThread = bootThread
@@ -950,7 +981,7 @@ return {
 	end,
 
 	OnConfigChanged = function(state, key, _value, hub)
-		if key == "PollInterval" or key == "ClaimCooldown" or key == "Enabled" then
+		if key == "Enabled" then
 			return
 		end
 		syncPowerFromCategories(state, hub)
@@ -985,25 +1016,5 @@ return {
 				Flag = MODULE_ID .. "." .. key,
 			})
 		end
-
-		hub.UI:BindSlider(left, {
-			Name = "Poll Interval",
-			Default = tonumber(state.PollInterval) or 1,
-			Minimum = 0.25,
-			Maximum = 10,
-			Precision = 2,
-			DisplayMethod = "Round",
-			Flag = MODULE_ID .. ".PollInterval",
-		})
-
-		hub.UI:BindSlider(left, {
-			Name = "Claim Cooldown",
-			Default = tonumber(state.ClaimCooldown) or 2,
-			Minimum = 0.5,
-			Maximum = 10,
-			Precision = 2,
-			DisplayMethod = "Round",
-			Flag = MODULE_ID .. ".ClaimCooldown",
-		})
 	end,
 }

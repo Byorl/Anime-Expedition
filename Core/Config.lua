@@ -57,6 +57,7 @@ function Config:_loadUserPrefs()
 		AutoLoad = true,
 		AutoSave = false,
 		UIScale = nil,
+		UIToggleKey = "RightControl",
 	})
 	if typeof(self.Prefs) ~= "table" then
 		self.Prefs = {
@@ -64,6 +65,7 @@ function Config:_loadUserPrefs()
 			AutoLoad = true,
 			AutoSave = false,
 			UIScale = nil,
+			UIToggleKey = "RightControl",
 		}
 	end
 	if self.Prefs.AutoSave == nil then
@@ -71,6 +73,9 @@ function Config:_loadUserPrefs()
 	end
 	if self.Prefs.AutoLoad == nil then
 		self.Prefs.AutoLoad = true
+	end
+	if typeof(self.Prefs.UIToggleKey) ~= "string" or self.Prefs.UIToggleKey == "" then
+		self.Prefs.UIToggleKey = "RightControl"
 	end
 end
 
@@ -178,6 +183,12 @@ function Config:ApplyToElement(flag, value, fireCallback)
 		if fireCallback and typeof(element.Settings) == "table" and typeof(element.Settings.Callback) == "function" then
 			pcall(element.Settings.Callback, value)
 		end
+	elseif elementType == "Keybind" then
+		local keyName = typeof(value) == "EnumItem" and value.Name or tostring(value or "")
+		local keyCode = Enum.KeyCode[keyName]
+		if keyCode then
+			pcall(element.Bind, element, keyCode)
+		end
 	end
 end
 
@@ -243,6 +254,16 @@ function Config:CollectFromUi()
 				end)
 				if ok then
 					self.Values[flag] = value
+				end
+			elseif entry.Type == "Keybind" then
+				local ok, bind = pcall(function()
+					if element.GetBind then
+						return element:GetBind()
+					end
+					return element.Bind
+				end)
+				if ok and typeof(bind) == "EnumItem" then
+					self.Values[flag] = bind.Name
 				end
 			end
 		end
@@ -458,6 +479,9 @@ function Config:Load(idOrDisplay, opts)
 	self.Prefs.LastConfigId = entry.Id
 	if typeof(self.Values["Settings.UIScale"]) == "number" then
 		self.Prefs.UIScale = self.Values["Settings.UIScale"]
+	end
+	if typeof(self.Values["Settings.UIToggleKey"]) == "string" then
+		self.Prefs.UIToggleKey = self.Values["Settings.UIToggleKey"]
 	end
 	self:_saveUserPrefs()
 
