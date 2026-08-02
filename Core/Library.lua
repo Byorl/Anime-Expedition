@@ -1,4 +1,14 @@
-local Hub = ...
+local function resolveHub(...)
+	local viaVarargs = ...
+	if typeof(viaVarargs) == "table" and viaVarargs.Core ~= nil then
+		return viaVarargs
+	end
+	local env = (getgenv and getgenv()) or shared or _G
+	return env.__AEHubLoading
+end
+
+local Hub = resolveHub(...)
+assert(Hub, "[AEHub] Hub context missing while loading Library")
 
 local Library = {}
 
@@ -143,19 +153,31 @@ end
 
 function Library.DestroyUiInstances()
 	local targets = {}
+	local function consider(child)
+		if not child then
+			return
+		end
+		local name = string.lower(tostring(child.Name))
+		local tagged = false
+		pcall(function()
+			tagged = child:GetAttribute("AEHub") == true
+		end)
+		if tagged
+			or name == "maclibgui"
+			or name == "maclib"
+			or name == "aehub"
+			or string.find(name, "maclib", 1, true)
+		then
+			table.insert(targets, child)
+		end
+	end
+
 	local function collect(parent)
 		if not parent then
 			return
 		end
 		for _, child in parent:GetChildren() do
-			local name = child.Name
-			if name == "MaclibGui"
-				or name == "MacLib"
-				or name == "AEHub"
-				or child:GetAttribute("AEHub") == true
-			then
-				table.insert(targets, child)
-			end
+			consider(child)
 		end
 	end
 
@@ -174,6 +196,18 @@ function Library.DestroyUiInstances()
 			instance:Destroy()
 		end)
 	end
+end
+
+function Library.FormatError(err)
+	local message = tostring(err)
+	local trace = ""
+	pcall(function()
+		trace = debug.traceback(message, 2)
+	end)
+	if trace ~= "" and trace ~= message then
+		return trace
+	end
+	return message
 end
 
 return Library
