@@ -1,0 +1,9 @@
+# Ignore the Roblox game dump and tooling; publish only the hub.
+*
+!Loader.lua
+!README.md
+!.gitignore
+!Core/
+!Core/**
+!Modules/
+!Modules/**
