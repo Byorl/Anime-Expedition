@@ -1,4 +1,14 @@
-local Hub = ...
+local function resolveHub(...)
+	local viaVarargs = ...
+	if typeof(viaVarargs) == "table" and viaVarargs.Core ~= nil then
+		return viaVarargs
+	end
+	local env = (getgenv and getgenv()) or shared or _G
+	return env.__AEHubLoading
+end
+
+local Hub = resolveHub(...)
+assert(Hub and Hub.Core and Hub.Core.Library, "[AEHub] Hub context missing while loading AutoClaim")
 local Library = Hub.Core.Library
 
 local MODULE_ID = "AutoClaim"
@@ -873,6 +883,9 @@ return {
 					if not runtime.Running then
 						break
 					end
+					if hub and typeof(hub.IsCurrent) == "function" and not hub:IsCurrent() then
+						break
+					end
 					if game.PlaceId ~= TARGET_PLACE_ID then
 						break
 					end
@@ -916,7 +929,7 @@ return {
 		local tab = tabs.Misc
 		local left = tab:Section({ Side = "Left" })
 
-		left:Header({ Name = "Auto Claim" })
+		left:Header({ Text = "Auto Claim" })
 		left:Paragraph({
 			Header = "Per-reward toggles",
 			Body = "Each toggle claims only that reward type when it is actually claimable. Turning any on starts the claimer.",
