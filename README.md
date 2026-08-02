@@ -1,6 +1,6 @@
 # Anime Expedition Hub
 
-One entry file. Nothing else to execute.
+Single entry:
 
 ```lua
 loadstring(game:HttpGet("https://raw.githubusercontent.com/Byorl/Anime-Expedition/main/Loader.lua"))()
@@ -19,13 +19,7 @@ Anime-Expedition/
 ├── Loader.lua
 ├── README.md
 ├── Core/
-│   ├── Library.lua
-│   ├── Config.lua
-│   ├── ModuleManager.lua
-│   └── UI.lua
 └── Modules/
-    ├── AutoClaim.lua
-    └── PlaceAnywhere.lua
 ```
 
 ## Tabs

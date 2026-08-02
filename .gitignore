@@ -1,9 +1,6 @@
-# Ignore the Roblox game dump and tooling; publish only the hub.
-*
-!Loader.lua
-!README.md
-!.gitignore
-!Core/
-!Core/**
-!Modules/
-!Modules/**
+# Ignore game dump + tools — hub only goes to GitHub
+/Anime Expeditions/
+.tools/
+*.rbxl
+*.rbxlx
+AEHubData/

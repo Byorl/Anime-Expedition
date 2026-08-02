@@ -1,7 +1,7 @@
 --[[
 	Anime Expedition Hub — single entry point
 
-	loadstring(game:HttpGet("https://raw.githubusercontent.com/Byorl/Anime-Expedition/main/Loader.lua"))()
+	  loadstring(game:HttpGet("https://raw.githubusercontent.com/Byorl/Anime-Expedition/main/Loader.lua"))()
 
 	Local:
 	  loadstring(readfile("Loader.lua"))()
@@ -278,47 +278,13 @@ local function joinPath(root, rel)
 end
 
 local function httpGet(url)
-	local getters = {
-		function()
-			return game:HttpGet(url)
-		end,
-		function()
-			return game:HttpGet(url, true)
-		end,
-	}
-	if typeof(game.HttpGetAsync) == "function" then
-		table.insert(getters, function()
-			return game:HttpGetAsync(url)
-		end)
+	local ok, result = pcall(function()
+		return game:HttpGet(url)
+	end)
+	if ok and typeof(result) == "string" and #result > 0 then
+		return result
 	end
-	if syn and typeof(syn.request) == "function" then
-		table.insert(getters, function()
-			local res = syn.request({ Url = url, Method = "GET" })
-			return res and res.Body
-		end)
-	end
-	if typeof(http_request) == "function" then
-		table.insert(getters, function()
-			local res = http_request({ Url = url, Method = "GET" })
-			return res and res.Body
-		end)
-	end
-	if typeof(request) == "function" then
-		table.insert(getters, function()
-			local res = request({ Url = url, Method = "GET" })
-			return res and (res.Body or res.body)
-		end)
-	end
-
-	local errors = {}
-	for i, fn in ipairs(getters) do
-		local ok, result = pcall(fn)
-		if ok and typeof(result) == "string" and #result > 0 then
-			return result
-		end
-		table.insert(errors, "#" .. i .. "=" .. tostring(result))
-	end
-	return nil, table.concat(errors, " | ")
+	return nil, result
 end
 
 local function fetchSource(rel)
