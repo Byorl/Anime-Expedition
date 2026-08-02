@@ -1,4 +1,14 @@
-local Hub = ...
+local function resolveHub(...)
+	local viaVarargs = ...
+	if typeof(viaVarargs) == "table" and viaVarargs.Core ~= nil then
+		return viaVarargs
+	end
+	local env = (getgenv and getgenv()) or shared or _G
+	return env.__AEHubLoading
+end
+
+local Hub = resolveHub(...)
+assert(Hub and Hub.Core and Hub.Core.Library, "[AEHub] Hub context missing while loading ModuleManager")
 local Library = Hub.Core.Library
 
 local ModuleManager = {}
@@ -21,11 +31,78 @@ function ModuleManager:Register(moduleDefinition)
 		defaults.Enabled = false
 	end
 
+	local runtime = {
+		Threads = {},
+		Connections = {},
+	}
+
+	function runtime:TrackThread(thread)
+		if thread == nil then
+			return nil
+		end
+		table.insert(self.Threads, thread)
+		if self.Hub and typeof(self.Hub.TrackThread) == "function" then
+			self.Hub:TrackThread(thread)
+		end
+		return thread
+	end
+
+	function runtime:TrackConnection(conn)
+		if conn == nil then
+			return nil
+		end
+		table.insert(self.Connections, conn)
+		if self.Hub and typeof(self.Hub.TrackConnection) == "function" then
+			self.Hub:TrackConnection(conn)
+		end
+		return conn
+	end
+
+	function runtime:Cleanup()
+		for _, thread in self.Threads do
+			pcall(function()
+				task.cancel(thread)
+			end)
+			pcall(function()
+				coroutine.close(thread)
+			end)
+		end
+		self.Threads = {}
+		for _, conn in self.Connections do
+			pcall(function()
+				if conn then
+					conn:Disconnect()
+				end
+			end)
+		end
+		self.Connections = {}
+		pcall(function()
+			if self.BootThread then
+				task.cancel(self.BootThread)
+			end
+		end)
+		pcall(function()
+			if self.PollThread then
+				task.cancel(self.PollThread)
+			end
+		end)
+		pcall(function()
+			if self.ChangeConnection then
+				self.ChangeConnection:Disconnect()
+			end
+		end)
+		self.BootThread = nil
+		self.PollThread = nil
+		self.ChangeConnection = nil
+	end
+
+	runtime.Hub = self.Hub
+
 	self.Modules[moduleDefinition.Id] = {
 		Definition = moduleDefinition,
 		State = defaults,
 		Enabled = false,
-		Runtime = {},
+		Runtime = runtime,
 	}
 	table.insert(self.Order, moduleDefinition.Id)
 end
@@ -156,12 +233,22 @@ function ModuleManager:Disable(id)
 
 	module.State.Enabled = false
 	if not module.Enabled then
+		if module.Runtime and typeof(module.Runtime.Cleanup) == "function" then
+			pcall(function()
+				module.Runtime:Cleanup()
+			end)
+		end
 		return true
 	end
 
 	module.Enabled = false
 	if typeof(module.Definition.OnDisable) == "function" then
 		pcall(module.Definition.OnDisable, module.State, module.Runtime, self.Hub)
+	end
+	if module.Runtime and typeof(module.Runtime.Cleanup) == "function" then
+		pcall(function()
+			module.Runtime:Cleanup()
+		end)
 	end
 	return true
 end
@@ -181,7 +268,22 @@ function ModuleManager:DestroyAll()
 			if typeof(module.Definition.OnDestroy) == "function" then
 				pcall(module.Definition.OnDestroy, module.State, module.Runtime, self.Hub)
 			end
-			module.Runtime = {}
+			if module.Runtime and typeof(module.Runtime.Cleanup) == "function" then
+				pcall(function()
+					module.Runtime:Cleanup()
+				end)
+			end
+			module.Runtime = {
+				Threads = {},
+				Connections = {},
+				Cleanup = function() end,
+				TrackThread = function(_, thread)
+					return thread
+				end,
+				TrackConnection = function(_, conn)
+					return conn
+				end,
+			}
 		end
 	end
 end
@@ -190,7 +292,15 @@ function ModuleManager:BuildUi(window, tabs)
 	for _, moduleId in self.Order do
 		local module = self.Modules[moduleId]
 		if module and typeof(module.Definition.BuildUi) == "function" then
-			pcall(module.Definition.BuildUi, module.State, window, tabs, self.Hub)
+			local ok, err = xpcall(function()
+				module.Definition.BuildUi(module.State, window, tabs, self.Hub)
+			end, function(e)
+				return Library.FormatError and Library.FormatError(e) or tostring(e)
+			end)
+			if not ok then
+				warn("[AEHub] BuildUi failed for module '" .. moduleId .. "':\n" .. tostring(err))
+				error("[AEHub] BuildUi failed for module '" .. moduleId .. "':\n" .. tostring(err), 0)
+			end
 		end
 	end
 end
