@@ -164,6 +164,26 @@ local function nuclearUnload(hub)
 
 	destroyHubGuis()
 
+	-- Restore Place Anywhere before wiping env
+	pcall(function()
+		local bag = env.__AE_PlaceAnywhereHooks
+		if typeof(bag) == "table" then
+			if bag.Watchdog then
+				pcall(task.cancel, bag.Watchdog)
+			end
+			if bag.UnitUtils and bag.OriginalUnitUtils ~= nil then
+				bag.UnitUtils.IsPlacementAllowed = bag.OriginalUnitUtils
+			end
+			if bag.Actions then
+				if bag.OriginalActions ~= nil then
+					rawset(bag.Actions, "IsPlacementAllowed", bag.OriginalActions)
+				else
+					rawset(bag.Actions, "IsPlacementAllowed", nil)
+				end
+			end
+		end
+	end)
+
 	-- Wipe known env keys
 	local keys = {
 		"AEHub",
@@ -172,6 +192,7 @@ local function nuclearUnload(hub)
 		"__AE_AutoClaimRunning",
 		"__AE_PlaceAnywhereRunning",
 		"__AE_AutoClaimTrack",
+		"__AE_PlaceAnywhereHooks",
 	}
 	for _, key in ipairs(keys) do
 		pcall(function()
@@ -207,6 +228,27 @@ local function hardKillPrevious()
 	env.__AE_AutoClaimRunning = nil
 	env.__AE_PlaceAnywhereRunning = nil
 	env.__AE_AutoClaimTrack = nil
+
+	-- Always restore Place Anywhere hooks on kill
+	pcall(function()
+		local bag = env.__AE_PlaceAnywhereHooks
+		if typeof(bag) == "table" then
+			if bag.Watchdog then
+				pcall(task.cancel, bag.Watchdog)
+			end
+			if bag.UnitUtils and bag.OriginalUnitUtils ~= nil then
+				bag.UnitUtils.IsPlacementAllowed = bag.OriginalUnitUtils
+			end
+			if bag.Actions then
+				if bag.OriginalActions ~= nil then
+					rawset(bag.Actions, "IsPlacementAllowed", bag.OriginalActions)
+				else
+					rawset(bag.Actions, "IsPlacementAllowed", nil)
+				end
+			end
+			env.__AE_PlaceAnywhereHooks = nil
+		end
+	end)
 end
 
 log("Booting...")
