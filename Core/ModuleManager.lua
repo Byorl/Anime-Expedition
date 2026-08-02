@@ -307,3 +307,4 @@ function ModuleManager:BuildUi(window, tabs)
 end
 
 return ModuleManager
+
