@@ -132,28 +132,28 @@ return function(Import)
 			}
 			local section = ctx.Tabs.Misc:Section({Side = "Right"})
 			section:Header({Text = "Performance"})
-			state.RenderingControl = ctx.Registry:Toggle(section, {
+			ctx.Registry:Toggle(section, {
 				Name = "Delete Enemies",
 				Default = false,
-				Callback = function(value) self:_SetDeleteEnemies(state, value) end,
+				Callback = function(value) Performance:_SetDeleteEnemies(state, value) end,
 			}, "performance.delete_enemies")
 			ctx.Registry:Toggle(section, {
 				Name = "FPS Boost",
 				Default = false,
-				Callback = function(value) self:_SetFpsBoost(state, value) end,
+				Callback = function(value) Performance:_SetFpsBoost(state, value) end,
 			}, "performance.fps_boost")
-			ctx.Registry:Toggle(section, {
+			state.RenderingControl = ctx.Registry:Toggle(section, {
 				Name = "Disable 3D Rendering",
 				Default = false,
-				Callback = function(value) self:_SetRendering(ctx, state, value) end,
+				Callback = function(value) Performance:_SetRendering(ctx, state, value) end,
 			}, "performance.disable_3d_rendering")
 			return state
 		end,
 
 		Disable = function(self, ctx, state)
-			self:_SetDeleteEnemies(state, false)
-			self:_SetFpsBoost(state, false)
-			self:_SetRendering(ctx, state, false)
+			Performance:_SetDeleteEnemies(state, false)
+			Performance:_SetFpsBoost(state, false)
+			Performance:_SetRendering(ctx, state, false)
 		end,
 
 		Unload = function(self, ctx, state)

@@ -361,7 +361,7 @@ return function(Import)
 
 		Enable = function(self, ctx, state)
 			if not ctx.Game.Ready then error("game adapter is unavailable:\n" .. tostring(ctx.Game.Error)) end
-			self:_Start(ctx, state)
+			AutoClaim:_Start(ctx, state)
 		end,
 
 		Disable = function(self, ctx, state)
