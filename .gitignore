@@ -1,6 +1,0 @@
-# Ignore game dump + tools — hub only goes to GitHub
-/Anime Expeditions/
-.tools/
-*.rbxl
-*.rbxlx
-AEHubData/
