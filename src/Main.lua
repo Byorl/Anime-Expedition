@@ -17,6 +17,7 @@ return function(Import)
 	local JoinChallengeModule = Import("JoinChallenge")
 	local JoinEventModule = Import("JoinEvent")
 	local JoinRaidModule = Import("JoinRaid")
+	local AutoPlayModule = Import("AutoPlay")
 	local GameMatchModule = Import("GameMatch")
 	local GameEndModule = Import("GameEnd")
 	local WebhookModule = Import("Webhook")
@@ -200,6 +201,7 @@ return function(Import)
 	local TabGroup = Window:TabGroup()
 	local Tabs = {
 		Join = TabGroup:Tab({ Name = "Join", Image = "rbxassetid://10734950309" }),
+		AutoPlay = TabGroup:Tab({ Name = "Auto Play", Image = "rbxassetid://10734950309" }),
 		Game = TabGroup:Tab({ Name = "Game", Image = "rbxassetid://10734950309" }),
 		Webhook = TabGroup:Tab({ Name = "Webhook", Image = "rbxassetid://10734950020" }),
 		Misc = TabGroup:Tab({ Name = "Misc", Image = "rbxassetid://10734950309" }),
@@ -243,6 +245,7 @@ return function(Import)
 	Modules:Register(JoinChallengeModule)
 	Modules:Register(JoinEventModule)
 	Modules:Register(JoinRaidModule)
+	Modules:Register(AutoPlayModule)
 	Modules:Register(GameMatchModule)
 	Modules:Register(GameEndModule)
 	Modules:Register(WebhookModule)

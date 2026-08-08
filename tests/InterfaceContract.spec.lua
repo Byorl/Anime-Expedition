@@ -1,12 +1,16 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.7.2", "interface release version is wrong")
+assert(Build.Version == "1.8.0", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
-		== "https://raw.githubusercontent.com/Byorl/Maclib/e5104e2b12ec160368421f4deb8f0d974f309c0e/src/maclib.lua",
+		== "https://raw.githubusercontent.com/Byorl/Maclib/31b7139a6c0779f1218587a2d513b9ef94a33ed2/src/maclib.lua",
 	"interface is not pinned to the tested Byorl Maclib revision"
 )
 
 local mainSource = fs.read("src/Main.lua", "bin")
+local joinPosition = assert(string.find(mainSource, "Join = TabGroup:Tab", 1, true), "Join tab is missing")
+local autoPlayPosition = assert(string.find(mainSource, "AutoPlay = TabGroup:Tab", 1, true), "Auto Play tab is missing")
+local gamePosition = assert(string.find(mainSource, "Game = TabGroup:Tab", 1, true), "Game tab is missing")
+assert(joinPosition < autoPlayPosition and autoPlayPosition < gamePosition, "Auto Play is not between Join and Game")
 for _, name in ipairs({ "MiscClaims", "MiscUnits", "MiscPerformance" }) do
 	assert(string.find(mainSource, "Tabs." .. name, 1, true), "missing subtab " .. name)
 end

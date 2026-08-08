@@ -1,5 +1,5 @@
 return {
-	Version = "1.7.2",
+	Version = "1.8.0",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -17,12 +17,14 @@ return {
 		JoinCoordinator = "src/Core/JoinCoordinator.lua",
 		RewardScanner = "src/Core/RewardScanner.lua",
 		AutomationCatalog = "src/Core/AutomationCatalog.lua",
+		AutoPlayPlanner = "src/Core/AutoPlayPlanner.lua",
 		ResultsHub = "src/Core/ResultsHub.lua",
 		WebhookReporter = "src/Core/WebhookReporter.lua",
 		JoinStory = "src/Modules/JoinStory.lua",
 		JoinChallenge = "src/Modules/JoinChallenge.lua",
 		JoinEvent = "src/Modules/JoinEvent.lua",
 		JoinRaid = "src/Modules/JoinRaid.lua",
+		AutoPlay = "src/Modules/AutoPlay.lua",
 		GameMatch = "src/Modules/GameMatch.lua",
 		GameEnd = "src/Modules/GameEnd.lua",
 		Webhook = "src/Modules/Webhook.lua",

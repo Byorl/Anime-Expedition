@@ -182,6 +182,18 @@ return function(Import)
 		return true
 	end
 
+	function GameAdapter:GamePlayerAction(action, ...)
+		local ok, replica = self:InvokeSelf("GET_GAME_PLAYER_REPLICA")
+		if not ok then return false, replica end
+		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then return false, "game player replica is unavailable" end
+		local arguments = table.pack(...)
+		local fired, err = xpcall(function()
+			replica:FireServer(tostring(action), table.unpack(arguments, 1, arguments.n))
+		end, Util.Traceback)
+		if not fired then return false, tostring(err) end
+		return true
+	end
+
 	function GameAdapter:ChangeSetting(name, value)
 		return self:Fire("CLIENT_CHANGE_SETTING", tostring(name), value)
 	end

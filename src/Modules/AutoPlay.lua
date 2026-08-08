@@ -1,0 +1,646 @@
+return function(Import)
+	local Planner = Import("AutoPlayPlanner")
+	local AutoPlay = {}
+	local Players = game:GetService("Players")
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local CollectionService = game:GetService("CollectionService")
+	local Workspace = game:GetService("Workspace")
+	local colors = {
+		Color3.fromRGB(75, 170, 255),
+		Color3.fromRGB(183, 110, 255),
+		Color3.fromRGB(255, 190, 70),
+		Color3.fromRGB(75, 220, 145),
+		Color3.fromRGB(255, 105, 135),
+		Color3.fromRGB(90, 220, 225),
+	}
+
+	local function loadHelper(name)
+		local shared = ReplicatedStorage:FindFirstChild("Shared")
+		local instance = shared and shared:FindFirstChild(name)
+		if not instance then
+			return nil
+		end
+		local ok, result = pcall(require, instance)
+		return ok and type(result) == "table" and result or nil
+	end
+
+	local function notify(ctx, state, key, message)
+		local now = os.clock()
+		if now - (state.LastErrors[key] or 0) < 5 then
+			return
+		end
+		state.LastErrors[key] = now
+		ctx.Runtime:Notify("Auto Play", tostring(message))
+	end
+
+	local function totalPlaced(grouped)
+		local total = 0
+		for _, entries in pairs(grouped) do
+			total = total + #entries
+		end
+		return total
+	end
+
+	local function longestPath(paths)
+		local selected, selectedLength
+		for _, path in ipairs(paths) do
+			local length = 0
+			for index = 2, #path do
+				length = length + (path[index] - path[index - 1]).Magnitude
+			end
+			if #path >= 2 and (not selectedLength or length > selectedLength) then
+				selected, selectedLength = path, length
+			end
+		end
+		return selected
+	end
+
+	local function fallbackPath()
+		local paths = {}
+		for _, tagged in ipairs(CollectionService:GetTagged("Path")) do
+			local nodes = {}
+			if tagged:IsA("BasePart") then
+				table.insert(nodes, tagged)
+			end
+			for _, descendant in ipairs(tagged:GetDescendants()) do
+				if descendant:IsA("BasePart") and tonumber(descendant.Name) then
+					table.insert(nodes, descendant)
+				end
+			end
+			table.sort(nodes, function(a, b)
+				return (tonumber(a.Name) or 0) < (tonumber(b.Name) or 0)
+			end)
+			local path = {}
+			for _, node in ipairs(nodes) do
+				table.insert(path, node.Position)
+			end
+			if #path >= 2 then
+				table.insert(paths, path)
+			end
+		end
+		return longestPath(paths)
+	end
+
+	local function groundCFrame(state, candidate)
+		local position
+		if state.SharedUtils and type(state.SharedUtils.GetPositionOnGround) == "function" then
+			local ok, result = pcall(state.SharedUtils.GetPositionOnGround, state.SharedUtils, candidate.Position)
+			if ok and typeof(result) == "Vector3" then
+				position = result
+			end
+		end
+		if not position then
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			local excluded = {}
+			for _, name in ipairs({ "Enemies", "Units", "UnitFollowers" }) do
+				local instance = Workspace:FindFirstChild(name)
+				if instance then
+					table.insert(excluded, instance)
+				end
+			end
+			params.FilterDescendantsInstances = excluded
+			local result =
+				Workspace:Raycast(candidate.Position + Vector3.new(0, 100, 0), Vector3.new(0, -500, 0), params)
+			position = result and result.Position or candidate.Position
+		end
+		local look = Vector3.new(candidate.LookVector.X, 0, candidate.LookVector.Z)
+		if look.Magnitude <= 0 then
+			look = Vector3.new(0, 0, -1)
+		end
+		return CFrame.lookAt(position, position + look.Unit)
+	end
+
+	local function isAllowed(state, asset, cframe)
+		if not state.UnitUtils or type(state.UnitUtils.IsPlacementAllowed) ~= "function" then
+			return true
+		end
+		local ok, result = pcall(state.UnitUtils.IsPlacementAllowed, state.UnitUtils, asset, cframe)
+		return ok and result == true
+	end
+
+	local function placementOrdinal(snapshot, choice)
+		local ordinal = choice.Count + 1
+		for _, slot in ipairs(snapshot.Slots) do
+			if slot.Index >= choice.Slot.Index then
+				break
+			end
+			ordinal = ordinal + Planner.PlaceCap(slot, snapshot.MaxPlace[slot.Index])
+		end
+		return ordinal
+	end
+
+	local function findPlacement(state, snapshot, choice)
+		local path = snapshot.Path
+		if not path then
+			return nil, "No active map path was found."
+		end
+		local ordinal = placementOrdinal(snapshot, choice)
+		local start = state.PlaceRetries[choice.Slot.Index] or 0
+		for offset = 0, 15 do
+			local attempt = start + offset
+			local candidate = Planner.Candidate(path, state.PathPosition, state.Spacing, ordinal, attempt)
+			if candidate then
+				candidate = groundCFrame(state, candidate)
+				if isAllowed(state, choice.Slot.Asset, candidate) then
+					state.PlaceRetries[choice.Slot.Index] = attempt
+					return candidate
+				end
+			end
+		end
+		state.PlaceRetries[choice.Slot.Index] = start + 16
+		return nil, "No valid placement point was found yet; another area will be tried."
+	end
+
+	local function destroyMarkers(state)
+		for key, marker in pairs(state.Markers) do
+			if marker.Part then
+				marker.Part:Destroy()
+			end
+			state.Markers[key] = nil
+		end
+		if state.VisualFolder then
+			state.VisualFolder:Destroy()
+			state.VisualFolder = nil
+		end
+	end
+
+	local function marker(state, key)
+		local current = state.Markers[key]
+		if current and current.Part and current.Part.Parent then
+			return current
+		end
+		if not state.VisualFolder then
+			local folder = Instance.new("Folder")
+			folder.Name = "AnimeExpeditionsAutoPlayVisualization_" .. tostring(state.Generation)
+			folder.Parent = Workspace
+			state.VisualFolder = folder
+		end
+		local part = Instance.new("Part")
+		part.Name = "Placement_" .. key
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+		part.CastShadow = false
+		part.Material = Enum.Material.Neon
+		part.Shape = Enum.PartType.Cylinder
+		part.Transparency = 0.48
+		part.Parent = state.VisualFolder
+		local billboard = Instance.new("BillboardGui")
+		billboard.Name = "Label"
+		billboard.AlwaysOnTop = true
+		billboard.LightInfluence = 0
+		billboard.Size = UDim2.fromOffset(180, 34)
+		billboard.StudsOffsetWorldSpace = Vector3.new(0, 2.4, 0)
+		billboard.Parent = part
+		local label = Instance.new("TextLabel")
+		label.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+		label.BackgroundTransparency = 0.2
+		label.BorderSizePixel = 0
+		label.Font = Enum.Font.GothamMedium
+		label.Size = UDim2.fromScale(1, 1)
+		label.TextColor3 = Color3.new(1, 1, 1)
+		label.TextSize = 12
+		label.TextStrokeTransparency = 0.7
+		label.Parent = billboard
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 6)
+		corner.Parent = label
+		current = { Part = part, Label = label }
+		state.Markers[key] = current
+		return current
+	end
+
+	local function updateVisualization(state, snapshot)
+		if not state.Visualize or not snapshot.Path then
+			destroyMarkers(state)
+			return
+		end
+		local wanted = {}
+		local ordinal = 0
+		for _, slot in ipairs(snapshot.Slots) do
+			local cap = Planner.PlaceCap(slot, snapshot.MaxPlace[slot.Index])
+			local placed = #(snapshot.Placed[slot.Index] or {})
+			for index = 1, cap do
+				ordinal = ordinal + 1
+				local key = tostring(slot.Index) .. "_" .. tostring(index)
+				wanted[key] = true
+				local candidate = Planner.Candidate(snapshot.Path, state.PathPosition, state.Spacing, ordinal, 0)
+				if candidate then
+					candidate = groundCFrame(state, candidate)
+					local current = marker(state, key)
+					local color = index <= placed and Color3.fromRGB(75, 235, 130) or colors[slot.Index]
+					current.Part.Color = color
+					current.Part.Size =
+						Vector3.new(0.16, math.max(2.5, state.Spacing * 0.7), math.max(2.5, state.Spacing * 0.7))
+					current.Part.CFrame = candidate * CFrame.Angles(0, 0, math.pi / 2)
+					current.Label.Text = string.format("Slot %d | %s | %d/%d", slot.Index, slot.Name, index, cap)
+				end
+			end
+		end
+		for key, current in pairs(state.Markers) do
+			if not wanted[key] then
+				current.Part:Destroy()
+				state.Markers[key] = nil
+			end
+		end
+	end
+
+	local function snapshot(ctx, state)
+		local gameState = ctx.Game:State("GameState")
+		if
+			type(gameState) ~= "table"
+			or type(gameState.Parameters) ~= "table"
+			or gameState.GameEnded == true
+			or gameState.EndTime ~= nil
+		then
+			return nil
+		end
+		local hotbar = ctx.Game:State("HotbarState")
+		local playerData = ctx.Game:PlayerData()
+		local information = ctx.Game:Information() or {}
+		local slots = Planner.Slots(hotbar, playerData, information, 6)
+		local gameUnits = ctx.Game:State("GameUnits")
+		local placed = Planner.Placed(slots, gameUnits, Players.LocalPlayer)
+		local playerState = ctx.Game:State("GamePlayerState")
+		local mapState = ctx.Game:State("MapState")
+		local path = Planner.SelectPath(mapState)
+		if not path then
+			path = fallbackPath()
+		end
+		return {
+			GameState = gameState,
+			Slots = slots,
+			Placed = placed,
+			Yen = math.max(0, tonumber(type(playerState) == "table" and playerState.Yen) or 0),
+			Path = path,
+			MaxPlace = state.MaxPlace,
+			MaxUpgrade = state.MaxUpgrade,
+		}
+	end
+
+	local function resetRound(state)
+		state.Pending = nil
+		state.PlaceRetries = {}
+		state.UpgradeRetries = {}
+		state.NextActionAt = os.clock() + 0.5
+		state.VisualDirty = true
+	end
+
+	local function reconcileRound(state, current)
+		local total = totalPlaced(current.Placed)
+		local wave = tonumber(current.GameState.Wave)
+		local elapsed = tonumber(current.GameState.GameTime or current.GameState.Time)
+		local reset = Planner.RoundReset(
+			{ Wave = state.LastWave, Time = state.LastTime, Total = state.LastTotal },
+			{ Wave = wave, Time = elapsed, Total = total }
+		)
+		if reset then
+			resetRound(state)
+		end
+		state.LastWave, state.LastTime, state.LastTotal = wave, elapsed, total
+	end
+
+	local function findUnit(current, gameUnitID)
+		for _, entries in pairs(current.Placed) do
+			for _, unit in ipairs(entries) do
+				if tostring(unit.GameUnitID) == tostring(gameUnitID) then
+					return unit
+				end
+			end
+		end
+	end
+
+	local function pendingComplete(state, current)
+		local pending = state.Pending
+		if not pending then
+			return true
+		end
+		if pending.Kind == "Place" then
+			if #(current.Placed[pending.Slot] or {}) > pending.Before then
+				state.PlaceRetries[pending.Slot] = 0
+				state.Pending = nil
+				state.VisualDirty = true
+				return true
+			end
+		else
+			local unit = findUnit(current, pending.GameUnitID)
+			if unit and unit.Upgrade > pending.Before then
+				state.UpgradeRetries[tostring(pending.GameUnitID)] = 0
+				state.Pending = nil
+				return true
+			end
+		end
+		if os.clock() - pending.Started < 1.6 then
+			return false
+		end
+		if pending.Kind == "Place" then
+			state.PlaceRetries[pending.Slot] = (state.PlaceRetries[pending.Slot] or 0) + 1
+		else
+			local key = tostring(pending.GameUnitID)
+			state.UpgradeRetries[key] = (state.UpgradeRetries[key] or 0) + 1
+		end
+		state.Pending = nil
+		state.NextActionAt = os.clock() + 0.65
+		return true
+	end
+
+	local function place(ctx, state, current, choice)
+		local cframe, err = findPlacement(state, current, choice)
+		if not cframe then
+			notify(ctx, state, "placement", err)
+			return
+		end
+		local ok, fireError = ctx.Game:GamePlayerAction("PlaceGameUnit", choice.Slot.Index, cframe)
+		if not ok then
+			notify(ctx, state, "place_fire", fireError)
+			return
+		end
+		state.Pending = { Kind = "Place", Slot = choice.Slot.Index, Before = choice.Count, Started = os.clock() }
+		state.NextActionAt = os.clock() + 0.35
+	end
+
+	local function upgrade(ctx, state, choice)
+		if choice.Unit.GameUnitID == nil then
+			notify(ctx, state, "upgrade_id", "A placed unit did not expose its game unit ID.")
+			return
+		end
+		local ok, err = ctx.Game:GamePlayerAction("UpgradeGameUnit", choice.Unit.GameUnitID)
+		if not ok then
+			notify(ctx, state, "upgrade_fire", err)
+			return
+		end
+		state.Pending = {
+			Kind = "Upgrade",
+			GameUnitID = choice.Unit.GameUnitID,
+			Before = choice.Unit.Upgrade,
+			Started = os.clock(),
+		}
+		state.NextActionAt = os.clock() + 0.3
+	end
+
+	local function act(ctx, state, current)
+		if not state.Enabled or os.clock() < state.NextActionAt or not pendingComplete(state, current) then
+			return
+		end
+		local placement, missing = Planner.NextPlacement(current.Slots, current.Placed, state.MaxPlace)
+		local upgradeChoice = Planner.NextUpgrade(
+			current.Slots,
+			current.Placed,
+			state.MaxUpgrade,
+			state.Priority,
+			state.UsePriority,
+			state.FarmFirst,
+			current.Yen
+		)
+		local placementAffordable = placement and placement.Cost <= current.Yen
+		if state.PlaceFirst and missing then
+			if placementAffordable then
+				place(ctx, state, current, placement)
+			end
+			return
+		end
+		if state.FarmFirst and upgradeChoice and upgradeChoice.Farm then
+			upgrade(ctx, state, upgradeChoice)
+			return
+		end
+		if placementAffordable and upgradeChoice then
+			if placement.Cost <= upgradeChoice.Cost then
+				place(ctx, state, current, placement)
+			else
+				upgrade(ctx, state, upgradeChoice)
+			end
+		elseif placementAffordable then
+			place(ctx, state, current, placement)
+		elseif upgradeChoice then
+			upgrade(ctx, state, upgradeChoice)
+		end
+	end
+
+	local function run(ctx, state)
+		while state.Alive and ctx.Runtime.Alive do
+			local ok, err = xpcall(function()
+				if not state.Enabled and not state.Visualize then
+					state.Pending = nil
+					state.LastWave, state.LastTime, state.LastTotal = nil, nil, nil
+					if state.VisualFolder then
+						destroyMarkers(state)
+					end
+					return
+				end
+				local current = snapshot(ctx, state)
+				if not current then
+					state.Pending = nil
+					state.LastWave, state.LastTime, state.LastTotal = nil, nil, nil
+					destroyMarkers(state)
+					return
+				end
+				reconcileRound(state, current)
+				if state.Visualize and (state.VisualDirty or os.clock() - state.LastVisual >= 1) then
+					state.LastVisual = os.clock()
+					state.VisualDirty = false
+					updateVisualization(state, current)
+				elseif not state.Visualize and state.VisualFolder then
+					destroyMarkers(state)
+				end
+				act(ctx, state, current)
+			end, debug.traceback)
+			if not ok then
+				notify(ctx, state, "worker", err)
+			end
+			task.wait(0.25)
+		end
+	end
+
+	local function slider(registry, section, state, collection, index, name, maximum, default, flag)
+		return registry:Slider(section, {
+			Name = name,
+			Default = default,
+			Minimum = 0,
+			Maximum = maximum,
+			Precision = 0,
+			Step = 1,
+			Callback = function(value)
+				collection[index] = math.floor(value)
+				state.VisualDirty = true
+			end,
+		}, flag)
+	end
+
+	return {
+		Name = "AutoPlay",
+		Version = 1,
+		Priority = 9,
+		Dependencies = {},
+
+		Init = function(self, ctx)
+			local state = {
+				Alive = false,
+				Enabled = false,
+				FarmFirst = false,
+				PlaceFirst = false,
+				Visualize = false,
+				UsePriority = false,
+				Spacing = 6,
+				PathPosition = 50,
+				Priority = { 6, 5, 4, 3, 2, 1 },
+				MaxPlace = { 1, 1, 1, 1, 1, 1 },
+				MaxUpgrade = { 20, 20, 20, 20, 20, 20 },
+				Pending = nil,
+				PlaceRetries = {},
+				UpgradeRetries = {},
+				Markers = {},
+				LastErrors = {},
+				LastVisual = 0,
+				VisualDirty = true,
+				NextActionAt = 0,
+				Generation = ctx.Runtime.Generation,
+				UnitUtils = loadHelper("UnitUtils"),
+				SharedUtils = loadHelper("Utils"),
+			}
+			local automation = ctx.Tabs.AutoPlay:Section({ Side = "Left" })
+			automation:Header({ Text = "Auto Play" })
+			ctx.Registry:Toggle(automation, {
+				Name = "Auto Play",
+				Default = false,
+				Callback = function(value)
+					state.Enabled = value == true
+					if not value then
+						state.Pending = nil
+					end
+				end,
+			}, "auto_play.enabled")
+			ctx.Registry:Toggle(automation, {
+				Name = "Farm Units First",
+				Default = false,
+				Callback = function(value)
+					state.FarmFirst = value == true
+				end,
+			}, "auto_play.farm_first")
+			ctx.Registry:Toggle(automation, {
+				Name = "Place Units First",
+				Default = false,
+				Callback = function(value)
+					state.PlaceFirst = value == true
+				end,
+			}, "auto_play.place_first")
+			ctx.Registry:Toggle(automation, {
+				Name = "Visualize Placement",
+				Default = false,
+				Callback = function(value)
+					state.Visualize = value == true
+					state.VisualDirty = true
+					if not value then
+						destroyMarkers(state)
+					end
+				end,
+			}, "auto_play.visualize")
+			ctx.Registry:Slider(automation, {
+				Name = "Spacing",
+				Default = 6,
+				Minimum = 1,
+				Maximum = 20,
+				Precision = 0,
+				Step = 1,
+				Callback = function(value)
+					state.Spacing = math.floor(value)
+					state.VisualDirty = true
+				end,
+			}, "auto_play.spacing")
+			ctx.Registry:Slider(automation, {
+				Name = "Path Position",
+				Default = 50,
+				Minimum = 1,
+				Maximum = 99,
+				DisplayMethod = "LiteralPercent",
+				Precision = 0,
+				Step = 1,
+				Callback = function(value)
+					state.PathPosition = math.floor(value)
+					state.VisualDirty = true
+				end,
+			}, "auto_play.path_position")
+			automation:Paragraph({ Header = "Path Position", Body = "99 = near base, 1 = near enemy spawn." })
+
+			local priorities = ctx.Tabs.AutoPlay:Section({ Side = "Left" })
+			priorities:Header({ Text = "Upgrade Priority" })
+			ctx.Registry:Toggle(priorities, {
+				Name = "Use Upgrade Priority",
+				Default = false,
+				Callback = function(value)
+					state.UsePriority = value == true
+				end,
+			}, "auto_play.use_priority")
+			for index = 1, 6 do
+				slider(
+					ctx.Registry,
+					priorities,
+					state,
+					state.Priority,
+					index,
+					"Slot " .. index .. " Priority",
+					10,
+					7 - index,
+					"auto_play.priority_" .. index
+				)
+			end
+			priorities:Paragraph({
+				Header = "How it works",
+				Body = "Higher = upgraded first. 0 = never upgrade that slot.",
+			})
+
+			local placements = ctx.Tabs.AutoPlay:Section({ Side = "Right" })
+			placements:Header({ Text = "Placement Limits" })
+			for index = 1, 6 do
+				slider(
+					ctx.Registry,
+					placements,
+					state,
+					state.MaxPlace,
+					index,
+					"Slot " .. index .. " Max Place",
+					20,
+					1,
+					"auto_play.max_place_" .. index
+				)
+			end
+
+			local upgrades = ctx.Tabs.AutoPlay:Section({ Side = "Right" })
+			upgrades:Header({ Text = "Upgrade Limits" })
+			for index = 1, 6 do
+				slider(
+					ctx.Registry,
+					upgrades,
+					state,
+					state.MaxUpgrade,
+					index,
+					"Slot " .. index .. " Max Upgrade",
+					20,
+					20,
+					"auto_play.max_upgrade_" .. index
+				)
+			end
+			ctx:RegisterCleanup(function()
+				state.Alive = false
+				destroyMarkers(state)
+			end)
+			return state
+		end,
+
+		Enable = function(self, ctx, state)
+			state.Alive = true
+			local worker = task.spawn(function()
+				run(ctx, state)
+			end)
+			ctx:RegisterCleanup(worker)
+		end,
+
+		Disable = function(self, ctx, state)
+			state.Alive = false
+			state.Enabled = false
+			state.Pending = nil
+			destroyMarkers(state)
+		end,
+	}
+end
