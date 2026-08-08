@@ -11,20 +11,19 @@ return function(Import)
 		return output
 	end
 
-	local function selectionText(selected)
-		if type(selected) ~= "table" then return tostring(selected or "") end
-		local values = {}
-		for key, value in pairs(selected) do
-			if type(key) == "number" then table.insert(values, tostring(value))
-			elseif value == true then table.insert(values, tostring(key)) end
+	local function selectedList(value)
+		local output = {}
+		for key, selected in pairs(type(value) == "table" and value or {}) do
+			if type(key) == "number" then table.insert(output, tostring(selected))
+			elseif selected == true then table.insert(output, tostring(key)) end
 		end
-		table.sort(values)
-		return table.concat(values, "\0")
+		table.sort(output)
+		return output
 	end
 
 	local function replace(state, key, control, options, selected)
 		if not control then return end
-		local signature = table.concat(options, "\0") .. "\1" .. selectionText(selected)
+		local signature = table.concat(options, "\0")
 		if state[key] == signature then return end
 		state[key] = signature
 		control:ClearOptions()
@@ -41,7 +40,7 @@ return function(Import)
 		for _, value in ipairs(state.Types) do valid[value] = true end
 		for value in pairs(state.SelectedTypes) do if not valid[value] then state.SelectedTypes[value] = nil end end
 		if not next(state.SelectedTypes) and state.Types[1] then state.SelectedTypes[state.Types[1]] = true end
-		replace(state, "TypeSignature", state.TypeControl, state.Types, state.SelectedTypes)
+		replace(state, "TypeSignature", state.TypeControl, state.Types, selectedList(state.SelectedTypes))
 
 		local amount = 0
 		for value in pairs(state.SelectedTypes) do amount = math.max(amount, Catalog.ChallengeAmount(information, value)) end
@@ -52,8 +51,13 @@ return function(Import)
 
 		local challengeData = ctx.Game:State("ChallengeData")
 		state.Drops = Catalog.ChallengeDrops(information, challengeData)
-		if state.Drop and not state.Drops.ByKey[state.Drop] then state.Drop = nil end
-		replace(state, "DropSignature", state.DropControl, state.Drops.Options, state.Drop and state.Drops.ByKey[state.Drop] or "Any drop")
+		for asset in pairs(state.SelectedDrops) do if not state.Drops.ByKey[asset] then state.SelectedDrops[asset] = nil end end
+		local selectedDropLabels = {}
+		for asset in pairs(state.SelectedDrops) do if state.Drops.ByKey[asset] then table.insert(selectedDropLabels, state.Drops.ByKey[asset]) end end
+		table.sort(selectedDropLabels)
+		local dropOptions = {}
+		for _, option in ipairs(state.Drops.Options) do if option ~= "Any drop" then table.insert(dropOptions, option) end end
+		replace(state, "DropSignature", state.DropControl, dropOptions, selectedDropLabels)
 		state.Refreshing = false
 	end
 
@@ -68,7 +72,7 @@ return function(Import)
 				for index = 1, amount do
 					if (state.Index == "All" or challengeType ~= "Regular" or tonumber(state.Index) == index)
 						and Catalog.ChallengeAvailable(information, playerData, challengeType, index)
-						and Catalog.ChallengeHasDrop(information, challengeType, index, state.Drop) then
+						and Catalog.ChallengeHasSelectedDrop(information, challengeType, index, state.SelectedDrops) then
 						local queue = Catalog.ChallengeQueue(challengeData, challengeType, index)
 						if queue and queue.MapName and queue.ActName and queue.Difficulty then return queue end
 					end
@@ -96,7 +100,7 @@ return function(Import)
 				Types = types,
 				SelectedTypes = types[1] and {[types[1]] = true} or {},
 				Index = "All",
-				Drop = nil,
+				SelectedDrops = {},
 				LastLobbyKey = nil,
 			}
 			local amount = types[1] and Catalog.ChallengeAmount(information, types[1]) or 0
@@ -119,15 +123,24 @@ return function(Import)
 			}, "join.challenge.index")
 			section:Header({Text = "Only Join If It Drops"})
 			state.DropControl = ctx.Registry:Dropdown(section, {
-				Name = "Any drop", Search = true, Multi = false, Required = true,
-				Options = state.Drops.Options, Default = 1,
+				Name = "Drops", Search = true, Multi = true, Required = false,
+				Options = (function() local output = {} for _, option in ipairs(state.Drops.Options) do if option ~= "Any drop" then table.insert(output, option) end end return output end)(), Default = {},
 				ResolveValue = function(value) return state.Drops.ByKey[tostring(value)] or value end,
-				Callback = function(value) state.Drop = state.Drops.ByLabel[value] or string.match(tostring(value), "%[([^%]]+)%]$") end,
+				Callback = function(value)
+					state.SelectedDrops = {}
+					for label, selected in pairs(type(value) == "table" and value or {}) do
+						if selected == true then
+							local asset = state.Drops.ByLabel[label] or string.match(tostring(label), "%[([^%]]+)%]$")
+							if asset then state.SelectedDrops[asset] = true end
+						end
+					end
+				end,
 			}, "join.challenge.drop")
 			ctx.Registry:Toggle(section, {Name = "Back to Lobby on Refresh", Default = false, Callback = function(value) state.BackToLobby = value == true end}, "join.challenge.back_to_lobby")
 			ctx.Registry:Toggle(section, {Name = "Auto Join", Default = false, Callback = function(value) state.Enabled = value == true if not value then state.LastLobbyKey = nil end end}, "join.challenge.enabled")
 			ctx.Registry:Toggle(section, {Name = "Use Matchmaking", Default = false, Callback = function(value) state.Matchmaking = value == true end}, "join.challenge.matchmaking")
-			ctx.Registry:Slider(section, {Name = "Auto Join Delay (s)", Default = 1, Minimum = 0, Maximum = 30, Precision = 1, Callback = function(value) state.Delay = value end}, "join.challenge.delay")
+			ctx.Registry:Slider(section, {Name = "Auto Join Delay (s)", Default = 1, Minimum = 1, Maximum = 10, Precision = 0, Step = 1, Callback = function(value) state.Delay = value end}, "join.challenge.delay")
+			Challenge:_Refresh(ctx, state)
 			ctx:RegisterCleanup(ctx.Join:Register("Challenge", 400, function()
 				if not state.Enabled then return nil end
 				local queue = candidate(ctx, state)

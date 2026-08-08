@@ -4,7 +4,7 @@ return function(Import)
 
 	local function replace(state, key, control, options, selected)
 		if not control then return end
-		local signature = table.concat(options, "\0") .. "\1" .. tostring(selected or "")
+		local signature = table.concat(options, "\0")
 		if state[key] == signature then return end
 		state[key] = signature
 		control:ClearOptions()
@@ -91,7 +91,7 @@ return function(Import)
 			}, "join.story.difficulty")
 			ctx.Registry:Toggle(section, {Name = "Auto Join", Default = false, Callback = function(value) state.Enabled = value == true end}, "join.story.enabled")
 			ctx.Registry:Toggle(section, {Name = "Use Matchmaking", Default = false, Callback = function(value) state.Matchmaking = value == true end}, "join.story.matchmaking")
-			ctx.Registry:Slider(section, {Name = "Auto Join Delay (s)", Default = 1, Minimum = 0, Maximum = 30, Precision = 1, Callback = function(value) state.Delay = value end}, "join.story.delay")
+			ctx.Registry:Slider(section, {Name = "Auto Join Delay (s)", Default = 1, Minimum = 1, Maximum = 10, Precision = 0, Step = 1, Callback = function(value) state.Delay = value end}, "join.story.delay")
 
 			ctx:RegisterCleanup(ctx.Join:Register("Story", 100, function()
 				if not state.Enabled or not state.Map or not state.Stage or not state.Difficulty then return nil end

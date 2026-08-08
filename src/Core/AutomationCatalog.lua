@@ -2,7 +2,7 @@ return function()
 	local Catalog = {}
 
 	local function text(value, fallback)
-		if value == nil or tostring(value) == "" then return fallback end
+		if value == nil or value == false or tostring(value) == "" then return fallback end
 		return tostring(value)
 	end
 
@@ -15,6 +15,29 @@ return function()
 			end
 		end
 		return nil
+	end
+
+	function Catalog.AssetInfo(information, asset)
+		return assetInformation(information, asset)
+	end
+
+	function Catalog.AssetName(information, asset)
+		local info = assetInformation(information, asset)
+		return text(type(info) == "table" and (info.DisplayName or info.Name), text(asset, "Unknown"))
+	end
+
+	function Catalog.AssetRarity(information, asset, data)
+		local info = assetInformation(information, asset)
+		return text(type(data) == "table" and data.Rarity, text(type(info) == "table" and info.Rarity, "Unknown"))
+	end
+
+	function Catalog.AssetType(information, asset)
+		local info = assetInformation(information, asset)
+		if type(information) == "table" and type(information.GetAssetType) == "function" then
+			local ok, value = pcall(information.GetAssetType, information, asset)
+			if ok and value ~= nil then return tostring(value) end
+		end
+		return type(info) == "table" and tostring(info.Type or "") or ""
 	end
 
 	function Catalog.UnitName(information, unit)
@@ -158,6 +181,18 @@ return function()
 		for index = #values, 1, -1 do
 			if values[index] ~= "Secret" then table.insert(output, values[index]) end
 		end
+		return output
+	end
+
+	function Catalog.AllRarities(information)
+		local source = type(information) == "table" and information.OrderedRarities or nil
+		local values = {}
+		for key, value in pairs(type(source) == "table" and source or {}) do
+			if type(key) == "number" then table.insert(values, tostring(value)) end
+		end
+		if #values == 0 then values = {"Rare", "Epic", "Legendary", "Mythic", "Exclusive", "Secret"} end
+		local output = {"None"}
+		for index = #values, 1, -1 do table.insert(output, values[index]) end
 		return output
 	end
 

@@ -5,7 +5,7 @@ return function(Import)
 
 	local function replace(state, key, control, options, selected)
 		if not control then return end
-		local signature = table.concat(options, "\0") .. "\1" .. tostring(selected or "")
+		local signature = table.concat(options, "\0")
 		if state[key] == signature then return end
 		state[key] = signature
 		control:ClearOptions()
@@ -83,7 +83,7 @@ return function(Import)
 			section:Label({Text = "Farms the selected act until the relic target is reached, runs Crow until relics reach 0, then returns to the selected act. No lobby return is needed."})
 			ctx.Registry:Toggle(section, {Name = "Auto Join", Default = false, Callback = function(value) state.Enabled = value == true end}, "join.event.enabled")
 			ctx.Registry:Toggle(section, {Name = "Use Matchmaking", Default = false, Callback = function(value) state.Matchmaking = value == true end}, "join.event.matchmaking")
-			ctx.Registry:Slider(section, {Name = "Auto Join Delay (s)", Default = 1, Minimum = 0, Maximum = 30, Precision = 1, Callback = function(value) state.Delay = value end}, "join.event.delay")
+			ctx.Registry:Slider(section, {Name = "Auto Join Delay (s)", Default = 1, Minimum = 1, Maximum = 10, Precision = 0, Step = 1, Callback = function(value) state.Delay = value end}, "join.event.delay")
 			ctx:RegisterCleanup(ctx.Join:Register("Event", 300, function()
 				if not state.Enabled or not state.Map or not state.Act then return nil end
 				local queue = eventQueue(ctx, state)

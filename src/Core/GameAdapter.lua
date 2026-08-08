@@ -75,6 +75,17 @@ return function(Import)
 		return true, table.unpack(results, 2, results.n)
 	end
 
+	function GameAdapter:Connect(nodeName, callback)
+		if not self.Ready then return nil, self.Error end
+		local node = self.Nodes[nodeName]
+		if type(node) ~= "table" or type(node.Connect) ~= "function" then
+			return nil, "network node '" .. tostring(nodeName) .. "' is unavailable or cannot be observed"
+		end
+		local ok, connection = xpcall(function() return node:Connect(callback) end, Util.Traceback)
+		if not ok then return nil, tostring(connection) end
+		return connection
+	end
+
 	function GameAdapter:Fire(nodeName, ...)
 		if not self.Ready then return false, self.Error end
 		local node = self.Nodes[nodeName]
@@ -157,6 +168,22 @@ return function(Import)
 		local fired, err = xpcall(function() replica:FireServer("Lobby") end, Util.Traceback)
 		if not fired then return false, tostring(err) end
 		return true
+	end
+
+	function GameAdapter:GameAction(action, ...)
+		local ok, replica = self:InvokeSelf("GET_GAME_REPLICA")
+		if not ok then return false, replica end
+		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then return false, "game replica is unavailable" end
+		local arguments = table.pack(...)
+		local fired, err = xpcall(function()
+			replica:FireServer(tostring(action), table.unpack(arguments, 1, arguments.n))
+		end, Util.Traceback)
+		if not fired then return false, tostring(err) end
+		return true
+	end
+
+	function GameAdapter:ChangeSetting(name, value)
+		return self:Fire("CLIENT_CHANGE_SETTING", tostring(name), value)
 	end
 
 	return GameAdapter

@@ -1,4 +1,4 @@
-task = task or {wait = function() end}
+task = task or {wait = function() end, defer = function(callback) callback() end}
 
 local cache = {}
 local factories = {
@@ -23,7 +23,7 @@ function section:Toggle(settings)
 	return {UpdateState = function(_, value) settings.Callback(value) end}
 end
 function section:Slider(settings)
-	return {UpdateValue = function(_, value) settings.Callback(value) end}
+	return {UpdateValue = function(_, value) end}
 end
 function section:Input(settings)
 	return {UpdateText = function(_, value) settings.onChanged(value) end}
@@ -33,7 +33,7 @@ function section:Dropdown(settings)
 end
 
 local toggle = scope:Toggle(section, {Default = true, Callback = function() callbacks = callbacks + 1 end}, "test.toggle")
-scope:Slider(section, {Default = 50, Minimum = 0, Maximum = 100, Callback = function() callbacks = callbacks + 1 end}, "test.slider")
+local slider = scope:Slider(section, {Default = 50, Minimum = 0, Maximum = 100, Step = 1, Callback = function() callbacks = callbacks + 1 end}, "test.slider")
 scope:Input(section, {Default = "abc", onChanged = function() callbacks = callbacks + 1 end}, "test.input")
 scope:Dropdown(section, {
 	Options = {"Current [unit-1]"},

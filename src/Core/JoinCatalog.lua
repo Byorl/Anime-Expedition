@@ -184,6 +184,14 @@ return function(Import)
 		return table.find(assets, wanted) ~= nil
 	end
 
+	function JoinCatalog.ChallengeHasSelectedDrop(information, challengeType, index, wanted)
+		if type(wanted) ~= "table" or next(wanted) == nil then return true end
+		for asset, selected in pairs(wanted) do
+			if selected == true and JoinCatalog.ChallengeHasDrop(information, challengeType, index, asset) then return true end
+		end
+		return false
+	end
+
 	function JoinCatalog.ChallengeQueue(challengeData, challengeType, index)
 		local entries = type(challengeData) == "table" and challengeData[challengeType] or nil
 		local data = type(entries) == "table" and (entries[index] or entries[tostring(index)]) or nil

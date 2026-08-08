@@ -57,7 +57,8 @@ function section:Label(settings) return {Settings = settings} end
 local function control(settings)
 	return {
 		Settings = settings,
-		ClearOptions = function() end,
+		ClearCount = 0,
+		ClearOptions = function(self) self.ClearCount = self.ClearCount + 1 end,
 		InsertOptions = function() end,
 		UpdateSelection = function() end,
 		UpdateState = function() end,
@@ -94,13 +95,22 @@ for flag, current in pairs(controls) do
 	end
 end
 assert(controls["join.challenge.types"].Settings.Multi == true, "challenge types are not multi-select")
+assert(controls["join.challenge.drop"].Settings.Multi == true, "challenge drops are not multi-select")
 assert(controls["join.event.crow_relics"].Settings.Maximum == 200, "Crow relic limit is not 200")
+for _, flag in ipairs({"join.story.delay", "join.challenge.delay", "join.event.delay", "join.raid.delay"}) do
+	assert(controls[flag].Settings.Minimum == 1, flag .. " minimum is not one second")
+	assert(controls[flag].Settings.Maximum == 10, flag .. " maximum is not ten seconds")
+	assert(controls[flag].Settings.Precision == 0 and controls[flag].Settings.Step == 1, flag .. " is not integer stepped")
+end
+local typeRefreshes = controls["join.challenge.types"].ClearCount
+callbacks["join.challenge.types"]({Daily = true})
+assert(controls["join.challenge.types"].ClearCount == typeRefreshes, "challenge selection rebuilt its dropdown")
 callbacks["join.story.enabled"](true)
 callbacks["join.challenge.enabled"](true)
 callbacks["join.event.enabled"](true)
 callbacks["join.raid.enabled"](true)
 assert(providers.Story().Queue.Gamemode == "Story", "story provider produced invalid queue data")
-assert(providers.Challenge().Queue.Gamemode == "Challenge", "challenge provider produced invalid queue data")
+assert(providers.Challenge().Queue.Gamemode == "Challenge" and providers.Challenge().Queue.ChallengeType == "Daily", "challenge multi-selection produced invalid queue data")
 assert(providers.Event().Queue.Gamemode == "VillainInvasion", "event provider produced invalid queue data")
 assert(providers.Raid().Queue.Gamemode == "Raid", "raid provider produced invalid queue data")
 

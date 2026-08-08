@@ -4,7 +4,7 @@ return function(Import)
 
 	local function replace(state, key, control, options, selected)
 		if not control then return end
-		local signature = table.concat(options, "\0") .. "\1" .. tostring(selected or "")
+		local signature = table.concat(options, "\0")
 		if state[key] == signature then return end
 		state[key] = signature
 		control:ClearOptions()
@@ -57,7 +57,7 @@ return function(Import)
 			state.DifficultyControl = ctx.Registry:Dropdown(section, {Name = state.Difficulty or "No difficulties", Search = true, Multi = false, Required = true, Options = #state.Difficulties > 0 and state.Difficulties or {"Unavailable"}, Default = 1, Callback = function(value) state.Difficulty = tostring(value) end}, "join.raid.difficulty")
 			ctx.Registry:Toggle(section, {Name = "Auto Join", Default = false, Callback = function(value) state.Enabled = value == true end}, "join.raid.enabled")
 			ctx.Registry:Toggle(section, {Name = "Use Matchmaking", Default = false, Callback = function(value) state.Matchmaking = value == true end}, "join.raid.matchmaking")
-			ctx.Registry:Slider(section, {Name = "Auto Join Delay (s)", Default = 1, Minimum = 0, Maximum = 30, Precision = 1, Callback = function(value) state.Delay = value end}, "join.raid.delay")
+			ctx.Registry:Slider(section, {Name = "Auto Join Delay (s)", Default = 1, Minimum = 1, Maximum = 10, Precision = 0, Step = 1, Callback = function(value) state.Delay = value end}, "join.raid.delay")
 			ctx:RegisterCleanup(ctx.Join:Register("Raid", 200, function()
 				if not state.Enabled or not state.Map or not state.Act or not state.Difficulty then return nil end
 				local queue = {Gamemode = "Raid", MapName = state.Map, ActName = state.Act, Difficulty = state.Difficulty}

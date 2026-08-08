@@ -85,21 +85,33 @@ return function(Import)
 		local original = settings.Callback
 		local complete = settings.onInputComplete
 		local copied = Util.Clone(settings)
+		local control
+		local function normalized(value)
+			local number = tonumber(value) or copied.Default or 0
+			local step = tonumber(copied.Step)
+			if step and step > 0 then
+				local minimum = tonumber(copied.Minimum) or 0
+				number = minimum + math.floor(((number - minimum) / step) + 0.5) * step
+			end
+			return math.clamp(number, copied.Minimum or -math.huge, copied.Maximum or math.huge)
+		end
 		copied.Callback = function(value)
 			if not self:_CanDispatch(owner) then return end
-			local number = tonumber(value) or copied.Default or 0
+			local number = normalized(value)
+			if control and tonumber(value) ~= number then task.defer(function() control:UpdateValue(number) end) end
 			self:_Changed(flag, number, owner)
 			Util.SafeCall(flag .. " callback", original, number)
 		end
 		copied.onInputComplete = function(value)
 			if not self:_CanDispatch(owner) then return end
-			Util.SafeCall(flag .. " input complete", complete, tonumber(value) or value)
+			Util.SafeCall(flag .. " input complete", complete, normalized(value))
 		end
-		local control = section:Slider(copied, flag)
+		control = section:Slider(copied, flag)
 		return self:_Register(flag, "Slider", control, tonumber(copied.Default) or 0, function(value)
-			local number = tonumber(value) or tonumber(copied.Default) or 0
-			number = math.clamp(number, copied.Minimum or -math.huge, copied.Maximum or math.huge)
+			local number = normalized(value)
 			control:UpdateValue(number)
+			self.Values[flag] = number
+			Util.SafeCall(flag .. " applied", original, number)
 		end, owner)
 	end
 

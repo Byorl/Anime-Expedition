@@ -11,10 +11,15 @@ return function(Import)
 	local MacLibProvider = Import("MacLibProvider")
 	local GameAdapter = Import("GameAdapter")
 	local JoinCoordinator = Import("JoinCoordinator")
+	local ResultsHub = Import("ResultsHub")
+	local WebhookReporter = Import("WebhookReporter")
 	local JoinStoryModule = Import("JoinStory")
 	local JoinChallengeModule = Import("JoinChallenge")
 	local JoinEventModule = Import("JoinEvent")
 	local JoinRaidModule = Import("JoinRaid")
+	local GameMatchModule = Import("GameMatch")
+	local GameEndModule = Import("GameEnd")
+	local WebhookModule = Import("Webhook")
 	local MiscModule = Import("Misc")
 	local AutoClaimModule = Import("AutoClaim")
 	local AutoSummonModule = Import("AutoSummon")
@@ -71,6 +76,7 @@ return function(Import)
 			if not accountOk then Util.Warn("disable auto execute failed: " .. tostring(accountError)) end
 		end
 		if self.Modules then self.Modules:DestroyAll() end
+		if self.Results then self.Results:Destroy() end
 		if self.Join then self.Join:Destroy() end
 		if self.Session then self.Session:Destroy() end
 		if self.UIManager then self.UIManager:Destroy() end
@@ -166,6 +172,8 @@ return function(Import)
 	local TabGroup = Window:TabGroup()
 	local Tabs = {
 		Join = TabGroup:Tab({Name = "Join", Image = "rbxassetid://10734950309"}),
+		Game = TabGroup:Tab({Name = "Game", Image = "rbxassetid://10734950309"}),
+		Webhook = TabGroup:Tab({Name = "Webhook", Image = "rbxassetid://10734950020"}),
 		Misc = TabGroup:Tab({Name = "Misc", Image = "rbxassetid://10734950309"}),
 		Settings = TabGroup:Tab({Name = "Settings", Image = "rbxassetid://10734950020"}),
 	}
@@ -173,6 +181,9 @@ return function(Import)
 	local Adapter = GameAdapter.new()
 	local Join = JoinCoordinator.new(Runtime, Adapter)
 	Runtime.Join = Join
+	local Results = ResultsHub.new(Adapter)
+	Runtime.Results = Results
+	local Reporter = WebhookReporter.new(LocalPlayer, Adapter)
 	local Context = {
 		Runtime = Runtime,
 		Window = Window,
@@ -186,6 +197,8 @@ return function(Import)
 		UIManager = ResponsiveUI,
 		Game = Adapter,
 		Join = Join,
+		Results = Results,
+		Webhook = Reporter,
 	}
 	local Session = SessionManager.new(Runtime, Config)
 	Context.Session = Session
@@ -197,6 +210,9 @@ return function(Import)
 	Modules:Register(JoinChallengeModule)
 	Modules:Register(JoinEventModule)
 	Modules:Register(JoinRaidModule)
+	Modules:Register(GameMatchModule)
+	Modules:Register(GameEndModule)
+	Modules:Register(WebhookModule)
 	Modules:Register(MiscModule)
 	Modules:Register(AutoClaimModule)
 	Modules:Register(AutoSummonModule)
