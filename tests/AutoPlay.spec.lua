@@ -283,8 +283,17 @@ assert(
 assert(
 	string.find(source, 'CollectionService:GetTagged(tag)', 1, true)
 		and string.find(source, 'environment:FindFirstChild("Path")', 1, true)
-		and string.find(source, "not isOverPath(position)", 1, true),
+		and string.find(source, "not isOverPath(surface)", 1, true),
 	"placement search does not use tagged surfaces while excluding the enemy road"
+)
+assert(
+	string.find(source, "state.BlockedSlots[decision.Slot.Index]", 1, true),
+	"one obstructed slot can still stall the complete Smart planner"
+)
+assert(
+	string.find(source, "slot.BoundingHeight", 1, true)
+		and string.find(source, "size.Y", 1, true),
+	"placement CFrames do not include the unit bounding-box center height"
 )
 assert(
 	string.find(source, 'Workspace:FindFirstChild("Map")', 1, true)

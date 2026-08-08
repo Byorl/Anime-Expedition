@@ -133,10 +133,20 @@ return function(Import)
 		if not geometry then
 			return false
 		end
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Include
-		params.FilterDescendantsInstances = { geometry }
-		return Workspace:Raycast(position + Vector3.new(0, 80, 0), Vector3.new(0, -160, 0), params) ~= nil
+		local parts = geometry:IsA("BasePart") and { geometry } or geometry:GetDescendants()
+		for _, part in ipairs(parts) do
+			if part:IsA("BasePart") then
+				local localPoint = part.CFrame:PointToObjectSpace(position)
+				if
+					math.abs(localPoint.X) <= part.Size.X / 2 + 0.5
+					and math.abs(localPoint.Z) <= part.Size.Z / 2 + 0.5
+					and math.abs(localPoint.Y - part.Size.Y / 2) <= 4
+				then
+					return true
+				end
+			end
+		end
+		return false
 	end
 
 	local function groundCFrame(slot, candidate)
@@ -155,7 +165,7 @@ return function(Import)
 		if isPathSurface(result.Instance) then
 			return nil
 		end
-		local position = result.Position
+		local position = result.Position + Vector3.new(0, (slot.BoundingHeight or 4) / 2, 0)
 		local look = Vector3.new(candidate.LookVector.X, 0, candidate.LookVector.Z)
 		if look.Magnitude <= 0 then
 			look = Vector3.new(0, 0, -1)
@@ -175,17 +185,22 @@ return function(Import)
 		for _, slot in ipairs(slots) do
 			local key = tostring(slot.Asset)
 			local cached = state.BoundingSizes[key]
-			if cached == nil then
+			local cachedHeight = state.BoundingHeights[key]
+			if cached == nil or cachedHeight == nil then
 				cached = 6
+				cachedHeight = 4
 				if state.UnitUtils and type(state.UnitUtils.GetUnitBoundingBoxSize) == "function" then
 					local ok, size = pcall(state.UnitUtils.GetUnitBoundingBoxSize, state.UnitUtils, slot.Asset)
 					if ok and typeof(size) == "Vector3" then
 						cached = math.max(2, size.X, size.Z)
+						cachedHeight = math.max(1, size.Y)
 					end
 				end
 				state.BoundingSizes[key] = cached
+				state.BoundingHeights[key] = cachedHeight
 			end
 			slot.BoundingSize = cached
+			slot.BoundingHeight = cachedHeight
 		end
 	end
 
@@ -226,43 +241,47 @@ return function(Import)
 		local tag = placementType == "Ground" and "GroundPlacement" or "HillPlacement"
 		local map = Workspace:FindFirstChild("Map")
 		local footprint = math.max(2, tonumber(slot.BoundingSize) or 6)
-		local candidates = {}
+		local parts = {}
 		for _, tagged in ipairs(CollectionService:GetTagged(tag)) do
-			local parts = tagged:IsA("BasePart") and { tagged } or tagged:GetDescendants()
-			for _, part in ipairs(parts) do
+			local descendants = tagged:IsA("BasePart") and { tagged } or tagged:GetDescendants()
+			for _, part in ipairs(descendants) do
 				if
 					part:IsA("BasePart")
 					and map
 					and part:IsDescendantOf(map)
 					and not isPathSurface(part)
 				then
-					local localPoint = part.CFrame:PointToObjectSpace(pathPoint)
-					local halfX, halfZ = part.Size.X / 2, part.Size.Z / 2
-					local marginX = math.min(math.max(0, halfX - 0.1), footprint / 2 + 0.75)
-					local marginZ = math.min(math.max(0, halfZ - 0.1), footprint / 2 + 0.75)
-					local minimumX, maximumX = -halfX + marginX, halfX - marginX
-					local minimumZ, maximumZ = -halfZ + marginZ, halfZ - marginZ
-					local x = minimumX <= maximumX and math.clamp(localPoint.X, minimumX, maximumX) or 0
-					local z = minimumZ <= maximumZ and math.clamp(localPoint.Z, minimumZ, maximumZ) or 0
-					local position = part.CFrame:PointToWorldSpace(Vector3.new(x, part.Size.Y / 2, z))
-					local distance = Vector3.new(position.X - pathPoint.X, 0, position.Z - pathPoint.Z).Magnitude
-					if distance <= 28 and not isOverPath(position) then
-						table.insert(candidates, { Position = position, Distance = distance })
-					end
+					table.insert(parts, part)
 				end
 			end
 		end
-		table.sort(candidates, function(a, b)
-			return a.Distance < b.Distance
-		end)
 		local look = Vector3.new(tangent.X, 0, tangent.Z)
 		if look.Magnitude <= 0 then
 			look = Vector3.new(0, 0, -1)
 		end
-		for _, candidate in ipairs(candidates) do
-			local cframe = CFrame.lookAt(candidate.Position, candidate.Position + look.Unit)
-			if isAllowed(state, slot.Asset, cframe) then
-				return cframe
+		look = look.Unit
+		local side = Vector3.new(-look.Z, 0, look.X)
+		local offsets = placementType == "Ground"
+			and { -7, 7, -9, 9, -12, 12, -15, 15, -18, 18, -22, 22, -26, 26 }
+			or { -10, 10, -15, 15, -20, 20, -25, 25, -30, 30, -36, 36, -42, 42 }
+		for _, offset in ipairs(offsets) do
+			local target = pathPoint + side * offset
+			for _, part in ipairs(parts) do
+				local localPoint = part.CFrame:PointToObjectSpace(target)
+				local inset = footprint / 2 + 0.25
+				if
+					math.abs(localPoint.X) <= math.max(0, part.Size.X / 2 - inset)
+					and math.abs(localPoint.Z) <= math.max(0, part.Size.Z / 2 - inset)
+				then
+					local surface = part.CFrame:PointToWorldSpace(Vector3.new(localPoint.X, part.Size.Y / 2, localPoint.Z))
+					if not isOverPath(surface) then
+						local position = surface + Vector3.new(0, (slot.BoundingHeight or 4) / 2, 0)
+						local cframe = CFrame.lookAt(position, position + look)
+						if isAllowed(state, slot.Asset, cframe) then
+							return cframe
+						end
+					end
+				end
 			end
 		end
 		return nil
@@ -275,9 +294,16 @@ return function(Import)
 		end
 		local ordinal = placementOrdinal(snapshot, choice)
 		local start = state.PlaceRetries[choice.Slot.Index] or 0
-		local shifts = { 0, -5, 5, -10, 10, -15, 15 }
+		local shifts = { 0, -10, 10, -20, 20, -30, 30 }
 		local distances = 16
-		local checkedTagged = {}
+		for _, shift in ipairs(shifts) do
+			local percent = math.clamp((choice.Percent or state.PathPosition) + shift, 8, 92)
+			local pathPoint, tangent = Planner.SamplePath(path, percent)
+			local candidate = pathPoint and tangent and taggedPlacementCFrame(state, choice.Slot, pathPoint, tangent)
+			if candidate then
+				return candidate
+			end
+		end
 		for offset = 0, 47 do
 			local attempt = start + offset
 			local percent = math.clamp(
@@ -288,16 +314,7 @@ return function(Import)
 			)
 			local candidate = pathSideCandidate(path, percent, ordinal, attempt)
 			if candidate then
-				local pathPoint, tangent = Planner.SamplePath(path, percent)
-				local taggedCandidate
-				if pathPoint and tangent and not checkedTagged[percent] then
-					checkedTagged[percent] = true
-					taggedCandidate = taggedPlacementCFrame(state, choice.Slot, pathPoint, tangent)
-				end
-				if taggedCandidate then
-					state.PlaceRetries[choice.Slot.Index] = attempt
-					return taggedCandidate
-				end
+				local pathPoint = Planner.SamplePath(path, percent)
 				candidate = groundCFrame(choice.Slot, candidate)
 				local closeToPath = candidate
 					and pathPoint
@@ -475,6 +492,7 @@ return function(Import)
 	local function resetRound(state)
 		state.Pending = nil
 		state.PlaceRetries = {}
+		state.BlockedSlots = {}
 		state.UpgradeRetries = {}
 		state.NextActionAt = os.clock() + 0.5
 		state.VisualDirty = true
@@ -566,6 +584,7 @@ return function(Import)
 			Before = choice.Count,
 			Started = os.clock(),
 		}
+		state.BlockedSlots[choice.Slot.Index] = nil
 		state.NextActionAt = os.clock() + 0.35
 	end
 
@@ -713,11 +732,20 @@ return function(Import)
 		if not state.SmartEnabled or os.clock() < state.NextActionAt or not pendingComplete(state, current) then
 			return
 		end
+		local blockedSlots = {}
+		for index, expiresAt in pairs(state.BlockedSlots) do
+			if expiresAt > os.clock() then
+				blockedSlots[index] = true
+			else
+				state.BlockedSlots[index] = nil
+			end
+		end
 		local decision = SmartPlanner.Decide(current, {
 			Strategy = state.Strategy,
 			AdaptivePlacement = state.AdaptivePlacement,
 			SmartEconomy = state.SmartEconomy,
 			ReactToEnemies = state.ReactToEnemies,
+			BlockedSlots = blockedSlots,
 		})
 		state.LastSmartDecision = decision
 		updateSmartLabels(state, decision)
@@ -731,6 +759,7 @@ return function(Import)
 			if resolved then
 				place(ctx, state, current, decision, resolved)
 			else
+				state.BlockedSlots[decision.Slot.Index] = os.clock() + 1.25
 				notify(ctx, state, "placement", placementError)
 			end
 		elseif decision.Kind == "Upgrade" then
@@ -798,7 +827,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 10,
+		Version = 11,
 		Priority = 9,
 		Dependencies = {},
 
@@ -824,9 +853,11 @@ return function(Import)
 				MaxUpgrade = { 20, 20, 20, 20, 20, 20 },
 				Pending = nil,
 				PlaceRetries = {},
+				BlockedSlots = {},
 				UpgradeRetries = {},
 				Markers = {},
 				BoundingSizes = {},
+				BoundingHeights = {},
 				LastErrors = {},
 				LastVisual = 0,
 				VisualDirty = true,

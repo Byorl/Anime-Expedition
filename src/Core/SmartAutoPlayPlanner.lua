@@ -433,7 +433,7 @@ return function(Import)
 			local current = Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
 			local cap = smartCap(slot, role, strategy)
 			local spacing = automaticSpacing(slot, context)
-			if current < cap and base.Cost < math.huge then
+			if current < cap and base.Cost < math.huge and not (options.BlockedSlots and options.BlockedSlots[slot.Index]) then
 				local location
 				if options.AdaptivePlacement == false then
 					local path = snapshot.Paths[1]

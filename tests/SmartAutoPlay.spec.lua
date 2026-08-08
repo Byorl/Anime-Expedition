@@ -115,6 +115,17 @@ local win = Smart.Decide(snapshot, {
 	ReactToEnemies = true,
 })
 assert(win.Kind == "Place" and win.Slot.Index == 1, "Win strategy did not seed the first farm")
+local skipBlockedFarm = Smart.Decide(snapshot, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+	BlockedSlots = { [1] = true },
+})
+assert(
+	skipBlockedFarm.Kind == "Place" and skipBlockedFarm.Slot.Index == 2,
+	"a temporarily obstructed slot stalled every other placement"
+)
 assert(win.Path == path and win.Percent >= 1 and win.Percent <= 99, "adaptive placement did not return a map position")
 assert(win.Context.ReservePercent == 0, "automatic reserve did not release yen during an emergency")
 
