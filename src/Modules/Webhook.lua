@@ -8,7 +8,9 @@ return function(Import)
 		for label, selected in pairs(type(value) == "table" and value or {}) do
 			if selected == true then
 				local asset = drops.ByLabel[label] or string.match(tostring(label), "%[([^%]]+)%]$")
-				if asset then output[asset] = true end
+				if asset then
+					output[asset] = true
+				end
 			end
 		end
 		return output
@@ -17,13 +19,23 @@ return function(Import)
 	local function refreshDrops(ctx, state)
 		local drops = JoinCatalog.ChallengeDrops(ctx.Game:Information() or {}, ctx.Game:State("ChallengeData"))
 		local options = {}
-		for _, option in ipairs(drops.Options) do if option ~= "Any drop" then table.insert(options, option) end end
+		for _, option in ipairs(drops.Options) do
+			if option ~= "Any drop" then
+				table.insert(options, option)
+			end
+		end
 		local labels = {}
-		for asset in pairs(state.PingDrops) do if drops.ByKey[asset] then table.insert(labels, drops.ByKey[asset]) end end
+		for asset in pairs(state.PingDrops) do
+			if drops.ByKey[asset] then
+				table.insert(labels, drops.ByKey[asset])
+			end
+		end
 		table.sort(labels)
 		local signature = table.concat(options, "\0")
 		state.Drops = drops
-		if signature == state.DropSignature or not state.DropControl then return end
+		if signature == state.DropSignature or not state.DropControl then
+			return
+		end
 		state.DropSignature = signature
 		state.RefreshingDrops = true
 		state.DropControl:ClearOptions()
@@ -54,7 +66,11 @@ return function(Import)
 		Init = function(self, ctx)
 			local drops = JoinCatalog.ChallengeDrops(ctx.Game:Information() or {}, ctx.Game:State("ChallengeData"))
 			local options = {}
-			for _, option in ipairs(drops.Options) do if option ~= "Any drop" then table.insert(options, option) end end
+			for _, option in ipairs(drops.Options) do
+				if option ~= "Any drop" then
+					table.insert(options, option)
+				end
+			end
 			local state = {
 				Alive = true,
 				SendMatch = false,
@@ -67,45 +83,117 @@ return function(Import)
 				Drops = drops,
 				SeenBounties = {},
 			}
-			local left = ctx.Tabs.WebhookDelivery:Section({Side = "Left"})
-			left:Header({Text = "Discord Webhook"})
-			ctx.Registry:Toggle(left, {Name = "Send On Match End", Default = false, Callback = function(value) state.SendMatch = value == true end}, "webhook.send_match")
-			ctx.Registry:Toggle(left, {Name = "Send Bounty Webhook", Default = false, Callback = function(value) state.SendBounty = value == true end}, "webhook.send_bounty")
-			left:Header({Text = "Webhook URL"})
-			ctx.Registry:Input(left, {Name = "Webhook", Placeholder = "https://discord.com/api/webhooks/...", Default = "", onChanged = function(value) state.Url = tostring(value) end}, "webhook.url")
-			left:Button({Name = "Send Test", Callback = function()
-				local ok, err = ctx.Webhook:Post(state.Url, ctx.Webhook:TestPayload())
-				if ok then ctx.Runtime:Notify("Webhook", "Test webhook sent.") else ctx.Runtime:Notify("Webhook", tostring(err)) end
-			end})
+			local left = ctx.Tabs.Webhook:Section({ Side = "Left" })
+			left:Header({ Text = "Discord Webhook" })
+			ctx.Registry:Toggle(left, {
+				Name = "Send On Match End",
+				Default = false,
+				Callback = function(value)
+					state.SendMatch = value == true
+				end,
+			}, "webhook.send_match")
+			ctx.Registry:Toggle(left, {
+				Name = "Send Bounty Webhook",
+				Default = false,
+				Callback = function(value)
+					state.SendBounty = value == true
+				end,
+			}, "webhook.send_bounty")
+			left:Header({ Text = "Webhook URL" })
+			ctx.Registry:Input(left, {
+				Name = "Webhook",
+				Placeholder = "https://discord.com/api/webhooks/...",
+				Default = "",
+				onChanged = function(value)
+					state.Url = tostring(value)
+				end,
+			}, "webhook.url")
+			left:Button({
+				Name = "Send Test",
+				Callback = function()
+					local ok, err = ctx.Webhook:Post(state.Url, ctx.Webhook:TestPayload())
+					if ok then
+						ctx.Runtime:Notify("Webhook", "Test webhook sent.")
+					else
+						ctx.Runtime:Notify("Webhook", tostring(err))
+					end
+				end,
+			})
 
-			local right = ctx.Tabs.WebhookPings:Section({Side = "Left"})
-			ctx.Registry:Toggle(right, {Name = "Mention Everyone", Default = false, Callback = function(value) state.MentionEveryone = value == true end}, "webhook.mention_everyone")
-			right:Header({Text = "Discord User ID"})
-			ctx.Registry:Input(right, {Name = "Discord User ID", Placeholder = "938129321 or <@938129321>", Default = "", onChanged = function(value) state.DiscordUserId = tostring(value) end}, "webhook.discord_user_id")
+			local right = ctx.Tabs.Webhook:Section({ Side = "Right" })
+			right:Header({ Text = "Pings" })
+			ctx.Registry:Toggle(right, {
+				Name = "Mention Everyone",
+				Default = false,
+				Callback = function(value)
+					state.MentionEveryone = value == true
+				end,
+			}, "webhook.mention_everyone")
+			right:Header({ Text = "Discord User ID" })
+			ctx.Registry:Input(right, {
+				Name = "Discord User ID",
+				Placeholder = "938129321 or <@938129321>",
+				Default = "",
+				onChanged = function(value)
+					state.DiscordUserId = tostring(value)
+				end,
+			}, "webhook.discord_user_id")
 			state.DropControl = ctx.Registry:Dropdown(right, {
-				Name = "Ping on Drop", Search = true, Multi = true, Required = false, Options = options, Default = {},
-				ResolveValue = function(value) return state.Drops.ByKey[tostring(value)] or value end,
-				Callback = function(value) if not state.RefreshingDrops then state.PingDrops = selectedAssets(value, state.Drops) end end,
+				Name = "Ping on Drop",
+				Search = true,
+				Multi = true,
+				Required = false,
+				Options = options,
+				Default = {},
+				ResolveValue = function(value)
+					return state.Drops.ByKey[tostring(value)] or value
+				end,
+				Callback = function(value)
+					if not state.RefreshingDrops then
+						state.PingDrops = selectedAssets(value, state.Drops)
+					end
+				end,
 			}, "webhook.ping_drops")
-			right:Header({Text = "Ping on Equipment Rarity"})
+			right:Header({ Text = "Ping on Equipment Rarity" })
 			local rarities = Catalog.AllRarities(ctx.Game:Information() or {})
-			ctx.Registry:Dropdown(right, {Name = "Rarity", Search = true, Multi = false, Required = true, Options = rarities, Default = 1, Callback = function(value) state.EquipmentRarity = tostring(value or "None") end}, "webhook.equipment_rarity")
+			ctx.Registry:Dropdown(right, {
+				Name = "Rarity",
+				Search = true,
+				Multi = false,
+				Required = true,
+				Options = rarities,
+				Default = 1,
+				Callback = function(value)
+					state.EquipmentRarity = tostring(value or "None")
+				end,
+			}, "webhook.equipment_rarity")
 
 			ctx:RegisterCleanup(ctx.Results:Subscribe("Webhook", function(result, runs)
-				if not state.SendMatch or state.Url == "" then return end
+				if not state.SendMatch or state.Url == "" then
+					return
+				end
 				local worker = task.delay(0.5, function()
-					if not state.Alive or not ctx.Runtime.Alive then return end
+					if not state.Alive or not ctx.Runtime.Alive then
+						return
+					end
 					local ok, err = ctx.Webhook:Post(state.Url, ctx.Webhook:MatchPayload(state, result, runs))
-					if not ok then ctx.Runtime:Notify("Webhook", tostring(err)) end
+					if not ok then
+						ctx.Runtime:Notify("Webhook", tostring(err))
+					end
 				end)
 				ctx:RegisterCleanup(worker)
 			end))
 
-			for key, entry in pairs(bountyEntries(ctx)) do state.SeenBounties[tostring(key)] = type(entry) == "table" and entry.Completed == true end
+			for key, entry in pairs(bountyEntries(ctx)) do
+				state.SeenBounties[tostring(key)] = type(entry) == "table" and entry.Completed == true
+			end
 			local worker = task.spawn(function()
 				local lastRefresh = 0
 				while state.Alive and ctx.Runtime.Alive do
-					if os.clock() - lastRefresh >= 10 then lastRefresh = os.clock() refreshDrops(ctx, state) end
+					if os.clock() - lastRefresh >= 10 then
+						lastRefresh = os.clock()
+						refreshDrops(ctx, state)
+					end
 					local entries = bountyEntries(ctx)
 					for key, entry in pairs(entries) do
 						key = tostring(key)
@@ -114,7 +202,9 @@ return function(Import)
 							local info = bountyInfo(ctx, key) or entry
 							local name = type(info) == "table" and (info.DisplayName or info.Name) or key
 							local ok, err = ctx.Webhook:Post(state.Url, ctx.Webhook:BountyPayload(name, info))
-							if not ok then ctx.Runtime:Notify("Bounty Webhook", tostring(err)) end
+							if not ok then
+								ctx.Runtime:Notify("Bounty Webhook", tostring(err))
+							end
 						end
 						state.SeenBounties[key] = completed
 					end
@@ -122,10 +212,14 @@ return function(Import)
 				end
 			end)
 			ctx:RegisterCleanup(worker)
-			ctx:RegisterCleanup(function() state.Alive = false end)
+			ctx:RegisterCleanup(function()
+				state.Alive = false
+			end)
 			return state
 		end,
 
-		Disable = function(self, ctx, state) state.Alive = false end,
+		Disable = function(self, ctx, state)
+			state.Alive = false
+		end,
 	}
 end

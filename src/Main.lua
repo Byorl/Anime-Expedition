@@ -34,7 +34,9 @@ return function(Import)
 
 	local previousRuntime = rawget(Environment, "__ANIME_EXPEDITIONS_RUNTIME")
 	if type(previousRuntime) == "table" and type(previousRuntime.Shutdown) == "function" then
-		pcall(function() previousRuntime:Shutdown("re-executed") end)
+		pcall(function()
+			previousRuntime:Shutdown("re-executed")
+		end)
 		task.wait()
 	end
 	local generation = (tonumber(rawget(Environment, "__ANIME_EXPEDITIONS_GENERATION")) or 0) + 1
@@ -65,24 +67,42 @@ return function(Import)
 	end
 
 	function Runtime:Shutdown(reason, windowAlreadyUnloaded)
-		if self.ShuttingDown then return end
+		if self.ShuttingDown then
+			return
+		end
 		self.ShuttingDown = true
-		if self.Registry then self.Registry.OnChanged = nil end
+		if self.Registry then
+			self.Registry.OnChanged = nil
+		end
 		self.Alive = false
 		if reason == "manual unload" and self.Config and self.Config.Account then
 			self.Config.Account.Session.AutoExecute = false
 			self.Config.AccountDirty = true
 			local accountOk, accountError = self.Config:SaveAccount(true)
-			if not accountOk then Util.Warn("disable auto execute failed: " .. tostring(accountError)) end
+			if not accountOk then
+				Util.Warn("disable auto execute failed: " .. tostring(accountError))
+			end
 		end
-		if self.Modules then self.Modules:DestroyAll() end
-		if self.Results then self.Results:Destroy() end
-		if self.Join then self.Join:Destroy() end
-		if self.Session then self.Session:Destroy() end
-		if self.UIManager then self.UIManager:Destroy() end
+		if self.Modules then
+			self.Modules:DestroyAll()
+		end
+		if self.Results then
+			self.Results:Destroy()
+		end
+		if self.Join then
+			self.Join:Destroy()
+		end
+		if self.Session then
+			self.Session:Destroy()
+		end
+		if self.UIManager then
+			self.UIManager:Destroy()
+		end
 		if self.Config then
 			local flushOk, flushError = self.Config:Flush(true)
-			if not flushOk then Util.Warn("final config flush failed: " .. tostring(flushError)) end
+			if not flushOk then
+				Util.Warn("final config flush failed: " .. tostring(flushError))
+			end
 			self.Config:Destroy()
 		end
 		self.Janitor:Cleanup()
@@ -102,14 +122,18 @@ return function(Import)
 	local function guiParent()
 		if type(gethui) == "function" then
 			local ok, value = pcall(gethui)
-			if ok then return value end
+			if ok then
+				return value
+			end
 		end
 		return CoreGui
 	end
 
 	local function captureChildren(parent)
 		local output = {}
-		for _, child in ipairs(parent:GetChildren()) do output[child] = true end
+		for _, child in ipairs(parent:GetChildren()) do
+			output[child] = true
+		end
 		return output
 	end
 
@@ -149,7 +173,9 @@ return function(Import)
 		Default = Config.Account.UI.UIBlur == true,
 		Callback = function(enabled)
 			Window:SetAcrylicBlurState(enabled == true)
-			Config:UpdateAccount(function(account) account.UI.UIBlur = enabled == true end, false)
+			Config:UpdateAccount(function(account)
+				account.UI.UIBlur = enabled == true
+			end, false)
 		end,
 	})
 	Window:GlobalSetting({
@@ -157,7 +183,9 @@ return function(Import)
 		Default = Config.Account.UI.HidePrivateInfo ~= false,
 		Callback = function(hidden)
 			Window:SetUserInfoState(hidden ~= true)
-			Config:UpdateAccount(function(account) account.UI.HidePrivateInfo = hidden == true end, false)
+			Config:UpdateAccount(function(account)
+				account.UI.HidePrivateInfo = hidden == true
+			end, false)
 		end,
 	})
 
@@ -171,35 +199,17 @@ return function(Import)
 
 	local TabGroup = Window:TabGroup()
 	local Tabs = {
-		Join = TabGroup:Tab({Name = "Join", Image = "rbxassetid://10734950309"}),
-		Game = TabGroup:Tab({Name = "Game", Image = "rbxassetid://10734950309"}),
-		Webhook = TabGroup:Tab({Name = "Webhook", Image = "rbxassetid://10734950020"}),
-		Misc = TabGroup:Tab({Name = "Misc", Image = "rbxassetid://10734950309"}),
-		Settings = TabGroup:Tab({Name = "Settings", Image = "rbxassetid://10734950020"}),
+		Join = TabGroup:Tab({ Name = "Join", Image = "rbxassetid://10734950309" }),
+		Game = TabGroup:Tab({ Name = "Game", Image = "rbxassetid://10734950309" }),
+		Webhook = TabGroup:Tab({ Name = "Webhook", Image = "rbxassetid://10734950020" }),
+		Misc = TabGroup:Tab({ Name = "Misc", Image = "rbxassetid://10734950309" }),
+		Settings = TabGroup:Tab({ Name = "Settings", Image = "rbxassetid://10734950020" }),
 	}
 
-	local JoinPages = Tabs.Join:SubTabGroup()
-	Tabs.JoinStory = JoinPages:SubTab({Name = "Story", Columns = 1})
-	Tabs.JoinChallenge = JoinPages:SubTab({Name = "Challenge", Columns = 1})
-	Tabs.JoinEvent = JoinPages:SubTab({Name = "Event", Columns = 1})
-	Tabs.JoinRaid = JoinPages:SubTab({Name = "Raid", Columns = 1})
-
-	local GamePages = Tabs.Game:SubTabGroup()
-	Tabs.GameMatch = GamePages:SubTab({Name = "Match", Columns = 1})
-	Tabs.GameEnd = GamePages:SubTab({Name = "End of Match", Columns = 1})
-
-	local WebhookPages = Tabs.Webhook:SubTabGroup()
-	Tabs.WebhookDelivery = WebhookPages:SubTab({Name = "Delivery", Columns = 1})
-	Tabs.WebhookPings = WebhookPages:SubTab({Name = "Pings", Columns = 1})
-
 	local MiscPages = Tabs.Misc:SubTabGroup()
-	Tabs.MiscClaims = MiscPages:SubTab({Name = "Claims", Columns = 2})
-	Tabs.MiscUnits = MiscPages:SubTab({Name = "Units", Columns = 2})
-	Tabs.MiscPerformance = MiscPages:SubTab({Name = "Performance", Columns = 1})
-
-	local SettingsPages = Tabs.Settings:SubTabGroup()
-	Tabs.SettingsConfigs = SettingsPages:SubTab({Name = "Configs", Columns = 1})
-	Tabs.SettingsAppearance = SettingsPages:SubTab({Name = "Appearance", Columns = 1})
+	Tabs.MiscClaims = MiscPages:SubTab({ Name = "Claims", Columns = 2 })
+	Tabs.MiscUnits = MiscPages:SubTab({ Name = "Units", Columns = 2 })
+	Tabs.MiscPerformance = MiscPages:SubTab({ Name = "Performance", Columns = 2 })
 
 	local Adapter = GameAdapter.new()
 	local Join = JoinCoordinator.new(Runtime, Adapter)
@@ -243,7 +253,9 @@ return function(Import)
 	Modules:Register(AutoTraitRerollModule)
 	Modules:Register(SettingsModule)
 
-	Registry.OnChanged = function() Config:ScheduleAutoSave() end
+	Registry.OnChanged = function()
+		Config:ScheduleAutoSave()
+	end
 	local modulesOk, modulesError = Modules:LoadAll()
 	if not modulesOk then
 		Runtime:Shutdown("module load failure")
@@ -260,14 +272,14 @@ return function(Import)
 		Registry:Apply({})
 	end
 
-	if Config.Account.UI.HiddenOnExecute == true then Window:SetState(false) end
-	Window.onUnloaded(function() Runtime:Shutdown("window unloaded", true) end)
+	if Config.Account.UI.HiddenOnExecute == true then
+		Window:SetState(false)
+	end
+	Window.onUnloaded(function()
+		Runtime:Shutdown("window unloaded", true)
+	end)
 	Tabs.Join:Select()
-	Runtime:Notify("Loaded", string.format(
-		"Account %s | Config %s",
-		LocalPlayer.Name,
-		Config.Account.SelectedConfig
-	))
+	Runtime:Notify("Loaded", string.format("Account %s | Config %s", LocalPlayer.Name, Config.Account.SelectedConfig))
 
 	return Runtime
 end
