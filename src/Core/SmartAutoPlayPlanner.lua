@@ -45,6 +45,58 @@ return function(Import)
 		return string.find(lower(value), lower(text), 1, true) ~= nil
 	end
 
+	local function readable(value)
+		if type(value) ~= "table" then
+			return value
+		end
+		for _, key in ipairs({ "DisplayName", "Name", "Value", "ID", "Id", "Asset" }) do
+			if type(value[key]) ~= "table" and value[key] ~= nil then
+				return value[key]
+			end
+		end
+		return nil
+	end
+
+	local function findValue(root, names, depth, seen)
+		if type(root) ~= "table" or depth < 0 then
+			return nil
+		end
+		seen = seen or {}
+		if seen[root] then
+			return nil
+		end
+		seen[root] = true
+		for _, name in ipairs(names) do
+			local wanted = lower(name)
+			for key, value in pairs(root) do
+				if lower(key) == wanted then
+					local result = readable(value)
+					if result ~= nil and tostring(result) ~= "" then
+						return result
+					end
+				end
+			end
+		end
+		if depth == 0 then
+			return nil
+		end
+		for _, key in ipairs({ "Parameters", "QueueData", "StageData", "MapData", "MatchData", "Data" }) do
+			local result = findValue(root[key], names, depth - 1, seen)
+			if result ~= nil then
+				return result
+			end
+		end
+		for _, value in pairs(root) do
+			if type(value) == "table" then
+				local result = findValue(value, names, depth - 1, seen)
+				if result ~= nil then
+					return result
+				end
+			end
+		end
+		return nil
+	end
+
 	local function difficultyFactor(value)
 		local key = lower(value)
 		if string.find(key, "nightmare", 1, true) then
@@ -104,13 +156,15 @@ return function(Import)
 
 	function Smart.Context(gameState, enemies, path)
 		gameState = type(gameState) == "table" and gameState or {}
-		local parameters = type(gameState.Parameters) == "table" and gameState.Parameters or {}
-		local difficulty = parameters.Difficulty or gameState.Difficulty or "Unknown"
-		local mode = parameters.Gamemode or parameters.GameMode or parameters.Mode or "Unknown"
-		local map = parameters.MapName or parameters.Map or parameters.MapID or gameState.MapName or "Unknown"
-		local act = parameters.ActName or parameters.Act or parameters.Stage or gameState.ActName or "Unknown"
-		local wave = math.max(0, math.floor(number(gameState.Wave, 0)))
-		local maxWave = math.max(wave, math.floor(number(gameState.MaxWave or gameState.TotalWaves, wave + 15)))
+		local difficulty = findValue(gameState, { "Difficulty", "DifficultyName" }, 4) or "Unknown"
+		local mode = findValue(gameState, { "Gamemode", "GameMode", "Mode" }, 4) or "Unknown"
+		local map = findValue(gameState, { "MapName", "MapID", "MapId", "Map" }, 4) or "Unknown"
+		local act = findValue(gameState, { "ActName", "StageName", "Act", "Stage" }, 4) or "Unknown"
+		local wave = math.max(0, math.floor(number(findValue(gameState, { "Wave", "CurrentWave" }, 3), 0)))
+		local maxWave = math.max(
+			wave,
+			math.floor(number(findValue(gameState, { "MaxWave", "TotalWaves", "WaveCount" }, 3), wave + 15))
+		)
 		local remainingWaves = math.max(0, maxWave - wave)
 		local baseHealth = math.max(0, number(gameState.BaseHealth, 1))
 		local baseMax = math.max(baseHealth, number(gameState.BaseMaxHealth or gameState.MaxBaseHealth, baseHealth))
@@ -512,11 +566,13 @@ return function(Import)
 		table.sort(choices, compare)
 		local reservePercent = automaticReserve(context, strategy)
 		context.ReservePercent = reservePercent
+		context.Yen = math.max(0, number(snapshot.Yen, 0))
 		local reserve = snapshot.Yen * reservePercent / 100
 		if context.Emergency then
 			reserve = 0
 		end
 		local spendable = math.max(0, snapshot.Yen - reserve)
+		context.Spendable = spendable
 		for _, choice in ipairs(choices) do
 			if choice.Cost <= spendable and choice.Score > 0 then
 				context.Spacing = choice.Spacing
@@ -532,11 +588,13 @@ return function(Import)
 			end
 		end
 		context.Spacing = cheapest and cheapest.Spacing or nil
+		context.NextCost = cheapest and cheapest.Cost or 0
 		return {
 			Kind = "Wait",
 			Cost = cheapest and cheapest.Cost or 0,
 			Score = 0,
 			Context = copy(context),
+			Preview = cheapest and cheapest.Kind == "Place" and cheapest or nil,
 			Strategy = strategy,
 			Reason = cheapest and string.format("save yen for %s", cheapest.Reason)
 				or "loadout is fully deployed and upgraded",

@@ -276,7 +276,7 @@ return function(Import)
 	end
 
 	local function snapshot(ctx, state)
-		local gameState = ctx.Game:State("GameState")
+		local gameState, gameSource = ctx.Game:GameData()
 		if type(gameState) ~= "table" or ctx.Game:IsMatchEnded(gameState) then
 			state.MatchDetected = false
 			return nil
@@ -294,7 +294,7 @@ return function(Import)
 		enrichSlotFootprints(state, slots)
 		local gameUnits = ctx.Game:State("GameUnits")
 		local placed = Planner.Placed(slots, gameUnits, Players.LocalPlayer)
-		local playerState = ctx.Game:State("GamePlayerState")
+		local playerState, playerSource = ctx.Game:GamePlayerData()
 		local mapState = ctx.Game:State("MapState")
 		local paths = Planner.ActivePaths(mapState)
 		local path = paths[1]
@@ -319,6 +319,8 @@ return function(Import)
 			),
 			MaxPlace = state.MaxPlace,
 			MaxUpgrade = state.MaxUpgrade,
+			GameStateSource = gameSource,
+			PlayerStateSource = playerSource,
 		}
 	end
 
@@ -485,7 +487,9 @@ return function(Import)
 			state.SmartThreatLabel:UpdateName(threat)
 		end
 		local automation = string.format(
-			"Automatic: Yen Reserve %d%% | Placement Spacing %s",
+			"Automatic: Yen %d | Next %d | Reserve %d%% | Spacing %s",
+			math.floor(tonumber(context.Yen) or 0),
+			math.floor(tonumber(context.NextCost or decision.Cost) or 0),
 			math.floor(tonumber(context.ReservePercent) or 0),
 			context.Spacing and tostring(context.Spacing) or "Planning"
 		)
@@ -518,16 +522,17 @@ return function(Import)
 	end
 
 	local function updateSmartVisualization(state, decision)
-		if not state.SmartVisualize or not decision or decision.Kind ~= "Place" or not decision.Path then
+		local visual = decision and (decision.Kind == "Place" and decision or decision.Preview) or nil
+		if not state.SmartVisualize or not visual or visual.Kind ~= "Place" or not visual.Path then
 			destroyMarkers(state)
 			return
 		end
 		local candidate = Planner.Candidate(
-			decision.Path,
-			decision.Percent,
-			decision.Spacing,
-			decision.Ordinal or 1,
-			state.PlaceRetries[decision.Slot.Index] or 0
+			visual.Path,
+			visual.Percent,
+			visual.Spacing,
+			visual.Ordinal or 1,
+			state.PlaceRetries[visual.Slot.Index] or 0
 		)
 		if not candidate then
 			destroyMarkers(state)
@@ -535,10 +540,14 @@ return function(Import)
 		end
 		candidate = groundCFrame(state, candidate)
 		local current = marker(state, "smart_next")
-		current.Part.Color = Color3.fromRGB(75, 235, 130)
-		current.Part.Size = Vector3.new(0.16, math.max(3, decision.Spacing), math.max(3, decision.Spacing))
+		current.Part.Color = decision.Kind == "Place" and Color3.fromRGB(75, 235, 130) or Color3.fromRGB(255, 190, 70)
+		current.Part.Size = Vector3.new(0.16, math.max(3, visual.Spacing), math.max(3, visual.Spacing))
 		current.Part.CFrame = candidate * CFrame.Angles(0, 0, math.pi / 2)
-		current.Label.Text = string.format("Next | Slot %d | %s", decision.Slot.Index, decision.Slot.Name)
+		current.Label.Text = string.format(
+			decision.Kind == "Place" and "Next | Slot %d | %s" or "Planned | Slot %d | %s",
+			visual.Slot.Index,
+			visual.Slot.Name
+		)
 		for key, value in pairs(state.Markers) do
 			if key ~= "smart_next" then
 				value.Part:Destroy()

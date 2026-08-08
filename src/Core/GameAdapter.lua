@@ -82,6 +82,30 @@ return function(Import)
 		return nil, err or "PlayerData has not replicated yet"
 	end
 
+	function GameAdapter:GameData()
+		local ok, replica = self:InvokeSelf("GET_GAME_REPLICA")
+		if ok and type(replica) == "table" and type(replica.Data) == "table" then
+			return replica.Data, "replica"
+		end
+		local data, err = self:State("GameState")
+		if type(data) == "table" then
+			return data, "state"
+		end
+		return nil, err or replica or "GameState has not replicated yet"
+	end
+
+	function GameAdapter:GamePlayerData()
+		local ok, replica = self:InvokeSelf("GET_GAME_PLAYER_REPLICA")
+		if ok and type(replica) == "table" and type(replica.Data) == "table" then
+			return replica.Data, "replica"
+		end
+		local data, err = self:State("GamePlayerState")
+		if type(data) == "table" then
+			return data, "state"
+		end
+		return nil, err or replica or "GamePlayerState has not replicated yet"
+	end
+
 	function GameAdapter:Information()
 		if not self.Ready then
 			return nil, self.Error
@@ -321,6 +345,9 @@ return function(Import)
 	end
 
 	function GameAdapter:IsMatchActive(gameState)
+		if type(gameState) ~= "table" then
+			gameState = self:GameData()
+		end
 		if GameAdapter.MatchEnded(gameState) then
 			return false
 		end

@@ -53,4 +53,14 @@ local secondOk, secondResponded = adapter:RespondToVote("skip")
 assert(firstOk and firstResponded and secondOk and not secondResponded, "vote response state is incorrect")
 assert(calls == 1, "the same vote prompt was answered more than once")
 
+local direct = setmetatable({}, Adapter)
+function direct:InvokeSelf(name)
+	if name == "GET_GAME_REPLICA" then
+		return true, { Data = { Wave = 6, Parameters = { Gamemode = "Story" } } }
+	end
+	return true, { Data = { Yen = 3800 } }
+end
+assert(direct:GameData().Wave == 6, "authoritative game replica data was not used")
+assert(direct:GamePlayerData().Yen == 3800, "authoritative game player replica data was not used")
+
 print("Match detection tests passed")

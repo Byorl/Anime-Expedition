@@ -39,6 +39,21 @@ local hard = Smart.Context({
 assert(hard.Pressure > easy.Pressure, "difficulty and act do not increase smart risk")
 assert(hard.Emergency and hard.Boss, "live boss pressure was not recognized")
 assert(string.find(hard.Scenario, "Act 5", 1, true), "scenario identity is incomplete")
+local nested = Smart.Context({
+	Data = {
+		QueueData = {
+			GameMode = "Raid",
+			Map = { Name = "Spirit City" },
+			Stage = { DisplayName = "Act 3" },
+			DifficultyName = "Hard",
+		},
+	},
+	CurrentWave = 6,
+	TotalWaves = 15,
+}, {}, path)
+assert(nested.Mode == "Raid" and nested.Map == "Spirit City", "nested scenario data was not normalized")
+assert(nested.Act == "Act 3" and nested.Difficulty == "Hard", "nested act and difficulty were not normalized")
+assert(nested.Wave == 6 and nested.MaxWave == 15, "alternate wave fields were not normalized")
 
 local information = {
 	Units = {
@@ -126,6 +141,16 @@ local reserved = Smart.Decide(snapshot, {
 assert(reserved.Kind == "Wait", "automatic yen reserve was not applied in a safe wave")
 assert(reserved.Context.ReservePercent > 0, "automatic yen reserve was not exposed")
 assert(tonumber(reserved.Context.Spacing), "automatic placement spacing was not exposed")
+assert(reserved.Preview and reserved.Preview.Kind == "Place", "waiting did not retain a placement preview")
+assert(reserved.Context.Yen == 100 and reserved.Context.NextCost > 0, "planner affordability diagnostics are missing")
+snapshot.Yen = 1220
+local affordable = Smart.Decide(snapshot, {
+	Strategy = "Balanced",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(affordable.Kind == "Place", "an affordable placement remained stuck waiting")
 snapshot.Yen = 1000
 snapshot.PlacementCap = 0
 local capped = Smart.Decide(snapshot, {
