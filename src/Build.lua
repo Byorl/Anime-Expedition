@@ -6,7 +6,7 @@ return function()
 		Repository = "https://github.com/Byorl/Anime-Expedition",
 		RawBase = "https://jexvral.xyz/game/ap/",
 		LoaderUrl = "https://jexvral.xyz/game/ap/loader",
-		MacLibUrl = "https://raw.githubusercontent.com/Byorl/Maclib/main/src/maclib.lua",
+		MacLibUrl = "https://raw.githubusercontent.com/Byorl/Maclib/a923f62aaad79a9dae59093187360f940a2ac02f/src/maclib.lua",
 		DataRoot = "AnimeExpeditionsHubData",
 	}
 end
