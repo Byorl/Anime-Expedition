@@ -1,8 +1,8 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.9.4", "interface release version is wrong")
+assert(Build.Version == "1.9.5", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
-		== "https://raw.githubusercontent.com/Byorl/Maclib/65f3353d47660ed5f372bddd2ccbde02ba1d733d/src/maclib.lua",
+		== "https://raw.githubusercontent.com/Byorl/Maclib/0ae3ef7a81a8c71b95147212efa1103673b273ce/src/maclib.lua",
 	"interface is not pinned to the tested Byorl Maclib revision"
 )
 
