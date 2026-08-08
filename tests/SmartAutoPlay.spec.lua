@@ -240,5 +240,11 @@ assert(
 	string.find(source, "pendingComplete(state, current)", 1, true),
 	"Smart actions are not serialized by confirmation"
 )
+local plannerSource = fs.read("src/Core/SmartAutoPlayPlanner.lua", "bin")
+assert(string.find(plannerSource, "tacticalTarget", 1, true), "combat placements are not distributed tactically")
+assert(
+	string.find(plannerSource, "combatPlaced < requiredCombat", 1, true),
+	"Smart mode does not establish a defensive baseline before value planning"
+)
 
 print("Smart Auto Play tests passed")

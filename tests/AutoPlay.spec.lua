@@ -276,6 +276,15 @@ assert(
 assert(string.find(source, 'GamePlayerAction("PlaceGameUnit"', 1, true), "placement request is missing")
 assert(string.find(source, 'GamePlayerAction("UpgradeGameUnit"', 1, true), "upgrade request is missing")
 assert(
+	string.find(source, "updateSmartVisualization(state, decision, resolved)", 1, true)
+		and string.find(source, "place(ctx, state, current, decision, resolved)", 1, true),
+	"Smart preview and placement do not share the exact validated CFrame"
+)
+assert(
+	string.find(source, "{ -10, 10, -14, 14, -18, 18, -21, 21 }", 1, true),
+	"placement search does not maintain road clearance"
+)
+assert(
 	string.find(source, 'Workspace:FindFirstChild("Map")', 1, true)
 		and string.find(source, "Enum.RaycastFilterType.Include", 1, true),
 	"placement projection is not restricted to active map geometry"

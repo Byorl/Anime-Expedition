@@ -189,7 +189,7 @@ return function(Import)
 		end
 		forward = forward.Unit
 		local side = Vector3.new(-forward.Z, 0, forward.X)
-		local distances = { -6, 6, -9, 9, -12, 12, -15, 15, -18, 18, -21, 21 }
+		local distances = { -10, 10, -14, 14, -18, 18, -21, 21 }
 		local lateral = distances[attempt % #distances + 1]
 		local forwardOffset = ((math.max(1, ordinal) - 1) % 3 - 1) * 2
 		local position = point + side * lateral + forward * forwardOffset
@@ -204,7 +204,7 @@ return function(Import)
 		local ordinal = placementOrdinal(snapshot, choice)
 		local start = state.PlaceRetries[choice.Slot.Index] or 0
 		local shifts = { 0, -5, 5, -10, 10, -15, 15 }
-		local distances = 12
+		local distances = 8
 		for offset = 0, 47 do
 			local attempt = start + offset
 			local percent = math.clamp(
@@ -463,8 +463,11 @@ return function(Import)
 		return true
 	end
 
-	local function place(ctx, state, current, choice)
-		local cframe, err = findPlacement(state, current, choice)
+	local function place(ctx, state, current, choice, resolvedCFrame)
+		local cframe, err = resolvedCFrame, nil
+		if not cframe then
+			cframe, err = findPlacement(state, current, choice)
+		end
 		if not cframe then
 			notify(ctx, state, "placement", err)
 			return
@@ -474,7 +477,13 @@ return function(Import)
 			notify(ctx, state, "place_fire", fireError)
 			return
 		end
-		state.Pending = { Kind = "Place", Slot = choice.Slot.Index, Before = choice.Count, Started = os.clock() }
+		state.Pending = {
+			Kind = "Place",
+			Slot = choice.Slot.Index,
+			Asset = choice.Slot.Asset,
+			Before = choice.Count,
+			Started = os.clock(),
+		}
 		state.NextActionAt = os.clock() + 0.35
 	end
 
@@ -595,24 +604,9 @@ return function(Import)
 		end
 	end
 
-	local function updateSmartVisualization(state, decision)
+	local function updateSmartVisualization(state, decision, candidate)
 		local visual = decision and (decision.Kind == "Place" and decision or decision.Preview) or nil
-		if not state.SmartVisualize or not visual or visual.Kind ~= "Place" or not visual.Path then
-			destroyMarkers(state)
-			return
-		end
-		local candidate = pathSideCandidate(
-			visual.Path,
-			visual.Percent,
-			visual.Ordinal or 1,
-			state.PlaceRetries[visual.Slot.Index] or 0
-		)
-		if not candidate then
-			destroyMarkers(state)
-			return
-		end
-		candidate = groundCFrame(visual.Slot, candidate)
-		if not candidate then
+		if not state.SmartVisualize or not visual or visual.Kind ~= "Place" or not candidate then
 			destroyMarkers(state)
 			return
 		end
@@ -645,9 +639,18 @@ return function(Import)
 		})
 		state.LastSmartDecision = decision
 		updateSmartLabels(state, decision)
-		updateSmartVisualization(state, decision)
+		local visual = decision.Kind == "Place" and decision or decision.Preview
+		local resolved, placementError
+		if visual and visual.Kind == "Place" then
+			resolved, placementError = findPlacement(state, current, visual)
+		end
+		updateSmartVisualization(state, decision, resolved)
 		if decision.Kind == "Place" then
-			place(ctx, state, current, decision)
+			if resolved then
+				place(ctx, state, current, decision, resolved)
+			else
+				notify(ctx, state, "placement", placementError)
+			end
 		elseif decision.Kind == "Upgrade" then
 			upgrade(ctx, state, decision)
 		else
@@ -713,7 +716,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 8,
+		Version = 9,
 		Priority = 9,
 		Dependencies = {},
 

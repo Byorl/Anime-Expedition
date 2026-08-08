@@ -323,13 +323,23 @@ return function(Import)
 		if role == "Farm" then
 			return { 50, 35, 65 }
 		end
-		if context.Emergency or strategy == "Win" and context.Pressure >= 0.5 then
-			return { 82, 72, 90, 62, 52, 42, 32, 22 }
-		end
 		if strategy == "Boss" or context.Boss then
-			return { 78, 68, 88, 58, 48, 38, 28, 18 }
+			return { 70, 80, 60, 50, 40, 30, 20, 90 }
 		end
-		return { 48, 38, 58, 28, 68, 18, 78, 88 }
+		return { 20, 30, 40, 50, 60, 70, 80, 90 }
+	end
+
+	local function tacticalTarget(role, ordinal, context)
+		if role == "Farm" then
+			return 50
+		end
+		local targets = { 70, 45, 80, 30, 60, 20 }
+		local combatOrdinal = math.max(1, ordinal - 1)
+		local target = targets[(combatOrdinal - 1) % #targets + 1]
+		if context.Emergency then
+			target = math.min(85, target + 5)
+		end
+		return target
 	end
 
 	local function smartCap(slot, role, strategy)
@@ -376,6 +386,7 @@ return function(Import)
 	local function bestPlacement(slot, paths, ordinal, context, strategy, spacing)
 		local base = slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0))
 		local role = Smart.Role(slot, base)
+		local target = tacticalTarget(role, ordinal, context)
 		local best
 		for _, path in ipairs(paths) do
 			for _, percent in ipairs(placementPercentages(role, context, strategy)) do
@@ -388,11 +399,10 @@ return function(Import)
 							intersection = intersection + coverage(other, cframe, base.Range)
 						end
 					end
-					local score = covered + intersection * 0.7
+					local tactical = 1 - math.min(1, math.abs(percent - target) / 60)
+					local score = covered + intersection * 0.7 + tactical * 0.45
 					if role == "Farm" then
 						score = 1
-					elseif context.Emergency then
-						score = score + percent / 100 * 0.35
 					end
 					if not best or score > best.Coverage then
 						best = {
@@ -578,17 +588,37 @@ return function(Import)
 		local placements = placementChoices(snapshot, context, strategy, options)
 		local deployment = {}
 		local farmSeed = {}
+		local combatPlaced = 0
 		if strategy ~= "Economy" then
-			for _, choice in ipairs(placements) do
-				if choice.Count == 0 and choice.Role ~= "Farm" then
-					table.insert(deployment, choice)
-				elseif choice.Count == 0 and choice.Role == "Farm" and options.SmartEconomy ~= false then
-					table.insert(farmSeed, choice)
+			for _, slot in ipairs(snapshot.Slots) do
+				local role = Smart.Role(slot, slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0)))
+				if role ~= "Farm" and Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts) > 0 then
+					combatPlaced = combatPlaced + 1
+				end
+			end
+			for _, placement in ipairs(placements) do
+				if placement.Count == 0 and placement.Role ~= "Farm" then
+					table.insert(deployment, placement)
+				elseif placement.Count == 0 and placement.Role == "Farm" and options.SmartEconomy ~= false then
+					table.insert(farmSeed, placement)
 				end
 			end
 		end
-		local choices = #farmSeed > 0 and farmSeed or (#deployment > 0 and deployment or placements)
-		if #farmSeed == 0 and #deployment == 0 then
+		local requiredCombat = context.Pressure >= 0.45 and 2 or 1
+		local forceDeployment = #farmSeed == 0 and #deployment > 0 and combatPlaced < requiredCombat
+		local choices = {}
+		if #farmSeed > 0 then
+			choices = farmSeed
+		elseif forceDeployment then
+			choices = deployment
+		elseif #deployment > 0 then
+			for _, placement in ipairs(deployment) do
+				table.insert(choices, placement)
+			end
+		else
+			choices = placements
+		end
+		if #farmSeed == 0 and not forceDeployment then
 			for _, choice in ipairs(upgradeChoices(snapshot, context, strategy)) do
 				local suppressFarm = choice.Role == "Farm" and strategy == "Win" and context.Pressure >= 0.3
 				if not suppressFarm and (options.SmartEconomy ~= false or choice.Role ~= "Farm") then
@@ -596,7 +626,13 @@ return function(Import)
 				end
 			end
 		end
-		table.sort(choices, compare)
+		if forceDeployment then
+			table.sort(choices, function(a, b)
+				return a.Slot.Index < b.Slot.Index
+			end)
+		else
+			table.sort(choices, compare)
+		end
 		local reservePercent = automaticReserve(context, strategy)
 		context.ReservePercent = reservePercent
 		context.Yen = math.max(0, number(snapshot.Yen, 0))
