@@ -3,26 +3,13 @@ return function()
 
 	local function run(ctx, state)
 		while state.Alive and ctx.Runtime.Alive do
-			local gameState = ctx.Game:State("GameState")
-			local inGame = type(gameState) == "table" and type(gameState.Parameters) == "table"
-			local active = inGame and ctx.Game:IsMatchActive(gameState)
-			if inGame and not state.WasInGame then
-				state.GameStartedAt = os.clock()
-			end
-			if not inGame then
-				state.GameStartedAt = nil
-			end
-			state.WasInGame = inGame
-
-			local canStart = inGame and not active and gameState.GameEnded ~= true
 			local startReady = state.AutoStart
-				and canStart
-				and state.GameStartedAt
-				and os.clock() - state.GameStartedAt >= state.StartDelay
+				and state.AutoStartEnabledAt
+				and os.clock() - state.AutoStartEnabledAt >= state.StartDelay
 			if startReady then
 				ctx.Game:RespondToVote("start game")
 			end
-			if state.AutoSkip and active then
+			if state.AutoSkip then
 				ctx.Game:RespondToVote("skip")
 			end
 
@@ -45,7 +32,7 @@ return function()
 
 	return {
 		Name = "GameMatch",
-		Version = 2,
+		Version = 3,
 		Priority = 7,
 		Dependencies = {},
 
@@ -54,6 +41,7 @@ return function()
 				Alive = true,
 				AutoStart = false,
 				AutoSkip = false,
+				AutoStartEnabledAt = nil,
 				StartDelay = 0,
 				LeaveAFK = false,
 				LastAFKAttempt = 0,
@@ -65,6 +53,7 @@ return function()
 				Default = false,
 				Callback = function(value)
 					state.AutoStart = value == true
+					state.AutoStartEnabledAt = state.AutoStart and os.clock() or nil
 				end,
 			}, "game.match.auto_start")
 			ctx.Registry:Toggle(automation, {

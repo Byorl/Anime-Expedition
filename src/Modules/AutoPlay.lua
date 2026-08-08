@@ -277,12 +277,14 @@ return function(Import)
 
 	local function snapshot(ctx, state)
 		local gameState = ctx.Game:State("GameState")
-		if
-			type(gameState) ~= "table"
-			or type(gameState.Parameters) ~= "table"
-			or not ctx.Game:IsMatchActive(gameState)
-			or gameState.GameEnded == true
-		then
+		if type(gameState) ~= "table" or ctx.Game:IsMatchEnded(gameState) then
+			state.MatchDetected = false
+			return nil
+		end
+		if ctx.Game:IsMatchActive(gameState) then
+			state.MatchDetected = true
+		end
+		if not state.MatchDetected then
 			return nil
 		end
 		local hotbar = ctx.Game:State("HotbarState")
@@ -658,6 +660,7 @@ return function(Import)
 				LastVisual = 0,
 				VisualDirty = true,
 				NextActionAt = 0,
+				MatchDetected = false,
 				Generation = ctx.Runtime.Generation,
 				UnitUtils = loadHelper("UnitUtils"),
 				SharedUtils = loadHelper("Utils"),

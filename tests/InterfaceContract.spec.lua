@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.9.3", "interface release version is wrong")
+assert(Build.Version == "1.9.4", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/65f3353d47660ed5f372bddd2ccbde02ba1d733d/src/maclib.lua",
@@ -38,7 +38,8 @@ assert(
 	"vote prompts are not accepted directly"
 )
 assert(
-	string.find(autoPlaySource, "or not ctx.Game:IsMatchActive(gameState)", 1, true),
+	string.find(autoPlaySource, "ctx.Game:IsMatchActive(gameState)", 1, true)
+		and string.find(autoPlaySource, "state.MatchDetected = true", 1, true),
 	"Auto Play lacks live match detection"
 )
 assert(

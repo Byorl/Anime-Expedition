@@ -47,6 +47,7 @@ local adapter = setmetatable({
 	RespondedVotes = setmetatable({}, { __mode = "k" }),
 	LocalPlayer = player,
 }, Adapter)
+assert(adapter:IsMatchActive({ Parameters = parameters }) == true, "skip prompt did not activate live detection")
 local firstOk, firstResponded = adapter:RespondToVote("skip")
 local secondOk, secondResponded = adapter:RespondToVote("skip")
 assert(firstOk and firstResponded and secondOk and not secondResponded, "vote response state is incorrect")

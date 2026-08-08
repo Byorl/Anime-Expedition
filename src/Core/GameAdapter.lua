@@ -291,7 +291,7 @@ return function(Import)
 	end
 
 	function GameAdapter.MatchActive(gameState)
-		if type(gameState) ~= "table" or type(gameState.Parameters) ~= "table" or gameState.GameEnded == true then
+		if type(gameState) ~= "table" or GameAdapter.MatchEnded(gameState) then
 			return false
 		end
 		local wave = math.max(tonumber(gameState.Wave) or 0, tonumber(gameState.CurrentWave) or 0)
@@ -302,9 +302,6 @@ return function(Import)
 		)
 		local enemies = tonumber(gameState.EnemyCount) or 0
 		local status = string.lower(tostring(gameState.Status or gameState.GameStatus or ""))
-		if status == "ended" or status == "completed" or status == "results" then
-			return false
-		end
 		return gameState.Active == true
 			or gameState.WavesEnabled == true
 			or wave > 0
@@ -315,8 +312,48 @@ return function(Import)
 			or status == "started"
 	end
 
+	function GameAdapter.MatchEnded(gameState)
+		if type(gameState) ~= "table" then
+			return false
+		end
+		local status = string.lower(tostring(gameState.Status or gameState.GameStatus or ""))
+		return gameState.GameEnded == true or status == "ended" or status == "completed" or status == "results"
+	end
+
 	function GameAdapter:IsMatchActive(gameState)
-		return GameAdapter.MatchActive(gameState)
+		if GameAdapter.MatchEnded(gameState) then
+			return false
+		end
+		if GameAdapter.MatchActive(gameState) then
+			return true
+		end
+		local replicaClient = self.ReplicaClient
+		if type(replicaClient) == "table" and type(replicaClient.Test) == "function" then
+			local ok, registry = pcall(replicaClient.Test)
+			local prompts = ok
+					and type(registry) == "table"
+					and type(registry.TokenReplicas) == "table"
+					and registry.TokenReplicas.VotePrompt
+				or nil
+			for replica in pairs(type(prompts) == "table" and prompts or {}) do
+				local data = type(replica) == "table" and replica.Data or nil
+				local parameters = type(data) == "table" and data.Parameters or nil
+				local title = string.lower(tostring(type(parameters) == "table" and parameters.Title or ""))
+				if string.find(title, "skip", 1, true) then
+					return true
+				end
+			end
+		end
+		local enemies = self:State("GameEnemies")
+		if type(enemies) == "table" and next(enemies) ~= nil then
+			return true
+		end
+		local folder = game:GetService("Workspace"):FindFirstChild("Enemies")
+		return folder ~= nil and #folder:GetChildren() > 0
+	end
+
+	function GameAdapter:IsMatchEnded(gameState)
+		return GameAdapter.MatchEnded(gameState)
 	end
 
 	local function hasLocalResponse(data, player)
