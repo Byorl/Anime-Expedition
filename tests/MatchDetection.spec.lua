@@ -57,10 +57,23 @@ local direct = setmetatable({}, Adapter)
 function direct:InvokeSelf(name)
 	if name == "GET_GAME_REPLICA" then
 		return true, { Data = { Wave = 6, Parameters = { Gamemode = "Story" } } }
+	elseif name == "GET_HOTBAR_REPLICA" then
+		return true, { Data = { Slots = { ["1"] = { ID = "u1" } } } }
 	end
 	return true, { Data = { Yen = 3800 } }
 end
 assert(direct:GameData().Wave == 6, "authoritative game replica data was not used")
 assert(direct:GamePlayerData().Yen == 3800, "authoritative game player replica data was not used")
+assert(direct:HotbarData().Slots["1"].ID == "u1", "authoritative hotbar replica data was not used")
+
+local nestedAdapter = setmetatable({ Ready = true }, Adapter)
+function nestedAdapter:Peek(value)
+	if type(value) == "table" and value.State == true then
+		return value.Value
+	end
+	return value
+end
+local deep = nestedAdapter:DeepPeek({ Unit = { State = true, Value = { UnitID = "u1", Upgrade = 2 } } }, 4)
+assert(deep.Unit.UnitID == "u1" and deep.Unit.Upgrade == 2, "nested replicated unit state was not unwrapped")
 
 print("Match detection tests passed")

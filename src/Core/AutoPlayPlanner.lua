@@ -52,25 +52,26 @@ return function()
 		return highest
 	end
 
-	local function placementLimit(slot, profile, info, information)
-		local limit = math.huge
-		for _, value in ipairs({
-			slot and slot.PlacementLimit,
-			profile and profile.PlacementLimit,
-			info and info.PlacementLimit,
-		}) do
-			local current = tonumber(value)
-			if current and current > 0 then
-				limit = math.min(limit, math.floor(current))
-			end
+	local function placementLimit(slot, profile, info, information, gameModifiers)
+		if type(profile) == "table" and profile.IsHelper == true then
+			return math.huge
+		end
+		local equipped = type(slot) == "table" and tonumber(slot.PlacementLimit) or nil
+		if equipped ~= nil then
+			return math.max(0, math.floor(equipped))
+		end
+		local limit = type(info) == "table" and tonumber(info.PlacementLimit) or nil
+		limit = limit == nil and math.huge or math.max(0, math.floor(limit))
+		if type(gameModifiers) == "table" and gameModifiers.Traitless then
+			return limit
 		end
 		local traitKey = profile and profile.Trait
 		local traits = information and information.Traits
 		local traitData = type(traits) == "table" and traits.TraitData or nil
 		local trait = type(traitData) == "table" and traitData[traitKey] or nil
 		local traitLimit = type(trait) == "table" and tonumber(trait.PlacementLimit) or nil
-		if traitLimit and traitLimit > 0 then
-			limit = math.min(limit, math.floor(traitLimit))
+		if traitLimit ~= nil then
+			limit = math.min(limit, math.max(0, math.floor(traitLimit)))
 		end
 		return limit
 	end
@@ -82,7 +83,7 @@ return function()
 		return key ~= nil and type(values) == "table" and values[key] or nil
 	end
 
-	function Planner.Slots(hotbarState, playerData, information, count)
+	function Planner.Slots(hotbarState, playerData, information, count, gameModifiers)
 		local output = {}
 		local slots = type(hotbarState) == "table" and hotbarState.Slots or nil
 		local units = type(playerData) == "table" and playerData.UnitData or nil
@@ -105,7 +106,7 @@ return function()
 						Info = info,
 						TraitInfo = traitInfo(profile, information),
 						PlacementCost = number(base.Cost, number(info.Cost, 0)),
-						PlacementLimit = placementLimit(raw, profile, info, information),
+						PlacementLimit = placementLimit(raw, profile, info, information, gameModifiers),
 						MaxUpgrade = maxUpgrade(info),
 						Farm = base.HitboxType == "Farm" or info.HitboxType == "Farm" or number(base.Farm, 0) > 0,
 					})
@@ -123,8 +124,14 @@ return function()
 		if owner == nil or player == nil or owner == player then
 			return true
 		end
-		local left = type(owner) == "table" and owner.UserId or nil
-		local right = type(player) == "table" and player.UserId or nil
+		local leftOk, left = pcall(function()
+			return owner.UserId
+		end)
+		local rightOk, right = pcall(function()
+			return player.UserId
+		end)
+		left = leftOk and left or nil
+		right = rightOk and right or nil
 		return left ~= nil and left == right
 	end
 
@@ -178,6 +185,27 @@ return function()
 		return grouped
 	end
 
+	function Planner.PlacementCount(slot, placed, placementCounts)
+		local observed = #(type(placed) == "table" and placed[slot.Index] or {})
+		local authoritative = 0
+		if type(placementCounts) == "table" then
+			authoritative = number(placementCounts[slot.Asset], number(placementCounts[tostring(slot.Asset)], 0))
+		end
+		return math.max(observed, math.max(0, math.floor(authoritative)))
+	end
+
+	function Planner.TotalPlacementCount(slots, placed, placementCounts)
+		local total, assets = 0, {}
+		for _, slot in ipairs(slots) do
+			local asset = tostring(slot.Asset)
+			if not assets[asset] then
+				assets[asset] = true
+				total = total + Planner.PlacementCount(slot, placed, placementCounts)
+			end
+		end
+		return total
+	end
+
 	function Planner.PlaceCap(slot, configured)
 		local cap = math.max(0, math.floor(number(configured, 0)))
 		if slot.PlacementLimit < math.huge then
@@ -186,11 +214,11 @@ return function()
 		return cap
 	end
 
-	function Planner.NextPlacement(slots, placed, caps)
+	function Planner.NextPlacement(slots, placed, caps, placementCounts)
 		local choices = {}
 		for _, slot in ipairs(slots) do
 			local cap = Planner.PlaceCap(slot, caps[slot.Index])
-			local current = #(placed[slot.Index] or {})
+			local current = Planner.PlacementCount(slot, placed, placementCounts)
 			if current < cap then
 				table.insert(choices, { Slot = slot, Cost = slot.PlacementCost, Count = current, Cap = cap })
 			end

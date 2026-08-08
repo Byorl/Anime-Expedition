@@ -34,14 +34,6 @@ return function(Import)
 		ctx.Runtime:Notify("Auto Play", tostring(message))
 	end
 
-	local function totalPlaced(grouped)
-		local total = 0
-		for _, entries in pairs(grouped) do
-			total = total + #entries
-		end
-		return total
-	end
-
 	local function longestPath(paths)
 		local selected, selectedLength
 		for _, path in ipairs(paths) do
@@ -147,7 +139,7 @@ return function(Import)
 			if slot.Index >= choice.Slot.Index then
 				break
 			end
-			ordinal = ordinal + Planner.PlaceCap(slot, snapshot.MaxPlace[slot.Index])
+			ordinal = ordinal + Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
 		end
 		return ordinal
 	end
@@ -249,7 +241,7 @@ return function(Import)
 		local ordinal = 0
 		for _, slot in ipairs(snapshot.Slots) do
 			local cap = Planner.PlaceCap(slot, snapshot.MaxPlace[slot.Index])
-			local placed = #(snapshot.Placed[slot.Index] or {})
+			local placed = Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
 			for index = 1, cap do
 				ordinal = ordinal + 1
 				local key = tostring(slot.Index) .. "_" .. tostring(index)
@@ -287,15 +279,16 @@ return function(Import)
 		if not state.MatchDetected then
 			return nil
 		end
-		local hotbar = ctx.Game:State("HotbarState")
+		local hotbar = ctx.Game:HotbarData()
 		local playerData = ctx.Game:PlayerData()
 		local information = ctx.Game:Information() or {}
-		local slots = Planner.Slots(hotbar, playerData, information, 6)
+		local gameModifiers = ctx.Game:StateDeep("GameModifiers", 3) or {}
+		local slots = Planner.Slots(hotbar, playerData, information, 6, gameModifiers)
 		enrichSlotFootprints(state, slots)
-		local gameUnits = ctx.Game:State("GameUnits")
+		local gameUnits = ctx.Game:StateDeep("GameUnits", 4)
 		local placed = Planner.Placed(slots, gameUnits, Players.LocalPlayer)
 		local playerState, playerSource = ctx.Game:GamePlayerData()
-		local mapState = ctx.Game:State("MapState")
+		local mapState = ctx.Game:StateDeep("MapState", 5)
 		local paths = Planner.ActivePaths(mapState)
 		local path = paths[1]
 		if not path then
@@ -311,7 +304,8 @@ return function(Import)
 			Yen = math.max(0, tonumber(type(playerState) == "table" and playerState.Yen) or 0),
 			Path = path,
 			Paths = paths,
-			Enemies = ctx.Game:State("GameEnemies") or {},
+			Enemies = ctx.Game:StateDeep("GameEnemies", 4) or {},
+			PlacementCounts = type(playerState) == "table" and playerState.PlacementCounts or {},
 			PlacementCap = tonumber(
 				type(playerState) == "table" and playerState.TotalUnitPlacementCap
 					or gameState.GlobalUnitPlacementCap
@@ -333,7 +327,7 @@ return function(Import)
 	end
 
 	local function reconcileRound(state, current)
-		local total = totalPlaced(current.Placed)
+		local total = Planner.TotalPlacementCount(current.Slots, current.Placed, current.PlacementCounts)
 		local wave = tonumber(current.GameState.Wave)
 		local elapsed = tonumber(current.GameState.GameTime or current.GameState.Time)
 		local reset = Planner.RoundReset(
@@ -362,7 +356,14 @@ return function(Import)
 			return true
 		end
 		if pending.Kind == "Place" then
-			if #(current.Placed[pending.Slot] or {}) > pending.Before then
+			local slot
+			for _, candidate in ipairs(current.Slots) do
+				if candidate.Index == pending.Slot then
+					slot = candidate
+					break
+				end
+			end
+			if slot and Planner.PlacementCount(slot, current.Placed, current.PlacementCounts) > pending.Before then
 				state.PlaceRetries[pending.Slot] = 0
 				state.Pending = nil
 				state.VisualDirty = true
@@ -428,7 +429,8 @@ return function(Import)
 		if not state.Enabled or os.clock() < state.NextActionAt or not pendingComplete(state, current) then
 			return
 		end
-		local placement, missing = Planner.NextPlacement(current.Slots, current.Placed, state.MaxPlace)
+		local placement, missing =
+			Planner.NextPlacement(current.Slots, current.Placed, state.MaxPlace, current.PlacementCounts)
 		local upgradeChoice = Planner.NextUpgrade(
 			current.Slots,
 			current.Placed,
@@ -636,7 +638,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 3,
+		Version = 4,
 		Priority = 9,
 		Dependencies = {},
 

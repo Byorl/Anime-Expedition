@@ -411,10 +411,8 @@ return function(Import)
 	end
 
 	local function placementChoices(snapshot, context, strategy, options)
-		local choices, ordinal = {}, 0
-		for _, entries in pairs(snapshot.Placed) do
-			ordinal = ordinal + #entries
-		end
+		local choices = {}
+		local ordinal = Planner.TotalPlacementCount(snapshot.Slots, snapshot.Placed, snapshot.PlacementCounts)
 		local globalCap = tonumber(snapshot.PlacementCap)
 		if globalCap and ordinal >= globalCap then
 			return choices
@@ -422,7 +420,7 @@ return function(Import)
 		for _, slot in ipairs(snapshot.Slots) do
 			local base = slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0))
 			local role = Smart.Role(slot, base)
-			local current = #(snapshot.Placed[slot.Index] or {})
+			local current = Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
 			local cap = smartCap(slot, role, strategy)
 			local spacing = automaticSpacing(slot, context)
 			if current < cap and base.Cost < math.huge then

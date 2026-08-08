@@ -58,6 +58,29 @@ local slots = Planner.Slots(hotbar, playerData, information, 6)
 assert(#slots == 2 and slots[1].Farm == true, "equipped farm unit discovery failed")
 assert(slots[1].PlacementCost == 100 and slots[1].MaxUpgrade == 2, "unit costs or upgrade cap are wrong")
 
+local limitedInformation = {
+	Units = { Farm = { PlacementLimit = 2, UpgradeInfo = { [0] = { Cost = 100 } } } },
+	Traits = { TraitData = { Unbound = { PlacementLimit = 1 } } },
+}
+local limitedPlayer = { UnitData = { limited = { Asset = "Farm", Trait = "Unbound" } } }
+local traitLimited = Planner.Slots({ Slots = { ["1"] = { ID = "limited" } } }, limitedPlayer, limitedInformation, 1)
+assert(traitLimited[1].PlacementLimit == 1, "trait placement limit was ignored")
+local traitless = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "limited" } } },
+	limitedPlayer,
+	limitedInformation,
+	1,
+	{ Traitless = true }
+)
+assert(traitless[1].PlacementLimit == 2, "traitless modifier did not remove the trait placement limit")
+local equippedLimit = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "limited", PlacementLimit = 3 } } },
+	limitedPlayer,
+	limitedInformation,
+	1
+)
+assert(equippedLimit[1].PlacementLimit == 3, "equipped placement override was not authoritative")
+
 local units = {
 	a = { ID = "g1", UnitID = "u1", Owner = localPlayer, Upgrade = 1, MaxUpgrade = 2, UnitData = { Asset = "Farm" } },
 	b = { ID = "g2", UnitID = "u2", Owner = localPlayer, Upgrade = 0, MaxUpgrade = 2, UnitData = { Asset = "Damage" } },
@@ -78,6 +101,15 @@ local placement, missing = Planner.NextPlacement(slots, placed, { 2, 1 })
 assert(
 	missing == true and placement.Slot.Index == 1 and placement.Count == 1,
 	"deleted or missing placement detection failed"
+)
+local authoritative = Planner.NextPlacement(slots, placed, { 2, 2 }, { Farm = 2, Damage = 1 })
+assert(
+	authoritative and authoritative.Slot.Index == 2 and authoritative.Count == 1,
+	"authoritative placement counts did not stop a capped unit"
+)
+assert(
+	Planner.TotalPlacementCount(slots, placed, { Farm = 2, Damage = 1 }) == 3,
+	"authoritative total placement count is wrong"
 )
 local farmUpgrade = Planner.NextUpgrade(slots, placed, { 20, 20 }, { 1, 10 }, true, true, 1000)
 assert(farmUpgrade and farmUpgrade.Slot.Index == 1, "farm-first upgrade selection failed")

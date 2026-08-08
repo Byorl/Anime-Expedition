@@ -74,6 +74,38 @@ return function(Import)
 		return self:Peek(state)
 	end
 
+	function GameAdapter:DeepPeek(value, depth, seen)
+		depth = tonumber(depth) or 4
+		seen = seen or {}
+		local peeked = self:Peek(value)
+		if peeked ~= nil then
+			value = peeked
+		end
+		if type(value) ~= "table" or depth <= 0 then
+			return value
+		end
+		if seen[value] then
+			return seen[value]
+		end
+		local output = {}
+		seen[value] = output
+		for key, child in pairs(value) do
+			output[key] = self:DeepPeek(child, depth - 1, seen)
+		end
+		return output
+	end
+
+	function GameAdapter:StateDeep(name, depth)
+		if not self.Ready then
+			return nil, self.Error
+		end
+		local state = self.Dependencies[name]
+		if state == nil then
+			return nil, "unknown replicated state '" .. tostring(name) .. "'"
+		end
+		return self:DeepPeek(state, depth)
+	end
+
 	function GameAdapter:PlayerData()
 		local data, err = self:State("PlayerData")
 		if type(data) == "table" then
@@ -87,7 +119,7 @@ return function(Import)
 		if ok and type(replica) == "table" and type(replica.Data) == "table" then
 			return replica.Data, "replica"
 		end
-		local data, err = self:State("GameState")
+		local data, err = self:StateDeep("GameState", 5)
 		if type(data) == "table" then
 			return data, "state"
 		end
@@ -99,11 +131,23 @@ return function(Import)
 		if ok and type(replica) == "table" and type(replica.Data) == "table" then
 			return replica.Data, "replica"
 		end
-		local data, err = self:State("GamePlayerState")
+		local data, err = self:StateDeep("GamePlayerState", 4)
 		if type(data) == "table" then
 			return data, "state"
 		end
 		return nil, err or replica or "GamePlayerState has not replicated yet"
+	end
+
+	function GameAdapter:HotbarData()
+		local ok, replica = self:InvokeSelf("GET_HOTBAR_REPLICA")
+		if ok and type(replica) == "table" and type(replica.Data) == "table" then
+			return replica.Data, "replica"
+		end
+		local data, err = self:StateDeep("HotbarState", 4)
+		if type(data) == "table" then
+			return data, "state"
+		end
+		return nil, err or replica or "HotbarState has not replicated yet"
 	end
 
 	function GameAdapter:Information()

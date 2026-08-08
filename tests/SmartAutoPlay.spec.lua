@@ -160,6 +160,20 @@ local capped = Smart.Decide(snapshot, {
 	ReactToEnemies = true,
 })
 assert(capped.Kind == "Wait", "global placement cap was ignored")
+snapshot.PlacementCap = nil
+snapshot.Yen = 10000
+snapshot.PlacementCounts = { Farm = 1 }
+slots[1].PlacementLimit = 1
+local authoritativeCap = Smart.Decide(snapshot, {
+	Strategy = "Economy",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	authoritativeCap.Kind == "Place" and authoritativeCap.Slot.Index == 2,
+	"Smart Auto Play retried an asset whose authoritative placement count reached its cap"
+)
 
 local source = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(string.find(source, "if state.SmartEnabled then", 1, true), "Smart mode does not override Normal mode")
