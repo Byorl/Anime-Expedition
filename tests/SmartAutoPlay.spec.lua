@@ -54,6 +54,13 @@ local nested = Smart.Context({
 assert(nested.Mode == "Raid" and nested.Map == "Spirit City", "nested scenario data was not normalized")
 assert(nested.Act == "Act 3" and nested.Difficulty == "Hard", "nested act and difficulty were not normalized")
 assert(nested.Wave == 6 and nested.MaxWave == 15, "alternate wave fields were not normalized")
+local liveRoute = Smart.Context({
+	Wave = 4,
+	MaxWave = 15,
+	BaseHealth = 3,
+	BaseMaxHealth = 3,
+}, {}, path, { 0.21, 0.84 })
+assert(liveRoute.BacklineEnemies == 1 and liveRoute.MaxProgress == 0.84, "rendered enemy route progress was ignored")
 
 local information = {
 	Units = {
@@ -114,7 +121,7 @@ local win = Smart.Decide(snapshot, {
 	SmartEconomy = true,
 	ReactToEnemies = true,
 })
-assert(win.Kind == "Place" and win.Slot.Index == 1, "Win strategy did not seed the first farm")
+assert(win.Kind == "Place" and win.Slot.Index == 2, "Win strategy seeded a farm during a late boss emergency")
 local skipBlockedFarm = Smart.Decide(snapshot, {
 	Strategy = "Win",
 	AdaptivePlacement = true,
@@ -241,6 +248,63 @@ assert(
 	"Smart Auto Play retried an asset whose authoritative placement count reached its cap"
 )
 
+local valueInformation = {
+	Units = {
+		Core = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 100, Damage = 500, SPA = 1, Range = 25, HitboxType = "Circle", HitboxSize = 12 },
+				[1] = { Cost = 700, Damage = 2000, SPA = 1, Range = 32, HitboxType = "Circle", HitboxSize = 16 },
+			},
+		},
+		Weak = {
+			PlacementLimit = 3,
+			UpgradeInfo = { [0] = { Cost = 50, Damage = 1, SPA = 2, Range = 8 } },
+		},
+	},
+}
+local valueSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "core" }, ["2"] = { ID = "weak" } } },
+	{ UnitData = { core = { Asset = "Core" }, weak = { Asset = "Weak" } } },
+	valueInformation,
+	6
+)
+local valueSnapshot = {
+	GameState = {
+		Wave = 5,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Difficulty = "Normal" },
+	},
+	Enemies = {},
+	LiveProgress = {},
+	Slots = valueSlots,
+	Placed = {
+		[1] = { { GameUnitID = "core", Upgrade = 0, MaxUpgrade = 1, NextCost = 700, Data = {} } },
+		[2] = {},
+	},
+	PlacementCounts = { Core = 1 },
+	Yen = 100,
+	Path = path,
+	Paths = { path },
+}
+local saveForValue = Smart.Decide(valueSnapshot, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(saveForValue.Kind == "Wait" and saveForValue.Cost == 700, "planner saved for the cheapest action instead of the best combat value")
+valueSnapshot.Yen = 1000
+local upgradeForValue = Smart.Decide(valueSnapshot, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(upgradeForValue.Kind == "Upgrade" and upgradeForValue.Slot.Index == 1, "an unnecessary weak placement beat a valuable upgrade")
+
 local source = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(string.find(source, "if state.SmartEnabled then", 1, true), "Smart mode does not override Normal mode")
 assert(
@@ -257,5 +321,7 @@ assert(
 	string.find(plannerSource, "combatPlaced < requiredCombat", 1, true),
 	"Smart mode does not establish a defensive baseline before value planning"
 )
+assert(string.find(plannerSource, "BacklineEnemies", 1, true), "Smart mode does not react to actual enemy route progress")
+assert(string.find(plannerSource, "paybackWaves", 1, true), "farm upgrades ignore their remaining-wave payback")
 
 print("Smart Auto Play tests passed")

@@ -154,7 +154,7 @@ return function(Import)
 		return clamp(segment, 0, 1)
 	end
 
-	function Smart.Context(gameState, enemies, path)
+	function Smart.Context(gameState, enemies, path, liveProgress)
 		gameState = type(gameState) == "table" and gameState or {}
 		local difficulty = findValue(gameState, { "Difficulty", "DifficultyName" }, 4) or "Unknown"
 		local mode = findValue(gameState, { "Gamemode", "GameMode", "Mode" }, 4) or "Unknown"
@@ -171,6 +171,7 @@ return function(Import)
 		local healthRatio = baseMax > 0 and baseHealth / baseMax or 0
 		local enemyCount, totalHealth, totalMaxHealth = 0, 0, 0
 		local maxProgress, speedPressure, shieldPressure, specialPressure = 0, 0, 0, 0
+		local backlineEnemies, progressTotal = 0, 0
 		local boss = false
 		for _, enemy in pairs(type(enemies) == "table" and enemies or {}) do
 			if type(enemy) == "table" and enemy.Finished ~= true then
@@ -179,7 +180,10 @@ return function(Import)
 				local maximum = math.max(health, number(enemy.MaxHealth, health))
 				totalHealth = totalHealth + health
 				totalMaxHealth = totalMaxHealth + maximum
-				maxProgress = math.max(maxProgress, pathProgress(enemy, path))
+				local progress = pathProgress(enemy, path)
+				maxProgress = math.max(maxProgress, progress)
+				progressTotal = progressTotal + progress
+				backlineEnemies = backlineEnemies + (progress >= 0.72 and 1 or 0)
 				local speed = number(enemy.Speed, number(enemy.DefaultSpeed, 1))
 				local defaultSpeed = math.max(0.01, number(enemy.DefaultSpeed, speed))
 				speedPressure = speedPressure + math.max(0, speed / defaultSpeed - 1)
@@ -190,12 +194,21 @@ return function(Import)
 				boss = boss or enemy.Boss == true or hasText(enemyType, "boss")
 			end
 		end
+		if type(liveProgress) == "table" and #liveProgress > 0 then
+			maxProgress, progressTotal, backlineEnemies = 0, 0, 0
+			for _, progress in ipairs(liveProgress) do
+				progress = clamp(number(progress, 0), 0, 1)
+				maxProgress = math.max(maxProgress, progress)
+				progressTotal = progressTotal + progress
+				backlineEnemies = backlineEnemies + (progress >= 0.72 and 1 or 0)
+			end
+		end
 		local healthPressure = totalMaxHealth > 0 and totalHealth / totalMaxHealth or 0
 		local countPressure = clamp(enemyCount / 20, 0, 1)
 		local progressPressure = maxProgress ^ 1.7
 		local basePressure = 1 - clamp(healthRatio, 0, 1)
 		local scenarioFactor = difficultyFactor(difficulty)
-		local actNumber = tonumber(string.match(tostring(act), "%d+")) or 1
+		local actNumber = tonumber(string.match(tostring(act), "%d+") or "") or 1
 		scenarioFactor = scenarioFactor * (1 + math.max(0, actNumber - 1) * 0.04)
 		local pressure = (
 			progressPressure * 0.42
@@ -218,6 +231,11 @@ return function(Import)
 			EnemyCount = enemyCount,
 			TotalHealth = totalHealth,
 			MaxProgress = maxProgress,
+			AverageProgress = progressTotal / math.max(1, type(liveProgress) == "table" and #liveProgress > 0 and #liveProgress or enemyCount),
+			BacklineEnemies = backlineEnemies,
+			BaseHealth = baseHealth,
+			BaseMaxHealth = baseMax,
+			HealthRatio = healthRatio,
 			Boss = boss,
 			Pressure = clamp(pressure, 0, 1.5),
 			Emergency = pressure >= 0.72 or healthRatio <= 0.4,
@@ -225,17 +243,41 @@ return function(Import)
 		}
 	end
 
+	local function updateHistory(context, history, now)
+		if type(history) ~= "table" then
+			context.RecentLeak = context.BacklineEnemies > 0
+			context.CalmFor = 0
+			return
+		end
+		now = number(now, os.clock())
+		if history.BaseHealth and context.BaseHealth < history.BaseHealth then
+			history.LastHealthLossAt = now
+		end
+		if context.BacklineEnemies > 0 or context.MaxProgress >= 0.78 then
+			history.LastBacklineAt = now
+		end
+		local lastDanger = math.max(number(history.LastHealthLossAt, -math.huge), number(history.LastBacklineAt, -math.huge))
+		context.RecentLeak = now - lastDanger <= 10
+		context.CalmFor = lastDanger > -math.huge and math.max(0, now - lastDanger) or 30
+		history.BaseHealth = context.BaseHealth
+		history.Wave = context.Wave
+		history.UpdatedAt = now
+	end
+
 	local function statSet(raw, fallback)
 		raw = type(raw) == "table" and raw or {}
 		fallback = type(fallback) == "table" and fallback or {}
-		local damage = math.max(0, number(raw.Damage, number(fallback.Damage, 0)))
-		local spa = math.max(0.05, number(raw.SPA or raw.Cooldown, number(fallback.SPA or fallback.Cooldown, 1)))
+		local damage = math.max(0, number(raw.Damage or raw.AttackDamage, number(fallback.Damage or fallback.AttackDamage, 0)))
+		local spa = math.max(
+			0.05,
+			number(raw.SPA or raw.Cooldown or raw.AttackCooldown, number(fallback.SPA or fallback.Cooldown or fallback.AttackCooldown, 1))
+		)
 		local ticks = math.max(1, number(raw.Ticks or raw.SkillTicks, number(fallback.Ticks or fallback.SkillTicks, 1)))
 		return {
 			Damage = damage,
 			SPA = spa,
 			Ticks = ticks,
-			Range = math.max(1, number(raw.Range, number(fallback.Range, 10))),
+			Range = math.max(1, number(raw.Range or raw.AttackRange, number(fallback.Range or fallback.AttackRange, 10))),
 			HitboxSize = math.max(0, number(raw.HitboxSize, number(fallback.HitboxSize, 0))),
 			HitboxType = raw.HitboxType or fallback.HitboxType or "Single",
 			Farm = math.max(0, number(raw.Farm, number(fallback.Farm, 0))),
@@ -333,27 +375,42 @@ return function(Import)
 		if role == "Farm" then
 			return 50
 		end
-		local targets = { 70, 45, 80, 30, 60, 20 }
+		if context.BacklineEnemies > 0 then
+			return 86
+		end
+		if context.RecentLeak then
+			return 76
+		end
+		local targets = { 48, 58, 38, 66, 30, 72 }
 		local combatOrdinal = math.max(1, ordinal - 1)
 		local target = targets[(combatOrdinal - 1) % #targets + 1]
 		if context.Emergency then
-			target = math.min(85, target + 5)
+			target = math.min(84, target + 10)
 		end
 		return target
 	end
 
-	local function smartCap(slot, role, strategy)
+	local function smartCap(slot, role, strategy, context, stats)
 		local intrinsic = slot.PlacementLimit
 		if intrinsic == math.huge then
 			intrinsic = role == "Farm" and 3 or 6
 		end
-		local desired = role == "Farm" and 2 or 4
-		if strategy == "Rush" then
-			desired = role == "Farm" and 1 or 5
-		elseif strategy == "Economy" and role == "Farm" then
-			desired = 3
-		elseif strategy == "Boss" and role ~= "Farm" then
-			desired = 5
+		local desired
+		if role == "Farm" then
+			desired = 1
+			local placementPayback = stats.Farm > 0 and stats.Cost / stats.Farm or math.huge
+			if strategy == "Economy" and placementPayback <= context.RemainingWaves * 0.7 then
+				desired = context.RemainingWaves >= 10 and 3 or 2
+			elseif context.Pressure < 0.28 and placementPayback <= context.RemainingWaves * 0.5 then
+				desired = 2
+			end
+		elseif role == "Support" then
+			desired = 1
+		else
+			desired = context.RemainingWaves <= 6 and 2 or 3
+			if context.Emergency or strategy == "Rush" or strategy == "Boss" then
+				desired = desired + 1
+			end
 		end
 		return math.max(0, math.min(math.floor(intrinsic), desired))
 	end
@@ -431,7 +488,7 @@ return function(Import)
 			local base = slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0))
 			local role = Smart.Role(slot, base)
 			local current = Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
-			local cap = smartCap(slot, role, strategy)
+			local cap = smartCap(slot, role, strategy, context, base)
 			local spacing = automaticSpacing(slot, context)
 			if current < cap and base.Cost < math.huge and not (options.BlockedSlots and options.BlockedSlots[slot.Index]) then
 				local location
@@ -449,16 +506,23 @@ return function(Import)
 					local power = combatPower(base, context)
 					local economy = base.Farm * math.max(1, context.RemainingWaves)
 					local weights = strategyWeights[strategy]
+					local waveProgress = context.MaxWave > 0 and context.Wave / context.MaxWave or 0
 					local score = (
 						power * weights.Damage * (0.55 + location.Coverage * weights.Coverage)
 						+ economy * weights.Economy
 						+ (role == "Support" and power * 0.35 or 0)
 					) / math.max(1, base.Cost)
-					score = score / (1 + current * 0.14)
+					score = score / (1 + current * (0.7 + waveProgress * 0.55))
+					if current == 0 then
+						score = score * 1.12
+					end
 					if context.Emergency and role ~= "Farm" then
 						score = score * (1.35 + context.Pressure * 0.4)
 					elseif context.Pressure > 0.45 and role == "Farm" then
 						score = score * 0.22
+					end
+					if role == "Farm" and (base.Farm <= 0 or base.Cost / math.max(1, base.Farm) > context.RemainingWaves * 0.7) then
+						score = score * 0.05
 					end
 					if options.SmartEconomy == false and role == "Farm" then
 						score = 0
@@ -475,14 +539,16 @@ return function(Import)
 						Ordinal = ordinal + 1,
 						Score = score,
 						Role = role,
-						Reason = current > 0
-							and string.format(
-								"place another %s (%d/%d) on a validated path-side surface",
+						Reason = role == "Farm"
+							and string.format("deploy %s with %.1f-wave payback", slot.Name, base.Cost / math.max(1, base.Farm))
+							or string.format(
+								"deploy %s for %.0f DPS, %.0f range and %.0f%% route coverage%s",
 								slot.Name,
-								current + 1,
-								cap
-							)
-							or string.format("deploy %s on a validated path-side surface", slot.Name),
+								power,
+								base.Range,
+								location.Coverage * 100,
+								current > 0 and string.format(" (%d/%d)", current + 1, cap) or ""
+							),
 					})
 				end
 			end
@@ -507,6 +573,41 @@ return function(Import)
 		return current, nextStats
 	end
 
+	local function unitPosition(unit)
+		local value = unit.CFrame
+		if typeof(value) == "CFrame" then
+			return value.Position
+		end
+		if typeof(value) == "Vector3" then
+			return value
+		end
+		local data = type(unit.Data) == "table" and unit.Data or {}
+		for _, key in ipairs({ "CFrame", "UnitCFrame", "Pivot", "Position" }) do
+			value = data[key]
+			if typeof(value) == "CFrame" then
+				return value.Position
+			elseif typeof(value) == "Vector3" then
+				return value
+			end
+		end
+		return nil
+	end
+
+	local function deployedProgress(snapshot, unit)
+		local position = unitPosition(unit)
+		if not position then
+			return nil
+		end
+		local best, distance = nil, math.huge
+		for _, path in ipairs(type(snapshot.Paths) == "table" and snapshot.Paths or {}) do
+			local progress, currentDistance = Planner.NearestProgress(path, position)
+			if progress and currentDistance < distance then
+				best, distance = progress, currentDistance
+			end
+		end
+		return distance <= 35 and best or nil
+	end
+
 	local function upgradeChoices(snapshot, context, strategy)
 		local choices = {}
 		local weights = strategyWeights[strategy]
@@ -517,6 +618,7 @@ return function(Import)
 					local cost = nextStats.Cost
 					if cost < math.huge then
 						local role = Smart.Role(slot, nextStats)
+						local positionProgress = deployedProgress(snapshot, unit)
 						local damageGain = math.max(0, combatPower(nextStats, context) - combatPower(current, context))
 						local rangeGain = math.max(0, nextStats.Range - current.Range)
 						local economyGain = math.max(0, nextStats.Farm - current.Farm)
@@ -530,12 +632,24 @@ return function(Import)
 						if score <= 0 then
 							score = (combatPower(nextStats, context) * 0.025 + 0.01) / math.max(1, cost)
 						end
-						if role == "Farm" and context.RemainingWaves <= 3 then
-							score = score * 0.08
-						elseif role == "Farm" and context.Pressure >= 0.5 then
-							score = score * 0.2
+						local paybackWaves = economyGain > 0 and cost / math.max(0.01, nextStats.Farm - current.Farm) or math.huge
+						if role == "Farm" and paybackWaves > context.RemainingWaves * 0.72 then
+							score = score * 0.05
+						elseif role == "Farm" and context.Emergency then
+							score = score * 0.12
+						elseif role == "Farm" and context.Pressure < 0.38 and paybackWaves <= context.RemainingWaves * 0.6 then
+							score = score * 1.5
 						elseif context.Emergency and role ~= "Farm" then
 							score = score * (1.45 + context.Pressure * 0.35)
+						end
+						if role ~= "Farm" and positionProgress then
+							if context.RecentLeak and positionProgress >= 0.62 then
+								score = score * 1.4
+							elseif context.CalmFor >= 10 and positionProgress >= 0.76 then
+								score = score * 0.42
+							elseif positionProgress >= 0.28 and positionProgress <= 0.7 then
+								score = score * 1.12
+							end
 						end
 						table.insert(choices, {
 							Kind = "Upgrade",
@@ -544,7 +658,14 @@ return function(Import)
 							Cost = cost,
 							Score = score,
 							Role = role,
-							Reason = string.format("upgrade %s for the best value per yen", slot.Name),
+							Reason = role == "Farm"
+								and string.format("upgrade %s with %.1f waves to repay the cost", slot.Name, paybackWaves)
+								or string.format(
+									"upgrade %s for %.0f more combat value and %.1f more range",
+									slot.Name,
+									damageGain,
+									rangeGain
+								),
 						})
 					end
 				end
@@ -566,7 +687,8 @@ return function(Import)
 	function Smart.Decide(snapshot, options)
 		options = type(options) == "table" and options or {}
 		local strategy = strategyWeights[options.Strategy] and options.Strategy or "Win"
-		local context = Smart.Context(snapshot.GameState, snapshot.Enemies, snapshot.Path)
+		local context = Smart.Context(snapshot.GameState, snapshot.Enemies, snapshot.Path, snapshot.LiveProgress)
+		updateHistory(context, options.History, options.Now)
 		if options.ReactToEnemies == false then
 			context.Pressure = 0.25
 			context.Emergency = false
@@ -604,23 +726,19 @@ return function(Import)
 				end
 			end
 		end
-		local requiredCombat = context.Pressure >= 0.45 and 2 or 1
-		local forceDeployment = #farmSeed == 0 and #deployment > 0 and combatPlaced < requiredCombat
+		local requiredCombat = (context.Pressure >= 0.45 or context.RecentLeak) and 2 or 1
+		local forceDeployment = #deployment > 0 and combatPlaced < requiredCombat
 		local choices = {}
-		if #farmSeed > 0 then
+		if #farmSeed > 0 and not context.Emergency and not context.RecentLeak then
 			choices = farmSeed
 		elseif forceDeployment then
 			choices = deployment
-		elseif #deployment > 0 then
-			for _, placement in ipairs(deployment) do
-				table.insert(choices, placement)
-			end
 		else
 			choices = placements
 		end
-		if #farmSeed == 0 and not forceDeployment then
+		if not forceDeployment and not (#farmSeed > 0 and not context.Emergency and not context.RecentLeak) then
 			for _, choice in ipairs(upgradeChoices(snapshot, context, strategy)) do
-				local suppressFarm = choice.Role == "Farm" and strategy == "Win" and context.Pressure >= 0.3
+				local suppressFarm = choice.Role == "Farm" and context.Emergency
 				if not suppressFarm and (options.SmartEconomy ~= false or choice.Role ~= "Farm") then
 					table.insert(choices, choice)
 				end
@@ -642,30 +760,28 @@ return function(Import)
 		end
 		local spendable = math.max(0, snapshot.Yen - reserve)
 		context.Spendable = spendable
-		for _, choice in ipairs(choices) do
-			if choice.Cost <= spendable and choice.Score > 0 then
+		local best = choices[1]
+		for index, choice in ipairs(choices) do
+			local acceptableEmergencyFallback = context.Emergency
+				and best
+				and choice.Score >= best.Score * 0.5
+			if choice.Cost <= spendable and choice.Score > 0 and (index == 1 or acceptableEmergencyFallback) then
 				context.Spacing = choice.Spacing
 				choice.Context = context
 				choice.Strategy = strategy
 				return choice
 			end
 		end
-		local cheapest
-		for _, choice in ipairs(choices) do
-			if not cheapest or choice.Cost < cheapest.Cost then
-				cheapest = choice
-			end
-		end
-		context.Spacing = cheapest and cheapest.Spacing or nil
-		context.NextCost = cheapest and cheapest.Cost or 0
+		context.Spacing = best and best.Spacing or nil
+		context.NextCost = best and best.Cost or 0
 		return {
 			Kind = "Wait",
-			Cost = cheapest and cheapest.Cost or 0,
+			Cost = best and best.Cost or 0,
 			Score = 0,
 			Context = copy(context),
-			Preview = cheapest and cheapest.Kind == "Place" and cheapest or nil,
+			Preview = best and best.Kind == "Place" and best or nil,
 			Strategy = strategy,
-			Reason = cheapest and string.format("save yen for %s", cheapest.Reason)
+			Reason = best and string.format("save yen for %s", best.Reason)
 				or "loadout is fully deployed and upgraded",
 		}
 	end

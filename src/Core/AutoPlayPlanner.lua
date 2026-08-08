@@ -150,6 +150,7 @@ return function()
 			MaxUpgrade = math.max(0, math.floor(actualMax)),
 			NextCost = number(nextStats.Cost, number(nextInfo.Cost, math.huge)),
 			Farm = slot.Farm or (type(data.CurrentStats) == "table" and number(data.CurrentStats.Farm, 0) > 0),
+			CFrame = data.CFrame or data.UnitCFrame or data.Pivot or data.Position,
 			Data = data,
 		}
 	end
@@ -430,6 +431,34 @@ return function()
 			traversed = traversed + segment
 		end
 		return path[#path], path[#path] - path[#path - 1], total
+	end
+
+	function Planner.NearestProgress(path, position)
+		if type(path) ~= "table" or #path < 2 or typeof(position) ~= "Vector3" then
+			return nil, math.huge
+		end
+		local total = pathLength(path)
+		if total <= 0 then
+			return 0, (position - path[1]).Magnitude
+		end
+		local traversed = 0
+		local bestDistance = math.huge
+		local bestProgress = 0
+		for index = 2, #path do
+			local first = path[index - 1]
+			local second = path[index]
+			local direction = second - first
+			local lengthSquared = direction:Dot(direction)
+			local alpha = lengthSquared > 0 and math.clamp((position - first):Dot(direction) / lengthSquared, 0, 1) or 0
+			local nearest = first + direction * alpha
+			local distance = (position - nearest).Magnitude
+			if distance < bestDistance then
+				bestDistance = distance
+				bestProgress = (traversed + direction.Magnitude * alpha) / total
+			end
+			traversed = traversed + direction.Magnitude
+		end
+		return math.clamp(bestProgress, 0, 1), bestDistance
 	end
 
 	function Planner.Candidate(path, percent, spacing, ordinal, attempt)

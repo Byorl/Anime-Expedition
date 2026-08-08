@@ -117,6 +117,28 @@ return function(Import)
 		return positions
 	end
 
+	local function liveEnemyProgress(paths)
+		local progress = {}
+		for _, enemy in ipairs(CollectionService:GetTagged("Enemy")) do
+			local ok, position = pcall(function()
+				return enemy:IsA("BasePart") and enemy.Position or enemy:GetPivot().Position
+			end)
+			if ok and typeof(position) == "Vector3" then
+				local best, distance = nil, math.huge
+				for _, path in ipairs(paths) do
+					local candidate, candidateDistance = Planner.NearestProgress(path, position)
+					if candidate and candidateDistance < distance then
+						best, distance = candidate, candidateDistance
+					end
+				end
+				if best and distance <= 20 then
+					table.insert(progress, best)
+				end
+			end
+		end
+		return progress
+	end
+
 	local function pathGeometry()
 		local map = Workspace:FindFirstChild("Map")
 		local environment = map and (map:FindFirstChild("Enviornment") or map:FindFirstChild("Environment"))
@@ -476,6 +498,7 @@ return function(Import)
 			Path = path,
 			Paths = paths,
 			Enemies = enemies,
+			LiveProgress = liveEnemyProgress(paths),
 			PlacementCounts = type(playerState) == "table" and playerState.PlacementCounts or {},
 			PlacementCap = tonumber(
 				type(playerState) == "table" and playerState.TotalUnitPlacementCap
@@ -493,6 +516,7 @@ return function(Import)
 		state.Pending = nil
 		state.PlaceRetries = {}
 		state.BlockedSlots = {}
+		state.SmartHistory = {}
 		state.UpgradeRetries = {}
 		state.NextActionAt = os.clock() + 0.5
 		state.VisualDirty = true
@@ -658,13 +682,18 @@ return function(Import)
 			state.SmartScenarioText = scenario
 			state.SmartScenarioLabel:UpdateName(scenario)
 		end
+		local routeState = (tonumber(context.BacklineEnemies) or 0) > 0
+			and string.format(" | Backline: %d", tonumber(context.BacklineEnemies) or 0)
+			or context.RecentLeak and " | Recovering coverage"
+			or " | Coverage stable"
 		local threat = string.format(
-			"Threat: %d%% | Enemies: %d | Wave: %d/%d%s",
+			"Threat: %d%% | Enemies: %d | Wave: %d/%d%s%s",
 			math.floor((tonumber(context.Pressure) or 0) * 100 + 0.5),
 			tonumber(context.EnemyCount) or 0,
 			tonumber(context.Wave) or 0,
 			tonumber(context.MaxWave) or 0,
-			context.Boss and " | Boss detected" or ""
+			context.Boss and " | Boss detected" or "",
+			routeState
 		)
 		if state.SmartThreatText ~= threat and state.SmartThreatLabel then
 			state.SmartThreatText = threat
@@ -746,6 +775,7 @@ return function(Import)
 			SmartEconomy = state.SmartEconomy,
 			ReactToEnemies = state.ReactToEnemies,
 			BlockedSlots = blockedSlots,
+			History = state.SmartHistory,
 		})
 		state.LastSmartDecision = decision
 		updateSmartLabels(state, decision)
@@ -827,7 +857,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 11,
+		Version = 12,
 		Priority = 9,
 		Dependencies = {},
 
@@ -858,6 +888,7 @@ return function(Import)
 				Markers = {},
 				BoundingSizes = {},
 				BoundingHeights = {},
+				SmartHistory = {},
 				LastErrors = {},
 				LastVisual = 0,
 				VisualDirty = true,
