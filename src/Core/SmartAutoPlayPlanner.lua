@@ -29,6 +29,14 @@ return function(Import)
 		return math.max(minimum, math.min(maximum, value))
 	end
 
+	local function copy(values)
+		local output = {}
+		for key, value in pairs(values) do
+			output[key] = value
+		end
+		return output
+	end
+
 	local function lower(value)
 		return string.lower(tostring(value or ""))
 	end
@@ -190,7 +198,7 @@ return function(Import)
 		if type(trait) ~= "table" then
 			return stats
 		end
-		local output = table.clone(stats)
+		local output = copy(stats)
 		output.Damage = output.Damage * math.max(0, 1 + number(trait.Damage, 0) / 100)
 		output.SPA = math.max(0.05, output.SPA * math.max(0.05, 1 + number(trait.SPA, 0) / 100))
 		output.Range = math.max(1, output.Range * math.max(0.05, 1 + number(trait.Range, 0) / 100))
@@ -286,6 +294,31 @@ return function(Import)
 		return math.max(0, math.min(math.floor(intrinsic), desired))
 	end
 
+	local function automaticSpacing(slot, context)
+		local footprint = tonumber(slot.BoundingSize)
+		local spacing = footprint and footprint * 0.8 + 1.5 or 6
+		if Smart.Role(slot) == "Farm" then
+			spacing = math.max(spacing, 5)
+		end
+		if context.Emergency then
+			spacing = spacing * 0.9
+		end
+		return clamp(math.floor(spacing + 0.5), 2, 18)
+	end
+
+	local function automaticReserve(context, strategy)
+		if context.Emergency or context.Boss or context.RemainingWaves <= 2 then
+			return 0
+		end
+		local base = ({ Win = 12, Balanced = 14, Economy = 22, Rush = 5, Boss = 18 })[strategy] or 12
+		local waveProgress = context.MaxWave > 0 and context.Wave / context.MaxWave or 0
+		local reserve = base - context.Pressure * 24 - waveProgress * 8
+		if context.EnemyCount == 0 and context.RemainingWaves > 5 then
+			reserve = reserve + 3
+		end
+		return clamp(math.floor(reserve + 0.5), 0, 28)
+	end
+
 	local function bestPlacement(slot, paths, ordinal, context, strategy, spacing)
 		local base = slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0))
 		local role = Smart.Role(slot, base)
@@ -337,17 +370,18 @@ return function(Import)
 			local role = Smart.Role(slot, base)
 			local current = #(snapshot.Placed[slot.Index] or {})
 			local cap = smartCap(slot, role, strategy)
+			local spacing = automaticSpacing(slot, context)
 			if current < cap and base.Cost < math.huge then
 				local location
 				if options.AdaptivePlacement == false then
 					local path = snapshot.Paths[1]
-					local cframe = path and Planner.Candidate(path, 50, options.Spacing, ordinal + 1, 0)
+					local cframe = path and Planner.Candidate(path, 50, spacing, ordinal + 1, 0)
 					if cframe then
 						location =
 							{ Path = path, Percent = 50, CFrame = cframe, Coverage = 1, Stats = base, Role = role }
 					end
 				else
-					location = bestPlacement(slot, snapshot.Paths, ordinal + 1, context, strategy, options.Spacing)
+					location = bestPlacement(slot, snapshot.Paths, ordinal + 1, context, strategy, spacing)
 				end
 				if location then
 					local power = combatPower(base, context)
@@ -375,7 +409,7 @@ return function(Import)
 						Cap = cap,
 						Path = location.Path,
 						Percent = location.Percent,
-						Spacing = options.Spacing,
+						Spacing = spacing,
 						Ordinal = ordinal + 1,
 						Score = score,
 						Role = role,
@@ -476,14 +510,16 @@ return function(Import)
 			end
 		end
 		table.sort(choices, compare)
-		local reservePercent = clamp(number(options.ReservePercent, 10), 0, 50)
-		local reserve = snapshot.Yen * reservePercent / 100 * strategyWeights[strategy].Reserve
+		local reservePercent = automaticReserve(context, strategy)
+		context.ReservePercent = reservePercent
+		local reserve = snapshot.Yen * reservePercent / 100
 		if context.Emergency then
 			reserve = 0
 		end
 		local spendable = math.max(0, snapshot.Yen - reserve)
 		for _, choice in ipairs(choices) do
 			if choice.Cost <= spendable and choice.Score > 0 then
+				context.Spacing = choice.Spacing
 				choice.Context = context
 				choice.Strategy = strategy
 				return choice
@@ -495,11 +531,12 @@ return function(Import)
 				cheapest = choice
 			end
 		end
+		context.Spacing = cheapest and cheapest.Spacing or nil
 		return {
 			Kind = "Wait",
 			Cost = cheapest and cheapest.Cost or 0,
 			Score = 0,
-			Context = context,
+			Context = copy(context),
 			Strategy = strategy,
 			Reason = cheapest and string.format("save yen for %s", cheapest.Reason)
 				or "loadout is fully deployed and upgraded",

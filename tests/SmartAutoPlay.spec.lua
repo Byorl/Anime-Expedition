@@ -86,11 +86,10 @@ local win = Smart.Decide(snapshot, {
 	AdaptivePlacement = true,
 	SmartEconomy = true,
 	ReactToEnemies = true,
-	ReservePercent = 10,
-	Spacing = 6,
 })
 assert(win.Kind == "Place" and win.Slot.Index == 2, "Win strategy did not prioritize combat under pressure")
 assert(win.Path == path and win.Percent >= 1 and win.Percent <= 99, "adaptive placement did not return a map position")
+assert(win.Context.ReservePercent == 0, "automatic reserve did not release yen during an emergency")
 
 snapshot.GameState = {
 	Wave = 1,
@@ -105,19 +104,17 @@ local economy = Smart.Decide(snapshot, {
 	AdaptivePlacement = true,
 	SmartEconomy = true,
 	ReactToEnemies = true,
-	ReservePercent = 0,
-	Spacing = 6,
 })
 assert(economy.Kind == "Place" and economy.Slot.Index == 1, "Economy strategy did not take a profitable early farm")
+slots[2].BoundingSize = 12
 local noEconomy = Smart.Decide(snapshot, {
 	Strategy = "Economy",
 	AdaptivePlacement = true,
 	SmartEconomy = false,
 	ReactToEnemies = true,
-	ReservePercent = 0,
-	Spacing = 6,
 })
 assert(noEconomy.Kind == "Place" and noEconomy.Slot.Index == 2, "disabling smart economy did not exclude farm actions")
+assert(noEconomy.Spacing == 11, "unit model footprint did not determine automatic placement spacing")
 
 snapshot.Yen = 100
 local reserved = Smart.Decide(snapshot, {
@@ -125,10 +122,10 @@ local reserved = Smart.Decide(snapshot, {
 	AdaptivePlacement = true,
 	SmartEconomy = true,
 	ReactToEnemies = true,
-	ReservePercent = 50,
-	Spacing = 6,
 })
-assert(reserved.Kind == "Wait", "emergency reserve was not respected in a safe wave")
+assert(reserved.Kind == "Wait", "automatic yen reserve was not applied in a safe wave")
+assert(reserved.Context.ReservePercent > 0, "automatic yen reserve was not exposed")
+assert(tonumber(reserved.Context.Spacing), "automatic placement spacing was not exposed")
 snapshot.Yen = 1000
 snapshot.PlacementCap = 0
 local capped = Smart.Decide(snapshot, {
@@ -136,8 +133,6 @@ local capped = Smart.Decide(snapshot, {
 	AdaptivePlacement = true,
 	SmartEconomy = true,
 	ReactToEnemies = true,
-	ReservePercent = 0,
-	Spacing = 6,
 })
 assert(capped.Kind == "Wait", "global placement cap was ignored")
 

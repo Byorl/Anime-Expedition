@@ -191,11 +191,8 @@ for index = 1, 6 do
 end
 assert(controls["auto_play.smart.enabled"], "Smart Auto Play toggle is missing")
 assert(controls["auto_play.smart.strategy"].Settings.Search == true, "Smart strategy dropdown is not searchable")
-assert(
-	controls["auto_play.smart.reserve"].Settings.Minimum == 0
-		and controls["auto_play.smart.reserve"].Settings.Maximum == 50,
-	"Smart emergency reserve range is wrong"
-)
+assert(not controls["auto_play.smart.reserve"], "Smart yen reserve should not require manual tuning")
+assert(not controls["auto_play.smart.spacing"], "Smart placement spacing should not require manual tuning")
 
 local source = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(

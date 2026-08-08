@@ -120,6 +120,24 @@ return function(Import)
 		return ok and result == true
 	end
 
+	local function enrichSlotFootprints(state, slots)
+		for _, slot in ipairs(slots) do
+			local key = tostring(slot.Asset)
+			local cached = state.BoundingSizes[key]
+			if cached == nil then
+				cached = 6
+				if state.UnitUtils and type(state.UnitUtils.GetUnitBoundingBoxSize) == "function" then
+					local ok, size = pcall(state.UnitUtils.GetUnitBoundingBoxSize, state.UnitUtils, slot.Asset)
+					if ok and typeof(size) == "Vector3" then
+						cached = math.max(2, size.X, size.Z)
+					end
+				end
+				state.BoundingSizes[key] = cached
+			end
+			slot.BoundingSize = cached
+		end
+	end
+
 	local function placementOrdinal(snapshot, choice)
 		if choice.Ordinal then
 			return choice.Ordinal
@@ -271,6 +289,7 @@ return function(Import)
 		local playerData = ctx.Game:PlayerData()
 		local information = ctx.Game:Information() or {}
 		local slots = Planner.Slots(hotbar, playerData, information, 6)
+		enrichSlotFootprints(state, slots)
 		local gameUnits = ctx.Game:State("GameUnits")
 		local placed = Planner.Placed(slots, gameUnits, Players.LocalPlayer)
 		local playerState = ctx.Game:State("GamePlayerState")
@@ -463,6 +482,15 @@ return function(Import)
 			state.SmartThreatText = threat
 			state.SmartThreatLabel:UpdateName(threat)
 		end
+		local automation = string.format(
+			"Automatic: Yen Reserve %d%% | Placement Spacing %s",
+			math.floor(tonumber(context.ReservePercent) or 0),
+			context.Spacing and tostring(context.Spacing) or "Planning"
+		)
+		if state.SmartAutomationText ~= automation and state.SmartAutomationLabel then
+			state.SmartAutomationText = automation
+			state.SmartAutomationLabel:UpdateName(automation)
+		end
 		local reason = state.ShowSmartDecisions and ("Decision: " .. tostring(decision.Reason))
 			or "Decision details are hidden."
 		if state.SmartDecisionText ~= reason and state.SmartDecisionLabel then
@@ -510,8 +538,6 @@ return function(Import)
 			AdaptivePlacement = state.AdaptivePlacement,
 			SmartEconomy = state.SmartEconomy,
 			ReactToEnemies = state.ReactToEnemies,
-			ReservePercent = state.ReservePercent,
-			Spacing = state.SmartSpacing,
 		})
 		state.LastSmartDecision = decision
 		updateSmartLabels(state, decision)
@@ -587,7 +613,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 2,
+		Version = 3,
 		Priority = 9,
 		Dependencies = {},
 
@@ -603,8 +629,6 @@ return function(Import)
 				AdaptivePlacement = true,
 				SmartEconomy = true,
 				ReactToEnemies = true,
-				ReservePercent = 10,
-				SmartSpacing = 6,
 				SmartVisualize = true,
 				ShowSmartDecisions = true,
 				UsePriority = false,
@@ -617,6 +641,7 @@ return function(Import)
 				PlaceRetries = {},
 				UpgradeRetries = {},
 				Markers = {},
+				BoundingSizes = {},
 				LastErrors = {},
 				LastVisual = 0,
 				VisualDirty = true,
@@ -796,29 +821,6 @@ return function(Import)
 					state.ReactToEnemies = value == true
 				end,
 			}, "auto_play.smart.react_to_enemies")
-			ctx.Registry:Slider(smart, {
-				Name = "Emergency Yen Reserve",
-				Default = 10,
-				Minimum = 0,
-				Maximum = 50,
-				DisplayMethod = "LiteralPercent",
-				Precision = 0,
-				Step = 1,
-				Callback = function(value)
-					state.ReservePercent = math.floor(value)
-				end,
-			}, "auto_play.smart.reserve")
-			ctx.Registry:Slider(smart, {
-				Name = "Smart Placement Spacing",
-				Default = 6,
-				Minimum = 1,
-				Maximum = 20,
-				Precision = 0,
-				Step = 1,
-				Callback = function(value)
-					state.SmartSpacing = math.floor(value)
-				end,
-			}, "auto_play.smart.spacing")
 			ctx.Registry:Toggle(smart, {
 				Name = "Visualize Smart Placement",
 				Default = true,
@@ -842,6 +844,7 @@ return function(Import)
 			live:Header({ Text = "Live Planner" })
 			state.SmartScenarioLabel = live:Label({ Text = "Scenario: Waiting for match data" })
 			state.SmartThreatLabel = live:Label({ Text = "Threat: 0% | Enemies: 0 | Wave: 0/0" })
+			state.SmartAutomationLabel = live:Label({ Text = "Automatic: Yen Reserve 0% | Placement Spacing Planning" })
 			state.SmartDecisionLabel = live:Label({ Text = "Decision: Waiting for match data" })
 			live:Paragraph({
 				Header = "How it works",
