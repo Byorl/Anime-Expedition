@@ -330,24 +330,32 @@ return function(Import)
 				InGroup = false,
 			}
 			state.CodeCachePath, state.CodeCache = readCodeCache(ctx)
-			local section = ctx.Tabs.MiscClaims:Section({Side = "Left"})
-			section:Header({Text = "Auto Claim"})
+			local sections = {
+				Daily = ctx.Tabs.MiscClaims:Section({Side = "Left"}),
+				Progression = ctx.Tabs.MiscClaims:Section({Side = "Left"}),
+				Special = ctx.Tabs.MiscClaims:Section({Side = "Left"}),
+				Codes = ctx.Tabs.MiscClaims:Section({Side = "Left"}),
+			}
+			sections.Daily:Header({Text = "Daily Rewards"})
+			sections.Progression:Header({Text = "Progression Rewards"})
+			sections.Special:Header({Text = "Special Rewards"})
+			sections.Codes:Header({Text = "Codes"})
 			local controls = {
-				{"Auto Claim Quests", "Quests", "auto_claim.quests"},
-				{"Auto Claim Achievements", "Achievements", "auto_claim.achievements"},
-				{"Auto Claim Battlepass", "Battlepass", "auto_claim.battlepass"},
-				{"Auto Claim Calendars", "Calendars", "auto_claim.calendars"},
-				{"Auto Claim Index", "Index", "auto_claim.index"},
-				{"Auto Claim Level Milestones", "LevelMilestones", "auto_claim.level_milestones"},
-				{"Auto Claim Events", "Events", "auto_claim.events"},
-				{"Auto Claim Expeditions", "Expeditions", "auto_claim.expeditions"},
-				{"Auto Claim Tournaments", "Tournaments", "auto_claim.tournaments"},
-				{"Auto Claim Group Rewards", "GroupRewards", "auto_claim.group_rewards"},
-				{"Auto Redeem Codes", "Codes", "auto_claim.codes"},
+				{"Auto Claim Quests", "Quests", "auto_claim.quests", "Daily"},
+				{"Auto Claim Battlepass", "Battlepass", "auto_claim.battlepass", "Daily"},
+				{"Auto Claim Calendars", "Calendars", "auto_claim.calendars", "Daily"},
+				{"Auto Claim Achievements", "Achievements", "auto_claim.achievements", "Progression"},
+				{"Auto Claim Index", "Index", "auto_claim.index", "Progression"},
+				{"Auto Claim Level Milestones", "LevelMilestones", "auto_claim.level_milestones", "Progression"},
+				{"Auto Claim Expeditions", "Expeditions", "auto_claim.expeditions", "Special"},
+				{"Auto Claim Events", "Events", "auto_claim.events", "Special"},
+				{"Auto Claim Tournaments", "Tournaments", "auto_claim.tournaments", "Special"},
+				{"Auto Claim Group Rewards", "GroupRewards", "auto_claim.group_rewards", "Special"},
+				{"Auto Redeem Codes", "Codes", "auto_claim.codes", "Codes"},
 			}
 			for _, definition in ipairs(controls) do
-				local label, valueKey, flag = definition[1], definition[2], definition[3]
-				ctx.Registry:Toggle(section, {
+				local label, valueKey, flag, category = definition[1], definition[2], definition[3], definition[4]
+				ctx.Registry:Toggle(sections[category], {
 					Name = label,
 					Default = false,
 					Callback = function(value)

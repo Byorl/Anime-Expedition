@@ -83,24 +83,25 @@ return function(Import)
 				Drops = drops,
 				SeenBounties = {},
 			}
-			local left = ctx.Tabs.Webhook:Section({ Side = "Left" })
-			left:Header({ Text = "Discord Webhook" })
-			ctx.Registry:Toggle(left, {
+			local delivery = ctx.Tabs.Webhook:Section({ Side = "Left" })
+			delivery:Header({ Text = "Delivery" })
+			ctx.Registry:Toggle(delivery, {
 				Name = "Send On Match End",
 				Default = false,
 				Callback = function(value)
 					state.SendMatch = value == true
 				end,
 			}, "webhook.send_match")
-			ctx.Registry:Toggle(left, {
+			ctx.Registry:Toggle(delivery, {
 				Name = "Send Bounty Webhook",
 				Default = false,
 				Callback = function(value)
 					state.SendBounty = value == true
 				end,
 			}, "webhook.send_bounty")
-			left:Header({ Text = "Webhook URL" })
-			ctx.Registry:Input(left, {
+			local destination = ctx.Tabs.Webhook:Section({ Side = "Left" })
+			destination:Header({ Text = "Webhook Destination" })
+			ctx.Registry:Input(destination, {
 				Name = "Webhook",
 				Placeholder = "https://discord.com/api/webhooks/...",
 				Default = "",
@@ -108,7 +109,7 @@ return function(Import)
 					state.Url = tostring(value)
 				end,
 			}, "webhook.url")
-			left:Button({
+			destination:Button({
 				Name = "Send Test",
 				Callback = function()
 					local ok, err = ctx.Webhook:Post(state.Url, ctx.Webhook:TestPayload())
@@ -120,17 +121,16 @@ return function(Import)
 				end,
 			})
 
-			local right = ctx.Tabs.Webhook:Section({ Side = "Right" })
-			right:Header({ Text = "Pings" })
-			ctx.Registry:Toggle(right, {
+			local mentions = ctx.Tabs.Webhook:Section({ Side = "Right" })
+			mentions:Header({ Text = "Mentions" })
+			ctx.Registry:Toggle(mentions, {
 				Name = "Mention Everyone",
 				Default = false,
 				Callback = function(value)
 					state.MentionEveryone = value == true
 				end,
 			}, "webhook.mention_everyone")
-			right:Header({ Text = "Discord User ID" })
-			ctx.Registry:Input(right, {
+			ctx.Registry:Input(mentions, {
 				Name = "Discord User ID",
 				Placeholder = "938129321 or <@938129321>",
 				Default = "",
@@ -138,7 +138,9 @@ return function(Import)
 					state.DiscordUserId = tostring(value)
 				end,
 			}, "webhook.discord_user_id")
-			state.DropControl = ctx.Registry:Dropdown(right, {
+			local alerts = ctx.Tabs.Webhook:Section({ Side = "Right" })
+			alerts:Header({ Text = "Drop Alerts" })
+			state.DropControl = ctx.Registry:Dropdown(alerts, {
 				Name = "Ping on Drop",
 				Search = true,
 				Multi = true,
@@ -154,10 +156,9 @@ return function(Import)
 					end
 				end,
 			}, "webhook.ping_drops")
-			right:Header({ Text = "Ping on Equipment Rarity" })
 			local rarities = Catalog.AllRarities(ctx.Game:Information() or {})
-			ctx.Registry:Dropdown(right, {
-				Name = "Rarity",
+			ctx.Registry:Dropdown(alerts, {
+				Name = "Ping on Equipment Rarity",
 				Search = true,
 				Multi = false,
 				Required = true,

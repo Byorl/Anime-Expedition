@@ -211,6 +211,8 @@ return function(Import)
 					end
 				end,
 			}, "join.challenge.drop")
+			section:Divider()
+			section:Header({ Text = "Automation" })
 			ctx.Registry:Toggle(section, {
 				Name = "Back to Lobby on Refresh",
 				Default = false,

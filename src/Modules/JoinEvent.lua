@@ -134,6 +134,8 @@ return function(Import)
 			section:Label({
 				Text = "Farms the selected act until the relic target is reached, runs Crow until relics reach 0, then returns to the selected act. No lobby return is needed.",
 			})
+			section:Divider()
+			section:Header({ Text = "Automation" })
 			ctx.Registry:Toggle(section, {
 				Name = "Auto Join",
 				Default = false,

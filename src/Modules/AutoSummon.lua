@@ -9,7 +9,7 @@ return function(Import)
 	function AutoSummon:_Status(state, message)
 		state.Status = tostring(message or "Idle.")
 		if state.StatusLabel then
-			Util.SafeCall("auto summon status", state.StatusLabel.UpdateName, state.StatusLabel, state.Status)
+			Util.SafeCall("auto summon status", state.StatusLabel.UpdateName, state.StatusLabel, "Status: " .. state.Status)
 		end
 	end
 
@@ -145,11 +145,11 @@ return function(Import)
 				Status = "Idle.",
 				Banners = Catalog.Banners(ctx.Game:State("BannerData"), ctx.Game:Information() or {}),
 			}
-			local section = ctx.Tabs.MiscUnits:Section({Side = "Left"})
-			section:Header({Text = "Auto Summon"})
-			section:Header({Text = "Status"})
-			state.StatusLabel = section:Label({Text = "Idle."})
-			state.Toggle = ctx.Registry:Toggle(section, {
+			local summoning = ctx.Tabs.MiscUnits:Section({Side = "Left"})
+			local stopConditions = ctx.Tabs.MiscUnits:Section({Side = "Left"})
+			summoning:Header({Text = "Auto Summon"})
+			state.StatusLabel = summoning:Label({Text = "Status: Idle."})
+			state.Toggle = ctx.Registry:Toggle(summoning, {
 				Name = "Auto Summon",
 				Default = false,
 				Callback = function(value)
@@ -164,7 +164,7 @@ return function(Import)
 			local options = #state.Banners.Options > 0 and state.Banners.Options or {"No banners available"}
 			local first = state.Banners.Entries[1]
 			state.SelectedBannerKey = first and first.Key or nil
-			state.BannerDropdown = ctx.Registry:Dropdown(section, {
+			state.BannerDropdown = ctx.Registry:Dropdown(summoning, {
 				Name = "Banner Selection",
 				Search = true,
 				Multi = false,
@@ -179,13 +179,13 @@ return function(Import)
 					state.SelectedBannerKey = state.Banners.ByLabel[value] or Catalog.ExtractBracketKey(value)
 				end,
 			}, "auto_summon.banner")
-			section:Button({
+			summoning:Button({
 				Name = "Refresh Banners",
 				Callback = function() AutoSummon:_Refresh(ctx, state, state.SelectedBannerKey) end,
 			})
-			section:Header({Text = "Ping / Stop Rarity"})
+			stopConditions:Header({Text = "Stop Conditions"})
 			local rarities = Catalog.Rarities(ctx.Game:Information() or {})
-			ctx.Registry:Dropdown(section, {
+			ctx.Registry:Dropdown(stopConditions, {
 				Name = "Rarity to stop summoning on",
 				Search = true,
 				Multi = false,
@@ -194,7 +194,7 @@ return function(Import)
 				Default = 1,
 				Callback = function(value) state.StopRarity = tostring(value or "None") end,
 			}, "auto_summon.stop_rarity")
-			ctx.Registry:Toggle(section, {
+			ctx.Registry:Toggle(stopConditions, {
 				Name = "Stop Summoning on Secret",
 				Default = false,
 				Callback = function(value) state.StopSecret = value == true end,

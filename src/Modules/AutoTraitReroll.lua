@@ -13,7 +13,7 @@ return function(Import)
 	function AutoTrait:_Status(state, message)
 		state.Status = tostring(message or "Idle.")
 		if state.StatusLabel then
-			Util.SafeCall("auto trait status", state.StatusLabel.UpdateName, state.StatusLabel, state.Status)
+			Util.SafeCall("auto trait status", state.StatusLabel.UpdateName, state.StatusLabel, "Status: " .. state.Status)
 		end
 	end
 
@@ -144,13 +144,13 @@ return function(Import)
 				Units = Catalog.Units(ctx.Game:PlayerData(), information),
 				Traits = Catalog.Traits(information),
 			}
-			local section = ctx.Tabs.MiscUnits:Section({Side = "Right"})
-			section:Header({Text = "Auto Reroll Trait"})
-			section:Header({Text = "Unit"})
+			local unitSelection = ctx.Tabs.MiscUnits:Section({Side = "Right"})
+			local automation = ctx.Tabs.MiscUnits:Section({Side = "Right"})
+			unitSelection:Header({Text = "Unit Selection"})
 			local unitOptions = #state.Units.Options > 0 and state.Units.Options or {"No units available"}
 			local first = state.Units.Entries[1]
 			state.SelectedUnitId = first and first.Key or nil
-			state.UnitDropdown = ctx.Registry:Dropdown(section, {
+			state.UnitDropdown = ctx.Registry:Dropdown(unitSelection, {
 				Name = "Unit",
 				Search = true,
 				Multi = false,
@@ -165,12 +165,12 @@ return function(Import)
 					state.SelectedUnitId = state.Units.ByLabel[value] or Catalog.ExtractBracketKey(value, "#")
 				end,
 			}, "auto_trait.unit")
-			section:Button({Name = "Refresh Units", Callback = function()
+			unitSelection:Button({Name = "Refresh Units", Callback = function()
 				AutoTrait:_RefreshUnits(ctx, state, state.SelectedUnitId)
 			end})
-			section:Header({Text = "Stop on Traits"})
+			automation:Header({Text = "Auto Reroll Trait"})
 			local traitOptions = #state.Traits.Options > 0 and state.Traits.Options or {"No traits available"}
-			ctx.Registry:Dropdown(section, {
+			ctx.Registry:Dropdown(automation, {
 				Name = "Traits to stop on",
 				Search = true,
 				Multi = true,
@@ -183,7 +183,7 @@ return function(Import)
 				end,
 				Callback = function(value) state.StopTraits = selectedTraitKeys(value, state.Traits) end,
 			}, "auto_trait.stop_traits")
-			state.Toggle = ctx.Registry:Toggle(section, {
+			state.Toggle = ctx.Registry:Toggle(automation, {
 				Name = "Auto Reroll Trait",
 				Default = false,
 				Callback = function(value)
@@ -194,7 +194,7 @@ return function(Import)
 					end
 				end,
 			}, "auto_trait.enabled")
-			state.StatusLabel = section:Label({Text = "Idle."})
+			state.StatusLabel = automation:Label({Text = "Status: Idle."})
 			return state
 		end,
 

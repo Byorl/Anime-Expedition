@@ -83,6 +83,7 @@ local challengeData = {
 local callbacks, controls, providers = {}, {}, {}
 local section = {}
 function section:Header() end
+function section:Divider() end
 function section:Label(settings)
 	return { Settings = settings }
 end

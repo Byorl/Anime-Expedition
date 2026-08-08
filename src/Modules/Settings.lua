@@ -10,13 +10,17 @@ return function()
 				local state = ctx.Runtime.Modules and ctx.Runtime.Modules.States.Settings
 				return state == "Loading" or state == "Running"
 			end
-			local left = ctx.Tabs.Settings:Section({ Side = "Left" })
-			local right = ctx.Tabs.Settings:Section({ Side = "Right" })
+			local configs = ctx.Tabs.Settings:Section({ Side = "Left" })
+			local createConfig = ctx.Tabs.Settings:Section({ Side = "Left" })
+			local actions = ctx.Tabs.Settings:Section({ Side = "Left" })
+			local behavior = ctx.Tabs.Settings:Section({ Side = "Left" })
+			local runtimeSection = ctx.Tabs.Settings:Section({ Side = "Right" })
+			local appearance = ctx.Tabs.Settings:Section({ Side = "Right" })
 
-			left:Header({ Text = "Configs" })
+			configs:Header({ Text = "Configs" })
 			local names = ctx.Config:List()
 			local selected = ctx.Config.Account.SelectedConfig
-			local configDropdown = left:Dropdown({
+			local configDropdown = configs:Dropdown({
 				Name = "Configs",
 				Search = true,
 				Multi = false,
@@ -36,9 +40,9 @@ return function()
 				end,
 			})
 
-			left:Header({ Text = "Config Name" })
+			createConfig:Header({ Text = "Create Config" })
 			local pendingName = ""
-			local nameInput = left:Input({
+			local nameInput = createConfig:Input({
 				Name = "Config Name",
 				Placeholder = "Create config",
 				AcceptedCharacters = "All",
@@ -77,7 +81,7 @@ return function()
 				end
 			end
 
-			left:Button({
+			createConfig:Button({
 				Name = "Create",
 				Callback = function()
 					if not isActive() then
@@ -92,7 +96,8 @@ return function()
 					notifyResult("Create config", ok, ok and ("Created global config " .. clean) or err)
 				end,
 			})
-			left:Button({
+			actions:Header({ Text = "Config Actions" })
+			actions:Button({
 				Name = "Delete",
 				Callback = function()
 					if not isActive() then
@@ -125,7 +130,7 @@ return function()
 					})
 				end,
 			})
-			left:Button({
+			actions:Button({
 				Name = "Load",
 				Callback = function()
 					if not isActive() then
@@ -140,7 +145,7 @@ return function()
 					)
 				end,
 			})
-			left:Button({
+			actions:Button({
 				Name = "Save",
 				Callback = function()
 					if not isActive() then
@@ -151,7 +156,8 @@ return function()
 					notifyResult("Save config", ok, ok and ("Saved " .. ctx.Config.Account.SelectedConfig) or err)
 				end,
 			})
-			left:Toggle({
+			behavior:Header({ Text = "Config Behavior" })
+			behavior:Toggle({
 				Name = "Auto Load Selected",
 				Default = ctx.Config.Account.AutoLoadSelected == true,
 				Callback = function(value)
@@ -166,7 +172,7 @@ return function()
 					end
 				end,
 			})
-			left:Toggle({
+			behavior:Toggle({
 				Name = "Auto Save Settings",
 				Default = ctx.Config.Account.AutoSave == true,
 				Callback = function(value)
@@ -187,8 +193,8 @@ return function()
 				end,
 			})
 
-			right:Header({ Text = "Appearance" })
-			right:Button({
+			runtimeSection:Header({ Text = "Runtime" })
+			runtimeSection:Button({
 				Name = "Unload",
 				Callback = function()
 					if not isActive() or ctx.Runtime.ShuttingDown then
@@ -199,9 +205,10 @@ return function()
 					end)
 				end,
 			})
+			appearance:Header({ Text = "Appearance" })
 			local keyName = tostring(ctx.Config.Account.UI.ToggleKey or "RightShift")
 			local defaultKey = Enum.KeyCode[keyName] or Enum.KeyCode.RightShift
-			right:Keybind({
+			appearance:Keybind({
 				Name = "UI Hide / Show Key",
 				Default = defaultKey,
 				Blacklist = { Enum.KeyCode.Unknown },
@@ -221,7 +228,7 @@ return function()
 			})
 
 			local defaultPercent = math.floor(ctx.UIManager:GetRequestedScale() * 100 + 0.5)
-			right:Slider({
+			appearance:Slider({
 				Name = "UI Size",
 				Default = defaultPercent,
 				Minimum = 35,

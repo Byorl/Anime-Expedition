@@ -95,23 +95,23 @@ return function()
 				ManagedSettings = {},
 				OriginalSettings = {},
 			}
-			local section = ctx.Tabs.Game:Section({ Side = "Left" })
-			section:Header({ Text = "Match" })
-			ctx.Registry:Toggle(section, {
+			local automation = ctx.Tabs.Game:Section({ Side = "Left" })
+			automation:Header({ Text = "Match Automation" })
+			ctx.Registry:Toggle(automation, {
 				Name = "Auto Start",
 				Default = false,
 				Callback = function(value)
 					state.AutoStart = value == true
 				end,
 			}, "game.match.auto_start")
-			ctx.Registry:Toggle(section, {
+			ctx.Registry:Toggle(automation, {
 				Name = "Auto Skip Waves",
 				Default = false,
 				Callback = function(value)
 					state.AutoSkip = value == true
 				end,
 			}, "game.match.auto_skip")
-			ctx.Registry:Slider(section, {
+			ctx.Registry:Slider(automation, {
 				Name = "Auto Start Delay (0=off)",
 				Default = 0,
 				Minimum = 0,
@@ -122,7 +122,9 @@ return function()
 					state.StartDelay = value
 				end,
 			}, "game.match.start_delay")
-			ctx.Registry:Toggle(section, {
+			local afk = ctx.Tabs.Game:Section({ Side = "Left" })
+			afk:Header({ Text = "AFK Chamber" })
+			ctx.Registry:Toggle(afk, {
 				Name = "Auto Leave AFK Chamber",
 				Default = false,
 				Callback = function(value)

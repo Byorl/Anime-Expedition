@@ -63,37 +63,39 @@ return function()
 				Hours = 1,
 				TimeReturned = false,
 			}
-			local section = ctx.Tabs.Game:Section({ Side = "Right" })
-			section:Header({ Text = "End of Match" })
-			ctx.Registry:Toggle(section, {
+			local actions = ctx.Tabs.Game:Section({ Side = "Right" })
+			actions:Header({ Text = "Match Actions" })
+			ctx.Registry:Toggle(actions, {
 				Name = "Auto Next Stage",
 				Default = false,
 				Callback = function(value)
 					state.AutoNext = value == true
 				end,
 			}, "game.end.auto_next")
-			ctx.Registry:Toggle(section, {
+			ctx.Registry:Toggle(actions, {
 				Name = "Auto Replay",
 				Default = false,
 				Callback = function(value)
 					state.AutoReplay = value == true
 				end,
 			}, "game.end.auto_replay")
-			ctx.Registry:Toggle(section, {
+			ctx.Registry:Toggle(actions, {
 				Name = "Auto Leave",
 				Default = false,
 				Callback = function(value)
 					state.AutoLeave = value == true
 				end,
 			}, "game.end.auto_leave")
-			ctx.Registry:Toggle(section, {
+			ctx.Registry:Toggle(actions, {
 				Name = "Auto Next/Replay/Leave",
 				Default = false,
 				Callback = function(value)
 					state.Smart = value == true
 				end,
 			}, "game.end.smart")
-			ctx.Registry:Slider(section, {
+			local conditions = ctx.Tabs.Game:Section({ Side = "Right" })
+			conditions:Header({ Text = "Exit Conditions" })
+			ctx.Registry:Slider(conditions, {
 				Name = "Leave at Wave (0=off)",
 				Default = 0,
 				Minimum = 0,
@@ -107,7 +109,7 @@ return function()
 					end
 				end,
 			}, "game.match.leave_wave")
-			ctx.Registry:Slider(section, {
+			ctx.Registry:Slider(conditions, {
 				Name = "Leave After X Matches (0=off)",
 				Default = 0,
 				Minimum = 0,
@@ -118,14 +120,16 @@ return function()
 					state.LeaveMatches = value
 				end,
 			}, "game.end.leave_matches")
-			ctx.Registry:Toggle(section, {
+			ctx.Registry:Toggle(conditions, {
 				Name = "Auto Lobby on Loss",
 				Default = false,
 				Callback = function(value)
 					state.LobbyLoss = value == true
 				end,
 			}, "game.end.lobby_loss")
-			ctx.Registry:Toggle(section, {
+			local timerSection = ctx.Tabs.Game:Section({ Side = "Right" })
+			timerSection:Header({ Text = "Timed Return" })
+			ctx.Registry:Toggle(timerSection, {
 				Name = "Return to Lobby After Time",
 				Default = false,
 				Callback = function(value)
@@ -135,7 +139,7 @@ return function()
 					end
 				end,
 			}, "game.end.return_after")
-			ctx.Registry:Slider(section, {
+			ctx.Registry:Slider(timerSection, {
 				Name = "After (hours)",
 				Default = 1,
 				Minimum = 1,

@@ -109,6 +109,8 @@ return function(Import)
 					state.Difficulty = tostring(value)
 				end,
 			}, "join.story.difficulty")
+			section:Divider()
+			section:Header({ Text = "Automation" })
 			ctx.Registry:Toggle(section, {
 				Name = "Auto Join",
 				Default = false,

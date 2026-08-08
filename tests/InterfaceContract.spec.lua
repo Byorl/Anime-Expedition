@@ -1,8 +1,8 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.7.1", "interface release version is wrong")
+assert(Build.Version == "1.7.2", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
-		== "https://raw.githubusercontent.com/Byorl/Maclib/bc2a01d6c074bf3930c3ddaa4791887e63ea9782/src/maclib.lua",
+		== "https://raw.githubusercontent.com/Byorl/Maclib/e5104e2b12ec160368421f4deb8f0d974f309c0e/src/maclib.lua",
 	"interface is not pinned to the tested Byorl Maclib revision"
 )
 
@@ -22,6 +22,19 @@ local gameMatchSource = fs.read("src/Modules/GameMatch.lua", "bin")
 local gameEndSource = fs.read("src/Modules/GameEnd.lua", "bin")
 assert(not string.find(gameMatchSource, "Leave at Wave (0=off)", 1, true), "Leave at Wave is still in Match")
 assert(string.find(gameEndSource, "Leave at Wave (0=off)", 1, true), "Leave at Wave is missing from End of Match")
+
+local organizedSections = {
+	["src/Modules/GameMatch.lua"] = { "Match Automation", "AFK Chamber" },
+	["src/Modules/GameEnd.lua"] = { "Match Actions", "Exit Conditions", "Timed Return" },
+	["src/Modules/Webhook.lua"] = { "Delivery", "Webhook Destination", "Mentions", "Drop Alerts" },
+	["src/Modules/Settings.lua"] = { "Configs", "Create Config", "Config Actions", "Config Behavior", "Runtime", "Appearance" },
+}
+for path, names in pairs(organizedSections) do
+	local source = fs.read(path, "bin")
+	for _, name in ipairs(names) do
+		assert(string.find(source, name, 1, true), path .. " is missing section " .. name)
+	end
+end
 
 local settingsSource = fs.read("src/Modules/Settings.lua", "bin")
 assert(
