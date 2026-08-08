@@ -117,8 +117,42 @@ return function(Import)
 		return positions
 	end
 
-	local function liveEnemyProgress(paths)
+	local function reversePath(path)
+		local reversed = {}
+		for index = #path, 1, -1 do
+			table.insert(reversed, path[index])
+		end
+		return reversed
+	end
+
+	local function pathSignature(path)
+		if type(path) ~= "table" or #path < 2 then
+			return ""
+		end
+		local first, last = path[1], path[#path]
+		return string.format(
+			"%.0f:%.0f:%.0f|%.0f:%.0f:%.0f|%d",
+			first.X,
+			first.Y,
+			first.Z,
+			last.X,
+			last.Y,
+			last.Z,
+			#path
+		)
+	end
+
+	local function orientedRoute(state, paths)
 		local progress = {}
+		local signature = paths[1] and pathSignature(paths[1]) or ""
+		if signature ~= state.RouteSignature then
+			state.RouteSignature = signature
+			state.RouteVote = 0
+			state.RouteReverse = false
+			state.RouteConfident = false
+			state.EnemyTracks = {}
+		end
+		local seen = {}
 		for _, enemy in ipairs(CollectionService:GetTagged("Enemy")) do
 			local ok, position = pcall(function()
 				return enemy:IsA("BasePart") and enemy.Position or enemy:GetPivot().Position
@@ -132,11 +166,68 @@ return function(Import)
 					end
 				end
 				if best and distance <= 20 then
+					seen[enemy] = true
+					local previous = state.EnemyTracks[enemy]
+					if previous and previous.Signature == signature then
+						state.RouteVote = Planner.RouteVote(state.RouteVote, previous.Progress, best)
+					end
+					state.EnemyTracks[enemy] = { Progress = best, Signature = signature }
 					table.insert(progress, best)
 				end
 			end
 		end
-		return progress
+		for enemy in pairs(state.EnemyTracks) do
+			if not seen[enemy] then
+				state.EnemyTracks[enemy] = nil
+			end
+		end
+		if math.abs(state.RouteVote) >= 1 then
+			state.RouteReverse = state.RouteVote < 0
+			state.RouteConfident = true
+		end
+		local oriented = {}
+		for _, path in ipairs(paths) do
+			table.insert(oriented, state.RouteReverse and reversePath(path) or path)
+		end
+		if not state.RouteConfident then
+			return oriented, {}
+		end
+		if state.RouteReverse then
+			for index, value in ipairs(progress) do
+				progress[index] = 1 - value
+			end
+		end
+		return oriented, progress
+	end
+
+	local function enrichPlacedCFrames(placed)
+		local byID = {}
+		for _, entries in pairs(placed) do
+			for _, unit in ipairs(entries) do
+				if unit.GameUnitID ~= nil then
+					byID[tostring(unit.GameUnitID)] = unit
+				end
+			end
+		end
+		for _, model in ipairs(CollectionService:GetTagged("Unit")) do
+			local ok, id, cframe = pcall(function()
+				local value = model:GetAttribute("GameUnitID") or model:GetAttribute("ID")
+				if value == nil then
+					for _, descendant in ipairs(model:GetDescendants()) do
+						value = descendant:GetAttribute("GameUnitID")
+						if value ~= nil then
+							break
+						end
+					end
+				end
+				value = value or model:GetAttribute("UnitID")
+				return value, model:IsA("Model") and model:GetPivot() or model.CFrame
+			end)
+			local unit = ok and id ~= nil and byID[tostring(id)] or nil
+			if unit and typeof(cframe) == "CFrame" then
+				unit.CFrame = cframe
+			end
+		end
 	end
 
 	local function pathGeometry()
@@ -476,6 +567,7 @@ return function(Import)
 		enrichSlotFootprints(state, slots)
 		local gameUnits = ctx.Game:StateDeep("GameUnits", 4)
 		local placed = Planner.Placed(slots, gameUnits, Players.LocalPlayer)
+		enrichPlacedCFrames(placed)
 		local playerState, playerSource = ctx.Game:GamePlayerData()
 		local mapState = ctx.Game:StateDeep("MapState", 5)
 		local enemies = ctx.Game:StateDeep("GameEnemies", 4) or {}
@@ -490,6 +582,9 @@ return function(Import)
 				paths = { path }
 			end
 		end
+		local liveProgress
+		paths, liveProgress = orientedRoute(state, paths)
+		path = paths[1]
 		return {
 			GameState = gameState,
 			Slots = slots,
@@ -498,7 +593,9 @@ return function(Import)
 			Path = path,
 			Paths = paths,
 			Enemies = enemies,
-			LiveProgress = liveEnemyProgress(paths),
+			LiveProgress = liveProgress,
+			RouteConfident = state.RouteConfident,
+			RouteReverse = state.RouteReverse,
 			PlacementCounts = type(playerState) == "table" and playerState.PlacementCounts or {},
 			PlacementCap = tonumber(
 				type(playerState) == "table" and playerState.TotalUnitPlacementCap
@@ -517,6 +614,11 @@ return function(Import)
 		state.PlaceRetries = {}
 		state.BlockedSlots = {}
 		state.SmartHistory = {}
+		state.RouteSignature = nil
+		state.RouteVote = 0
+		state.RouteReverse = false
+		state.RouteConfident = false
+		state.EnemyTracks = {}
 		state.UpgradeRetries = {}
 		state.NextActionAt = os.clock() + 0.5
 		state.VisualDirty = true
@@ -682,10 +784,12 @@ return function(Import)
 			state.SmartScenarioText = scenario
 			state.SmartScenarioLabel:UpdateName(scenario)
 		end
-		local routeState = (tonumber(context.BacklineEnemies) or 0) > 0
+		local routeState = context.RouteConfident == false
+			and " | Calibrating route"
+			or (tonumber(context.BacklineEnemies) or 0) > 0
 			and string.format(" | Backline: %d", tonumber(context.BacklineEnemies) or 0)
 			or context.RecentLeak and " | Recovering coverage"
-			or " | Coverage stable"
+			or string.format(" | Coverage: %d%%", math.floor((tonumber(context.RouteCoverage) or 0) * 100 + 0.5))
 		local threat = string.format(
 			"Threat: %d%% | Enemies: %d | Wave: %d/%d%s%s",
 			math.floor((tonumber(context.Pressure) or 0) * 100 + 0.5),
@@ -857,7 +961,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 12,
+		Version = 13,
 		Priority = 9,
 		Dependencies = {},
 
@@ -889,6 +993,11 @@ return function(Import)
 				BoundingSizes = {},
 				BoundingHeights = {},
 				SmartHistory = {},
+				RouteSignature = nil,
+				RouteVote = 0,
+				RouteReverse = false,
+				RouteConfident = false,
+				EnemyTracks = {},
 				LastErrors = {},
 				LastVisual = 0,
 				VisualDirty = true,

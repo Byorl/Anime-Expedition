@@ -61,6 +61,16 @@ local liveRoute = Smart.Context({
 	BaseMaxHealth = 3,
 }, {}, path, { 0.21, 0.84 })
 assert(liveRoute.BacklineEnemies == 1 and liveRoute.MaxProgress == 0.84, "rendered enemy route progress was ignored")
+local calibratingRoute = Smart.Context({
+	Wave = 1,
+	MaxWave = 15,
+	BaseHealth = 3,
+	BaseMaxHealth = 3,
+}, { enemy }, path, { 0.96 }, false)
+assert(
+	calibratingRoute.BacklineEnemies == 0 and calibratingRoute.MaxProgress == 0,
+	"unoriented path data created a false backline emergency"
+)
 
 local information = {
 	Units = {
@@ -194,6 +204,22 @@ local economy = Smart.Decide(snapshot, {
 	ReactToEnemies = true,
 })
 assert(economy.Kind == "Place" and economy.Slot.Index == 1, "Economy strategy did not take a profitable early farm")
+snapshot.Enemies = { enemy }
+snapshot.LiveProgress = { 0.96 }
+snapshot.RouteConfident = false
+local safeOpening = Smart.Decide(snapshot, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	safeOpening.Kind == "Place" and safeOpening.Slot.Index == 1,
+	"route calibration abandoned the profitable farm opening"
+)
+snapshot.Enemies = {}
+snapshot.LiveProgress = nil
+snapshot.RouteConfident = nil
 slots[2].BoundingSize = 12
 local noEconomy = Smart.Decide(snapshot, {
 	Strategy = "Economy",
@@ -323,5 +349,9 @@ assert(
 )
 assert(string.find(plannerSource, "BacklineEnemies", 1, true), "Smart mode does not react to actual enemy route progress")
 assert(string.find(plannerSource, "paybackWaves", 1, true), "farm upgrades ignore their remaining-wave payback")
+assert(string.find(source, "RouteVote", 1, true), "active route direction is not learned from live enemy movement")
+assert(string.find(source, "RouteConfident", 1, true), "unoriented routes can still trigger false leak pressure")
+assert(string.find(plannerSource, "defenseCoverage", 1, true), "placed-unit route coverage is not re-evaluated")
+assert(string.find(plannerSource, "MarginalCoverage", 1, true), "new placements ignore already covered path sections")
 
 print("Smart Auto Play tests passed")

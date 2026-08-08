@@ -154,8 +154,9 @@ return function(Import)
 		return clamp(segment, 0, 1)
 	end
 
-	function Smart.Context(gameState, enemies, path, liveProgress)
+	function Smart.Context(gameState, enemies, path, liveProgress, routeConfident)
 		gameState = type(gameState) == "table" and gameState or {}
+		local routeReady = routeConfident ~= false
 		local difficulty = findValue(gameState, { "Difficulty", "DifficultyName" }, 4) or "Unknown"
 		local mode = findValue(gameState, { "Gamemode", "GameMode", "Mode" }, 4) or "Unknown"
 		local map = findValue(gameState, { "MapName", "MapID", "MapId", "Map" }, 4) or "Unknown"
@@ -180,7 +181,7 @@ return function(Import)
 				local maximum = math.max(health, number(enemy.MaxHealth, health))
 				totalHealth = totalHealth + health
 				totalMaxHealth = totalMaxHealth + maximum
-				local progress = pathProgress(enemy, path)
+				local progress = routeReady and pathProgress(enemy, path) or 0
 				maxProgress = math.max(maxProgress, progress)
 				progressTotal = progressTotal + progress
 				backlineEnemies = backlineEnemies + (progress >= 0.72 and 1 or 0)
@@ -194,7 +195,7 @@ return function(Import)
 				boss = boss or enemy.Boss == true or hasText(enemyType, "boss")
 			end
 		end
-		if type(liveProgress) == "table" and #liveProgress > 0 then
+		if routeReady and type(liveProgress) == "table" and #liveProgress > 0 then
 			maxProgress, progressTotal, backlineEnemies = 0, 0, 0
 			for _, progress in ipairs(liveProgress) do
 				progress = clamp(number(progress, 0), 0, 1)
@@ -233,6 +234,7 @@ return function(Import)
 			MaxProgress = maxProgress,
 			AverageProgress = progressTotal / math.max(1, type(liveProgress) == "table" and #liveProgress > 0 and #liveProgress or enemyCount),
 			BacklineEnemies = backlineEnemies,
+			RouteConfident = routeReady,
 			BaseHealth = baseHealth,
 			BaseMaxHealth = baseMax,
 			HealthRatio = healthRatio,
@@ -361,6 +363,67 @@ return function(Import)
 		return total > 0 and hits / total or 0
 	end
 
+	local function unitPosition(unit)
+		local value = unit.CFrame
+		if typeof(value) == "CFrame" then
+			return value.Position
+		end
+		if typeof(value) == "Vector3" then
+			return value
+		end
+		local data = type(unit.Data) == "table" and unit.Data or {}
+		for _, key in ipairs({ "CFrame", "UnitCFrame", "Pivot", "Position" }) do
+			value = data[key]
+			if typeof(value) == "CFrame" then
+				return value.Position
+			elseif typeof(value) == "Vector3" then
+				return value
+			end
+		end
+		return nil
+	end
+
+	local function currentUnitStats(slot, unit)
+		local upgrades = type(slot.Info and slot.Info.UpgradeInfo) == "table" and slot.Info.UpgradeInfo or {}
+		local info = indexed(upgrades, unit.Upgrade) or indexed(upgrades, 0) or {}
+		local data = type(unit.Data) == "table" and unit.Data or {}
+		return type(data.CurrentStats) == "table" and next(data.CurrentStats) and statSet(data.CurrentStats, info)
+			or slotStats(slot, info)
+	end
+
+	local function pointCovered(snapshot, path, point)
+		for _, slot in ipairs(snapshot.Slots) do
+			for _, unit in ipairs(snapshot.Placed[slot.Index] or {}) do
+				local stats = currentUnitStats(slot, unit)
+				if Smart.Role(slot, stats) ~= "Farm" then
+					local position = unitPosition(unit)
+					if position then
+						local flat = Vector3.new(point.X - position.X, 0, point.Z - position.Z)
+						if flat.Magnitude <= stats.Range then
+							return true
+						end
+					end
+				end
+			end
+		end
+		return false
+	end
+
+	local function defenseCoverage(snapshot)
+		local path = snapshot.Path
+		if type(path) ~= "table" or #path < 2 then
+			return 0
+		end
+		local covered = 0
+		for _, percent in ipairs({ 16, 32, 48, 64, 80, 92 }) do
+			local point = Planner.SamplePath(path, percent)
+			if point and pointCovered(snapshot, path, point) then
+				covered = covered + 1
+			end
+		end
+		return covered / 6
+	end
+
 	local function placementPercentages(role, context, strategy)
 		if role == "Farm" then
 			return { 50, 35, 65 }
@@ -440,24 +503,36 @@ return function(Import)
 		return clamp(math.floor(reserve + 0.5), 0, 28)
 	end
 
-	local function bestPlacement(slot, paths, ordinal, context, strategy, spacing)
+	local function bestPlacement(slot, snapshot, ordinal, context, strategy, spacing)
 		local base = slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0))
 		local role = Smart.Role(slot, base)
 		local target = tacticalTarget(role, ordinal, context)
 		local best
-		for _, path in ipairs(paths) do
+		for _, path in ipairs(snapshot.Paths) do
 			for _, percent in ipairs(placementPercentages(role, context, strategy)) do
 				local cframe = Planner.Candidate(path, percent, spacing, ordinal, 0)
 				if cframe then
 					local covered = coverage(path, cframe, base.Range)
+					local marginal, samples = 0, 0
+					for sample = 4, 96, 4 do
+						local point = Planner.SamplePath(path, sample)
+						if point then
+							samples = samples + 1
+							local flat = Vector3.new(point.X - cframe.Position.X, 0, point.Z - cframe.Position.Z)
+							if flat.Magnitude <= base.Range and not pointCovered(snapshot, path, point) then
+								marginal = marginal + 1
+							end
+						end
+					end
+					marginal = marginal / math.max(1, samples)
 					local intersection = 0
-					for _, other in ipairs(paths) do
+					for _, other in ipairs(snapshot.Paths) do
 						if other ~= path then
 							intersection = intersection + coverage(other, cframe, base.Range)
 						end
 					end
 					local tactical = 1 - math.min(1, math.abs(percent - target) / 60)
-					local score = covered + intersection * 0.7 + tactical * 0.45
+					local score = covered + marginal * 1.7 + intersection * 0.7 + tactical * 0.45
 					if role == "Farm" then
 						score = 1
 					end
@@ -467,6 +542,8 @@ return function(Import)
 							Percent = percent,
 							CFrame = cframe,
 							Coverage = score,
+							RouteCoverage = covered,
+							MarginalCoverage = marginal,
 							Stats = base,
 							Role = role,
 						}
@@ -496,11 +573,19 @@ return function(Import)
 					local path = snapshot.Paths[1]
 					local cframe = path and Planner.Candidate(path, 50, spacing, ordinal + 1, 0)
 					if cframe then
-						location =
-							{ Path = path, Percent = 50, CFrame = cframe, Coverage = 1, Stats = base, Role = role }
+						location = {
+							Path = path,
+							Percent = 50,
+							CFrame = cframe,
+							Coverage = 1,
+							RouteCoverage = 1,
+							MarginalCoverage = 1,
+							Stats = base,
+							Role = role,
+						}
 					end
 				else
-					location = bestPlacement(slot, snapshot.Paths, ordinal + 1, context, strategy, spacing)
+					location = bestPlacement(slot, snapshot, ordinal + 1, context, strategy, spacing)
 				end
 				if location then
 					local power = combatPower(base, context)
@@ -508,7 +593,9 @@ return function(Import)
 					local weights = strategyWeights[strategy]
 					local waveProgress = context.MaxWave > 0 and context.Wave / context.MaxWave or 0
 					local score = (
-						power * weights.Damage * (0.55 + location.Coverage * weights.Coverage)
+						power
+							* weights.Damage
+							* (0.45 + location.RouteCoverage * 0.7 + location.MarginalCoverage * 1.35)
 						+ economy * weights.Economy
 						+ (role == "Support" and power * 0.35 or 0)
 					) / math.max(1, base.Cost)
@@ -546,7 +633,7 @@ return function(Import)
 								slot.Name,
 								power,
 								base.Range,
-								location.Coverage * 100,
+								location.RouteCoverage * 100,
 								current > 0 and string.format(" (%d/%d)", current + 1, cap) or ""
 							),
 					})
@@ -571,26 +658,6 @@ return function(Import)
 			nextStats.Cost = number(unit.NextCost, math.huge)
 		end
 		return current, nextStats
-	end
-
-	local function unitPosition(unit)
-		local value = unit.CFrame
-		if typeof(value) == "CFrame" then
-			return value.Position
-		end
-		if typeof(value) == "Vector3" then
-			return value
-		end
-		local data = type(unit.Data) == "table" and unit.Data or {}
-		for _, key in ipairs({ "CFrame", "UnitCFrame", "Pivot", "Position" }) do
-			value = data[key]
-			if typeof(value) == "CFrame" then
-				return value.Position
-			elseif typeof(value) == "Vector3" then
-				return value
-			end
-		end
-		return nil
 	end
 
 	local function deployedProgress(snapshot, unit)
@@ -687,7 +754,13 @@ return function(Import)
 	function Smart.Decide(snapshot, options)
 		options = type(options) == "table" and options or {}
 		local strategy = strategyWeights[options.Strategy] and options.Strategy or "Win"
-		local context = Smart.Context(snapshot.GameState, snapshot.Enemies, snapshot.Path, snapshot.LiveProgress)
+		local context = Smart.Context(
+			snapshot.GameState,
+			snapshot.Enemies,
+			snapshot.Path,
+			snapshot.LiveProgress,
+			snapshot.RouteConfident
+		)
 		updateHistory(context, options.History, options.Now)
 		if options.ReactToEnemies == false then
 			context.Pressure = 0.25
@@ -711,46 +784,69 @@ return function(Import)
 		local deployment = {}
 		local farmSeed = {}
 		local combatPlaced = 0
+		local routeCoverage = defenseCoverage(snapshot)
+		context.RouteCoverage = routeCoverage
 		if strategy ~= "Economy" then
 			for _, slot in ipairs(snapshot.Slots) do
 				local role = Smart.Role(slot, slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0)))
-				if role ~= "Farm" and Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts) > 0 then
-					combatPlaced = combatPlaced + 1
+				if role ~= "Farm" then
+					combatPlaced = combatPlaced
+						+ Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
 				end
 			end
 			for _, placement in ipairs(placements) do
-				if placement.Count == 0 and placement.Role ~= "Farm" then
+				if placement.Role ~= "Farm" then
 					table.insert(deployment, placement)
 				elseif placement.Count == 0 and placement.Role == "Farm" and options.SmartEconomy ~= false then
 					table.insert(farmSeed, placement)
 				end
 			end
 		end
-		local requiredCombat = (context.Pressure >= 0.45 or context.RecentLeak) and 2 or 1
-		local forceDeployment = #deployment > 0 and combatPlaced < requiredCombat
+		local requiredCombat = 1
+		if context.Wave >= 2 or context.Pressure >= 0.28 then
+			requiredCombat = 2
+		end
+		if context.Wave >= 4 or context.RecentLeak or context.Pressure >= 0.5 then
+			requiredCombat = 3
+		end
+		if context.Wave >= 8 or context.Pressure >= 0.8 then
+			requiredCombat = 4
+		end
+		local coverageGoal = context.Wave >= 4 and 0.66 or context.Wave >= 2 and 0.5 or 0.32
+		if context.RecentLeak then
+			coverageGoal = 0.82
+		end
+		local upgrades = upgradeChoices(snapshot, context, strategy)
+		table.sort(deployment, compare)
+		table.sort(upgrades, compare)
+		local needsDefense = combatPlaced < requiredCombat or routeCoverage < coverageGoal
+		local worthwhileDeployment = not upgrades[1]
+			or not deployment[1]
+			or deployment[1].Score >= upgrades[1].Score * 0.35
+		local forceDeployment = #deployment > 0 and needsDefense and (combatPlaced == 0 or worthwhileDeployment)
+		local earlyFarm = context.Wave <= 2
+			and context.HealthRatio >= 0.99
+			and context.MaxProgress < 0.5
+			and not context.RecentLeak
+		local preferFarm = #farmSeed > 0
+			and (earlyFarm or not context.Emergency and not context.RecentLeak)
 		local choices = {}
-		if #farmSeed > 0 and not context.Emergency and not context.RecentLeak then
+		if preferFarm then
 			choices = farmSeed
 		elseif forceDeployment then
 			choices = deployment
 		else
 			choices = placements
 		end
-		if not forceDeployment and not (#farmSeed > 0 and not context.Emergency and not context.RecentLeak) then
-			for _, choice in ipairs(upgradeChoices(snapshot, context, strategy)) do
+		if not forceDeployment and not preferFarm then
+			for _, choice in ipairs(upgrades) do
 				local suppressFarm = choice.Role == "Farm" and context.Emergency
 				if not suppressFarm and (options.SmartEconomy ~= false or choice.Role ~= "Farm") then
 					table.insert(choices, choice)
 				end
 			end
 		end
-		if forceDeployment then
-			table.sort(choices, function(a, b)
-				return a.Slot.Index < b.Slot.Index
-			end)
-		else
-			table.sort(choices, compare)
-		end
+		table.sort(choices, compare)
 		local reservePercent = automaticReserve(context, strategy)
 		context.ReservePercent = reservePercent
 		context.Yen = math.max(0, number(snapshot.Yen, 0))

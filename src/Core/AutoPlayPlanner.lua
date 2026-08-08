@@ -461,6 +461,20 @@ return function()
 		return math.clamp(bestProgress, 0, 1), bestDistance
 	end
 
+	function Planner.RouteVote(vote, previous, current)
+		vote = number(vote, 0)
+		previous = tonumber(previous)
+		current = tonumber(current)
+		if previous == nil or current == nil then
+			return vote
+		end
+		local delta = current - previous
+		if math.abs(delta) < 0.0002 or math.abs(delta) > 0.08 then
+			return vote
+		end
+		return math.clamp(vote + delta * 160, -12, 12)
+	end
+
 	function Planner.Candidate(path, percent, spacing, ordinal, attempt)
 		local point, tangent = Planner.SamplePath(path, percent)
 		if not point or not tangent or tangent.Magnitude <= 0 then

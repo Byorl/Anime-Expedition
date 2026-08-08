@@ -307,5 +307,9 @@ assert(
 	"live and exported map path layouts are not supported"
 )
 assert(string.find(source, ").Magnitude <= 22", 1, true), "placement is not bounded around the selected path")
+assert(Planner.RouteVote(0, 0.8, 0.79) < 0, "reverse route movement was not detected")
+assert(Planner.RouteVote(0, 0.2, 0.21) > 0, "forward route movement was not detected")
+assert(Planner.RouteVote(3, 0.2, 0.20001) == 3, "route jitter changed the learned direction")
+assert(Planner.RouteVote(-11, 0.8, 0.7) == -11, "enemy replacement jump corrupted route direction")
 
 print("Auto Play tests passed")
