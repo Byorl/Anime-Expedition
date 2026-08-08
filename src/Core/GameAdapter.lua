@@ -20,7 +20,11 @@ return function(Import)
 	end
 
 	function GameAdapter.new()
-		local self = setmetatable({ Ready = false }, GameAdapter)
+		local self = setmetatable({
+			Ready = false,
+			RespondedVotes = setmetatable({}, { __mode = "k" }),
+			LocalPlayer = game:GetService("Players").LocalPlayer,
+		}, GameAdapter)
 		local replicatedStorage = game:GetService("ReplicatedStorage")
 		local fusionPackage = replicatedStorage:FindFirstChild("FusionPackage")
 		local shared = replicatedStorage:FindFirstChild("Shared")
@@ -286,12 +290,74 @@ return function(Import)
 		return self:Fire("CLIENT_CHANGE_SETTING", tostring(name), value)
 	end
 
+	function GameAdapter.MatchActive(gameState)
+		if type(gameState) ~= "table" or type(gameState.Parameters) ~= "table" or gameState.GameEnded == true then
+			return false
+		end
+		local wave = math.max(tonumber(gameState.Wave) or 0, tonumber(gameState.CurrentWave) or 0)
+		local elapsed = math.max(
+			tonumber(gameState.SessionTime) or 0,
+			tonumber(gameState.GameTime) or 0,
+			tonumber(gameState.Time) or 0
+		)
+		local enemies = tonumber(gameState.EnemyCount) or 0
+		local status = string.lower(tostring(gameState.Status or gameState.GameStatus or ""))
+		if status == "ended" or status == "completed" or status == "results" then
+			return false
+		end
+		return gameState.Active == true
+			or gameState.WavesEnabled == true
+			or wave > 0
+			or elapsed > 0
+			or enemies > 0
+			or status == "active"
+			or status == "playing"
+			or status == "started"
+	end
+
+	function GameAdapter:IsMatchActive(gameState)
+		return GameAdapter.MatchActive(gameState)
+	end
+
+	local function hasLocalResponse(data, player)
+		local responses = type(data) == "table" and data.Responses or nil
+		if type(responses) ~= "table" or not player then
+			return false
+		end
+		if responses[player] ~= nil or responses[player.UserId] ~= nil or responses[tostring(player.UserId)] ~= nil then
+			return true
+		end
+		local players = type(data.Players) == "table" and data.Players or {}
+		for index, entry in pairs(players) do
+			if entry == player and responses[index] ~= nil then
+				return true
+			end
+		end
+		for key, value in pairs(responses) do
+			if key == player or tostring(key) == player.Name or tostring(key) == tostring(player.UserId) then
+				return true
+			end
+			if type(value) == "table" then
+				local identity = value.Player or value.UserId or value.PlayerId or value.Name
+				if
+					identity == player
+					or tostring(identity) == player.Name
+					or tostring(identity) == tostring(player.UserId)
+				then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
 	function GameAdapter:RespondToVote(kind)
 		local replicaClient = self.ReplicaClient
 		if type(replicaClient) ~= "table" or type(replicaClient.Test) ~= "function" then
 			return false, "vote prompt registry is unavailable"
 		end
 		local wanted = string.lower(tostring(kind or ""))
+		self.RespondedVotes = self.RespondedVotes or setmetatable({}, { __mode = "k" })
 		local ok, registry = xpcall(function()
 			return replicaClient.Test()
 		end, Util.Traceback)
@@ -307,12 +373,18 @@ return function(Import)
 			local parameters = type(data) == "table" and data.Parameters or nil
 			local title = string.lower(tostring(type(parameters) == "table" and parameters.Title or ""))
 			if string.find(title, wanted, 1, true) and type(replica.FireServer) == "function" then
+				local signature = title .. ":" .. tostring(type(parameters) == "table" and parameters.EndTime or "")
+				if self.RespondedVotes[replica] == signature or hasLocalResponse(data, self.LocalPlayer) then
+					self.RespondedVotes[replica] = signature
+					return true, false
+				end
 				local fired, fireError = xpcall(function()
 					replica:FireServer("Response", true)
 				end, Util.Traceback)
 				if not fired then
 					return false, tostring(fireError)
 				end
+				self.RespondedVotes[replica] = signature
 				return true, true
 			end
 		end

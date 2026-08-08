@@ -280,9 +280,8 @@ return function(Import)
 		if
 			type(gameState) ~= "table"
 			or type(gameState.Parameters) ~= "table"
-			or gameState.Active ~= true
+			or not ctx.Game:IsMatchActive(gameState)
 			or gameState.GameEnded == true
-			or gameState.EndTime ~= nil
 		then
 			return nil
 		end

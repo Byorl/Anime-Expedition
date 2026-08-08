@@ -1,49 +1,11 @@
 return function()
 	local GameMatch = {}
 
-	local function currentSetting(ctx, name)
-		local playerData = ctx.Game:PlayerData()
-		local settings = type(playerData) == "table" and playerData.Settings or nil
-		return type(settings) == "table" and settings[name] or nil
-	end
-
-	local function setSetting(ctx, state, name, wanted)
-		local current = currentSetting(ctx, name)
-		if current == wanted then
-			state.SettingAttempts[name] = nil
-			return true
-		end
-		local last = state.SettingAttempts[name]
-		if last and os.clock() - last < 1 then
-			return
-		end
-		state.SettingAttempts[name] = os.clock()
-		local ok, err = ctx.Game:ChangeSetting(name, wanted)
-		if not ok then
-			ctx.Runtime:Notify("Game", "Could not update " .. name .. ": " .. tostring(err))
-		end
-		return false
-	end
-
-	local function manageSetting(ctx, state, name, enabled, wanted)
-		if enabled then
-			if not state.ManagedSettings[name] then
-				state.ManagedSettings[name] = true
-				state.OriginalSettings[name] = currentSetting(ctx, name) == true
-			end
-			setSetting(ctx, state, name, wanted)
-		elseif state.ManagedSettings[name] then
-			if setSetting(ctx, state, name, state.OriginalSettings[name] == true) then
-				state.ManagedSettings[name] = nil
-				state.OriginalSettings[name] = nil
-			end
-		end
-	end
-
 	local function run(ctx, state)
 		while state.Alive and ctx.Runtime.Alive do
 			local gameState = ctx.Game:State("GameState")
 			local inGame = type(gameState) == "table" and type(gameState.Parameters) == "table"
+			local active = inGame and ctx.Game:IsMatchActive(gameState)
 			if inGame and not state.WasInGame then
 				state.GameStartedAt = os.clock()
 			end
@@ -52,23 +14,16 @@ return function()
 			end
 			state.WasInGame = inGame
 
-			local canStart = inGame
-				and gameState.Active ~= true
-				and gameState.EndTime == nil
-				and gameState.GameEnded ~= true
+			local canStart = inGame and not active and gameState.GameEnded ~= true
 			local startReady = state.AutoStart
 				and canStart
 				and state.GameStartedAt
 				and os.clock() - state.GameStartedAt >= state.StartDelay
-			manageSetting(ctx, state, "AutoVoteStart", state.AutoStart, startReady == true)
-			manageSetting(ctx, state, "AutoSkipWaves", state.AutoSkip, true)
-			if startReady and os.clock() - state.LastStartVote >= 0.75 then
-				state.LastStartVote = os.clock()
+			if startReady then
 				ctx.Game:RespondToVote("start game")
 			end
-			if state.AutoSkip and gameState.Active == true and os.clock() - state.LastSkipVote >= 0.75 then
-				state.LastSkipVote = os.clock()
-				ctx.Game:RespondToVote("skip wave")
+			if state.AutoSkip and active then
+				ctx.Game:RespondToVote("skip")
 			end
 
 			local session = ctx.Game:State("SessionData")
@@ -90,7 +45,7 @@ return function()
 
 	return {
 		Name = "GameMatch",
-		Version = 1,
+		Version = 2,
 		Priority = 7,
 		Dependencies = {},
 
@@ -102,11 +57,6 @@ return function()
 				StartDelay = 0,
 				LeaveAFK = false,
 				LastAFKAttempt = 0,
-				LastStartVote = 0,
-				LastSkipVote = 0,
-				SettingAttempts = {},
-				ManagedSettings = {},
-				OriginalSettings = {},
 			}
 			local automation = ctx.Tabs.Game:Section({ Side = "Left" })
 			automation:Header({ Text = "Match Automation" })
@@ -158,11 +108,6 @@ return function()
 			state.Alive = false
 			state.AutoStart = false
 			state.AutoSkip = false
-			for name in pairs(state.ManagedSettings) do
-				ctx.Game:ChangeSetting(name, state.OriginalSettings[name] == true)
-			end
-			table.clear(state.ManagedSettings)
-			table.clear(state.OriginalSettings)
 		end,
 	}
 end

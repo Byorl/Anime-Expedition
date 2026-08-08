@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.9.2", "interface release version is wrong")
+assert(Build.Version == "1.9.3", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/65f3353d47660ed5f372bddd2ccbde02ba1d733d/src/maclib.lua",
@@ -32,11 +32,15 @@ local autoPlaySource = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(not string.find(gameMatchSource, "Leave at Wave (0=off)", 1, true), "Leave at Wave is still in Match")
 assert(string.find(gameEndSource, "Leave at Wave (0=off)", 1, true), "Leave at Wave is missing from End of Match")
 assert(string.find(gameMatchSource, 'RespondToVote("start game")', 1, true), "Auto Start does not accept start votes")
+assert(string.find(gameMatchSource, 'RespondToVote("skip")', 1, true), "Auto Skip does not accept skip votes")
 assert(
 	string.find(gameAdapterSource, 'FireServer("Response", true)', 1, true),
 	"vote prompts are not accepted directly"
 )
-assert(string.find(autoPlaySource, "or gameState.Active ~= true", 1, true), "Auto Play can act before a match starts")
+assert(
+	string.find(autoPlaySource, "or not ctx.Game:IsMatchActive(gameState)", 1, true),
+	"Auto Play lacks live match detection"
+)
 assert(
 	string.find(autoPlaySource, "Scenario: Waiting for match to start", 1, true),
 	"Smart Auto Play has no pre-match planner state"
