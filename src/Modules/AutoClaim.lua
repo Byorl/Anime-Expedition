@@ -148,19 +148,21 @@ return function(Import)
 		local playerData = ctx.Game:PlayerData()
 		if type(playerData) ~= "table" then return end
 		local information = ctx.Game:Information() or {}
+		local questInformation = type(information.Quests) == "table" and information.Quests or nil
 
 		if state.Values.Quests then
-			local claims, categories = Scanner.Quests(playerData, false)
+			local claims = Scanner.Quests(playerData, false, questInformation)
 			local signature = sortedSignature(claims, function(v) return tostring(v.Category) .. "/" .. tostring(v.Quest) end)
-				.. ":" .. sortedSignature(categories)
 			self:_Once(ctx, state, "quests", signature, function()
-				if #claims > 0 then self:_Fire(ctx, state, "quests", "QUEST_CLAIM_ALL") end
-				if #categories > 0 then self:_Fire(ctx, state, "quest categories", "QUEST_CLAIM_ALL_CATEGORIES") end
+				for index, claim in ipairs(claims) do
+					if index > MAX_INDIVIDUAL_CLAIMS then break end
+					self:_Fire(ctx, state, "quest", "QUEST_CLAIM", claim.Category, claim.Quest)
+				end
 			end)
 		end
 
 		if state.Values.Achievements then
-			local claims, categories = Scanner.Quests(playerData, true)
+			local claims, categories = Scanner.Quests(playerData, true, questInformation)
 			local signature = sortedSignature(claims, function(v) return tostring(v.Category) .. "/" .. tostring(v.Quest) end)
 				.. ":" .. sortedSignature(categories)
 			self:_Once(ctx, state, "achievements", signature, function()
@@ -188,7 +190,7 @@ return function(Import)
 		end
 
 		if state.Values.Battlepass then
-			local claims = Scanner.Battlepasses(playerData)
+			local claims = Scanner.Battlepasses(playerData, ctx.Game:State("BattlepassData"))
 			self:_Once(ctx, state, "battlepass", sortedSignature(claims), function()
 				for _, dataKey in ipairs(claims) do
 					self:_Fire(ctx, state, "battlepass", "CLAIM_ALL_BATTLEPASS_REWARDS", dataKey)
@@ -220,7 +222,11 @@ return function(Import)
 			if type(milestoneInfo) == "table" and milestoneInfo.QuestCategory then
 				expeditionCategories[milestoneInfo.QuestCategory] = true
 			end
-			local expeditionQuests = state.Values.Quests and {} or Scanner.QuestCategories(playerData, expeditionCategories)
+			local expeditionQuests = state.Values.Quests and {} or Scanner.QuestCategories(
+				playerData,
+				expeditionCategories,
+				questInformation
+			)
 			local expeditionSignature = sortedSignature(buildings) .. (milestones and ":milestones" or "")
 				.. sortedSignature(expeditionQuests, function(v) return tostring(v.Category) .. "/" .. tostring(v.Quest) end)
 			self:_Once(ctx, state, "expeditions", expeditionSignature, function()
@@ -228,12 +234,9 @@ return function(Import)
 					self:_Fire(ctx, state, "expedition building", "EXPEDITION_BUILDING_COLLECT", building)
 				end
 				if milestones then self:_Fire(ctx, state, "expedition milestones", "QUESTBOARD_CLAIM_ALL_MILESTONES") end
-				local seenCategories = {}
-				for _, claim in ipairs(expeditionQuests) do
-					if not seenCategories[claim.Category] then
-						seenCategories[claim.Category] = true
-						self:_Fire(ctx, state, "expedition quests", "QUEST_CLAIM_ALL_CATEGORY", claim.Category)
-					end
+				for index, claim in ipairs(expeditionQuests) do
+					if index > MAX_INDIVIDUAL_CLAIMS then break end
+					self:_Fire(ctx, state, "expedition quest", "QUEST_CLAIM", claim.Category, claim.Quest)
 				end
 			end)
 		end
@@ -242,7 +245,11 @@ return function(Import)
 			local villain = Scanner.VillainHunt(playerData, information.Events)
 			local sessionData = ctx.Game:State("SessionData")
 			local preRelease = Scanner.PreRelease(sessionData)
-			local eventQuests = state.Values.Quests and {} or Scanner.QuestCategories(playerData, eventQuestCategories(information))
+			local eventQuests = state.Values.Quests and {} or Scanner.QuestCategories(
+				playerData,
+				eventQuestCategories(information),
+				questInformation
+			)
 			local eventSignature = (villain and "villain" or "") .. sortedSignature(preRelease)
 				.. sortedSignature(eventQuests, function(v) return tostring(v.Category) .. "/" .. tostring(v.Quest) end)
 			self:_Once(ctx, state, "events", eventSignature, function()
@@ -250,12 +257,9 @@ return function(Import)
 				for _, index in ipairs(preRelease) do
 					self:_Fire(ctx, state, "pre-release milestone", "PRE_RELEASE_CLAIM_MILESTONE", index)
 				end
-				local seenCategories = {}
-				for _, claim in ipairs(eventQuests) do
-					if not seenCategories[claim.Category] then
-						seenCategories[claim.Category] = true
-						self:_Fire(ctx, state, "event quests", "QUEST_CLAIM_ALL_CATEGORY", claim.Category)
-					end
+				for index, claim in ipairs(eventQuests) do
+					if index > MAX_INDIVIDUAL_CLAIMS then break end
+					self:_Fire(ctx, state, "event quest", "QUEST_CLAIM", claim.Category, claim.Quest)
 				end
 			end)
 		end
@@ -280,7 +284,8 @@ return function(Import)
 				state.InGroup = false
 				if groupId then pcall(function() state.InGroup = ctx.Player:IsInGroup(groupId) end) end
 			end
-			if claimed ~= true and state.InGroup then
+			-- Unknown state is not permission to fire. Only an explicit unclaimed flag is safe.
+			if claimed == false and state.InGroup then
 				state.GroupAttempted = true
 				self:_Fire(ctx, state, "group rewards", "GROUP_REWARDS_CLAIM")
 			end

@@ -5,21 +5,61 @@ return function()
 		return type(value) == "table"
 	end
 
-	local function isAchievement(category)
+	local function isAchievement(category, questInformation)
+		local categories = isTable(questInformation) and questInformation.Categories or nil
+		local info = isTable(categories) and categories[category] or nil
+		if isTable(info) and type(info.IsAchievement) == "boolean" then return info.IsAchievement end
 		return string.find(string.lower(tostring(category)), "achievement", 1, true) ~= nil
 	end
 
-	function Scanner.Quests(playerData, achievements)
+	local function hasEntries(value)
+		return isTable(value) and next(value) ~= nil
+	end
+
+	local function questInfoFor(questInformation, category, quest)
+		local categories = isTable(questInformation) and questInformation.Quests or nil
+		local categoryInfo = isTable(categories) and categories[category] or nil
+		return isTable(categoryInfo) and categoryInfo[quest] or nil
+	end
+
+	local function questIsClaimable(questData, category, quest, entry, questInformation)
+		if not isTable(entry) or entry.Completed ~= true or entry.Claimed == true then return false end
+		local info = questInfoFor(questInformation, category, quest)
+		-- When a live catalog is available, an unknown quest is not safe to submit.
+		if isTable(questInformation) and isTable(questInformation.Quests) and not isTable(info) then return false end
+		if not isTable(info) then return true end
+		if info.ClaimAllowed == false then return false end
+
+		local categoryData = isTable(questData) and questData[category] or nil
+		local categoryQuests = isTable(categoryData) and categoryData.Quests or nil
+		for key, value in pairs(isTable(info.Prerequisites) and info.Prerequisites or {}) do
+			local prerequisite = (type(value) == "string" or type(value) == "number") and value or key
+			local prerequisiteData = isTable(categoryQuests) and categoryQuests[prerequisite] or nil
+			if not isTable(prerequisiteData) or prerequisiteData.Claimed ~= true then return false end
+		end
+		return true
+	end
+
+	local function categoryHasRewards(questInformation, category)
+		local categories = isTable(questInformation) and questInformation.Categories or nil
+		local info = isTable(categories) and categories[category] or nil
+		return isTable(info) and hasEntries(info.Rewards)
+	end
+
+	function Scanner.Quests(playerData, achievements, questInformation)
 		local claims, categoryClaims = {}, {}
 		local questData = isTable(playerData) and playerData.QuestData or nil
 		for category, categoryData in pairs(isTable(questData) and questData or {}) do
-			if isAchievement(category) == (achievements == true) and isTable(categoryData) then
+			if isAchievement(category, questInformation) == (achievements == true) and isTable(categoryData) then
 				for quest, questDataEntry in pairs(isTable(categoryData.Quests) and categoryData.Quests or {}) do
-					if isTable(questDataEntry) and questDataEntry.Completed == true and questDataEntry.Claimed ~= true then
+					if questIsClaimable(questData, category, quest, questDataEntry, questInformation) then
 						table.insert(claims, {Category = category, Quest = quest})
 					end
 				end
-				if categoryData.Completed == true and categoryData.Claimed ~= true then
+				-- Category claims are a separate reward type. A completed category without
+				-- configured rewards produces the game's "doesn't have rewards" warning.
+				if achievements == true and categoryData.Completed == true and categoryData.Claimed ~= true
+					and categoryHasRewards(questInformation, category) then
 					table.insert(categoryClaims, category)
 				end
 			end
@@ -27,13 +67,13 @@ return function()
 		return claims, categoryClaims
 	end
 
-	function Scanner.QuestCategories(playerData, categorySet)
+	function Scanner.QuestCategories(playerData, categorySet, questInformation)
 		local claims = {}
 		local questData = isTable(playerData) and playerData.QuestData or nil
 		for category in pairs(isTable(categorySet) and categorySet or {}) do
 			local categoryData = isTable(questData) and questData[category] or nil
 			for quest, entry in pairs(isTable(categoryData) and isTable(categoryData.Quests) and categoryData.Quests or {}) do
-				if isTable(entry) and entry.Completed == true and entry.Claimed ~= true then
+				if questIsClaimable(questData, category, quest, entry, questInformation) then
 					table.insert(claims, {Category = category, Quest = quest})
 				end
 			end
@@ -53,20 +93,28 @@ return function()
 		return claims
 	end
 
-	function Scanner.Battlepasses(playerData)
+	function Scanner.Battlepasses(playerData, battlepassData)
 		local claims = {}
 		local passes = isTable(playerData) and playerData.BattlepassData or nil
 		for dataKey, pass in pairs(isTable(passes) and passes or {}) do
 			if isTable(pass) then
+				local live = isTable(battlepassData) and battlepassData[dataKey] or nil
+				local info = isTable(live) and (live.BattlepassInfo or live) or nil
+				local rewards = isTable(info) and info.Rewards or nil
 				local level = math.max(tonumber(pass.Level) or 0, 0)
 				local claimed = isTable(pass.Claimed) and pass.Claimed or {}
-				local tracks = {"Free"}
-				if pass.Premium == true then table.insert(tracks, "Premium") end
+				local tracks = {}
+				if isTable(claimed.Free) then table.insert(tracks, "Free") end
+				if pass.Premium == true and isTable(claimed.Premium) then table.insert(tracks, "Premium") end
 				local claimable = false
 				for _, track in ipairs(tracks) do
-					local trackClaims = isTable(claimed[track]) and claimed[track] or {}
+					local trackClaims = claimed[track]
 					for rewardLevel = 1, level do
-						if trackClaims[tostring(rewardLevel)] ~= true then claimable = true break end
+						local reward = isTable(rewards) and (rewards[rewardLevel] or rewards[tostring(rewardLevel)]) or nil
+						if isTable(reward) and reward[track] ~= nil and trackClaims[tostring(rewardLevel)] ~= true then
+							claimable = true
+							break
+						end
 					end
 					if claimable then break end
 				end
@@ -86,7 +134,18 @@ return function()
 			and playerData.LevelMilestones.Claimed or {}
 		for index = 1, math.min(math.floor(level / every), maxCount) do
 			local milestoneLevel = index * every
-			if claimed["Level" .. tostring(milestoneLevel)] ~= true then table.insert(claims, milestoneLevel) end
+			if claimed["Level" .. tostring(milestoneLevel)] ~= true then
+				local validRewards = false
+				if type(milestoneInfo.GetRewardsForLevel) == "function" then
+					local ok, rewards = pcall(milestoneInfo.GetRewardsForLevel, milestoneInfo, milestoneLevel)
+					validRewards = ok and hasEntries(rewards)
+				else
+					local rewards = isTable(milestoneInfo.Rewards)
+						and (milestoneInfo.Rewards[milestoneLevel] or milestoneInfo.Rewards[tostring(milestoneLevel)]) or nil
+					validRewards = hasEntries(rewards)
+				end
+				if validRewards then table.insert(claims, milestoneLevel) end
+			end
 		end
 		return claims
 	end

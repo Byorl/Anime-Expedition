@@ -114,7 +114,7 @@ return function(Import)
 	local accountKey = Enum.KeyCode[tostring(Config.Account.UI.ToggleKey)] or Enum.KeyCode.RightShift
 	local Window = MacLib:Window({
 		Title = Build.Name,
-		Subtitle = "Remote Modules | v" .. Build.Version,
+		Subtitle = "v" .. Build.Version,
 		Size = UIManager.BaseSize(deviceClass),
 		DragStyle = 1,
 		DisabledWindowControls = {},
@@ -205,10 +205,9 @@ return function(Import)
 	Window.onUnloaded(function() Runtime:Shutdown("window unloaded", true) end)
 	Tabs.Misc:Select()
 	Runtime:Notify("Loaded", string.format(
-		"Account %s | Config %s | %d remote modules",
+		"Account %s | Config %s",
 		LocalPlayer.Name,
-		Config.Account.SelectedConfig,
-		#Modules.Order
+		Config.Account.SelectedConfig
 	))
 
 	return Runtime
