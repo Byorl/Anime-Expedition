@@ -12,7 +12,9 @@ return function(Import)
 	local GameAdapter = Import("GameAdapter")
 	local MiscModule = Import("Misc")
 	local AutoClaimModule = Import("AutoClaim")
+	local AutoSummonModule = Import("AutoSummon")
 	local PerformanceModule = Import("Performance")
+	local AutoTraitRerollModule = Import("AutoTraitReroll")
 	local SettingsModule = Import("Settings")
 
 	local Players = game:GetService("Players")
@@ -180,7 +182,9 @@ return function(Import)
 	Runtime.Modules = Modules
 	Modules:Register(MiscModule)
 	Modules:Register(AutoClaimModule)
+	Modules:Register(AutoSummonModule)
 	Modules:Register(PerformanceModule)
+	Modules:Register(AutoTraitRerollModule)
 	Modules:Register(SettingsModule)
 
 	Registry.OnChanged = function() Config:ScheduleAutoSave() end

@@ -1,5 +1,5 @@
 return {
-	Version = "1.3.2",
+	Version = "1.4.0",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -14,9 +14,12 @@ return {
 		MacLibProvider = "src/Core/MacLibProvider.lua",
 		GameAdapter = "src/Core/GameAdapter.lua",
 		RewardScanner = "src/Core/RewardScanner.lua",
+		AutomationCatalog = "src/Core/AutomationCatalog.lua",
 		Misc = "src/Modules/Misc.lua",
 		AutoClaim = "src/Modules/AutoClaim.lua",
+		AutoSummon = "src/Modules/AutoSummon.lua",
 		Performance = "src/Modules/Performance.lua",
+		AutoTraitReroll = "src/Modules/AutoTraitReroll.lua",
 		Settings = "src/Modules/Settings.lua",
 		Main = "src/Main.lua",
 	},

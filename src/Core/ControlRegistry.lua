@@ -130,6 +130,11 @@ return function(Import)
 	function ControlRegistry:Dropdown(section, settings, flag, owner)
 		local original = settings.Callback
 		local copied = Util.Clone(settings)
+		local resolveValue = copied.ResolveValue
+		-- ResolveValue belongs to the hub's config layer, not MacLib's public API.
+		-- It lets dynamic dropdowns translate a saved stable identity to the
+		-- current display label before MacLib is asked to render the selection.
+		copied.ResolveValue = nil
 		copied.Callback = function(value)
 			if not self:_CanDispatch(owner) then return end
 			local stored = value
@@ -150,7 +155,22 @@ return function(Import)
 		elseif type(copied.Default) == "number" and copied.Options then default = copied.Options[copied.Default]
 		else default = copied.Default end
 		return self:_Register(flag, "Dropdown", control, default, function(value)
-			if value ~= nil then control:UpdateSelection(Util.Clone(value)) end
+			if value == nil then return end
+			local resolved = Util.Clone(value)
+			if type(resolveValue) == "function" then
+				if copied.Multi and type(resolved) == "table" then
+					local translated = {}
+					for _, item in ipairs(resolved) do
+						local ok, current = pcall(resolveValue, item)
+						table.insert(translated, ok and current or item)
+					end
+					resolved = translated
+				else
+					local ok, current = pcall(resolveValue, resolved)
+					if ok and current ~= nil then resolved = current end
+				end
+			end
+			control:UpdateSelection(resolved)
 		end, owner)
 	end
 
