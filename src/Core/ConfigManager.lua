@@ -83,10 +83,18 @@ return function(Import)
 		local names, seen = {}, {}
 		for _, path in ipairs(self.FileSystem:List(self.ConfigFolder)) do
 			local normalized = string.gsub(path, "\\", "/")
-			local name = string.match(normalized, "([^/]+)%.json$")
-			if name and not seen[string.lower(name)] then
-				seen[string.lower(name)] = true
-				table.insert(names, name)
+			local lowerPath = string.lower(normalized)
+			local isBackup = string.match(lowerPath, "%.bak%.json$") or string.match(lowerPath, "%.json%.bak$")
+			if isBackup then
+				self.FileSystem:Delete(path)
+			else
+				local name = string.match(normalized, "([^/]+)%.json$")
+				local lowerName = name and string.lower(name) or ""
+				if name and not string.match(lowerName, "%.tmp$") and not string.match(lowerName, "%.bak$")
+					and not seen[lowerName] then
+					seen[lowerName] = true
+					table.insert(names, name)
+				end
 			end
 		end
 		table.sort(names, function(a, b) return string.lower(a) < string.lower(b) end)
@@ -147,6 +155,9 @@ return function(Import)
 		data.Schema = CONFIG_SCHEMA
 		data.Name = name or data.Name
 		data.Revision = math.max(tonumber(data.Revision) or 1, 1)
+		data.Locked = nil
+		data.LockedByUserId = nil
+		data.LockedByUserName = nil
 		return data
 	end
 
@@ -168,25 +179,12 @@ return function(Import)
 		return migrated, sourceOrError
 	end
 
-	function ConfigManager:_CanModify(data, action)
-		if data.Locked == true and tonumber(data.LockedByUserId) ~= self.Player.UserId then
-			return false, string.format(
-				"Cannot %s locked config '%s'. It is locked by %s (%s).",
-				action,
-				tostring(data.Name),
-				tostring(data.LockedByUserName or "another account"),
-				tostring(data.LockedByUserId or "unknown")
-			)
-		end
-		return true
-	end
-
 	function ConfigManager:_CheckRevision(name, data)
 		local known = self.KnownRevisions[string.lower(name)]
 		local current = tonumber(data.Revision) or 1
 		if known and known ~= current then
 			return false, string.format(
-				"Config '%s' changed on disk (loaded revision %d, current revision %d). Load it again or duplicate it before saving.",
+				"Config '%s' changed on disk (loaded revision %d, current revision %d). Load it again before saving.",
 				name, known, current
 			)
 		end
@@ -249,7 +247,6 @@ return function(Import)
 			LastSavedByUserId = self.Player.UserId,
 			LastSavedByUserName = self.Player.Name,
 			PlaceId = Build.PlaceId,
-			Locked = false,
 			Modules = self.Registry:SnapshotModules(),
 		}
 	end
@@ -274,8 +271,6 @@ return function(Import)
 		if not name then return false, "Selected config does not exist." end
 		local data, readError = self:_ReadConfig(name)
 		if not data then return false, "Cannot delete config: " .. tostring(readError) end
-		local canModify, lockError = self:_CanModify(data, "delete")
-		if not canModify then return false, lockError end
 		local ok, err = self.FileSystem:Delete(self:_ConfigPath(name))
 		if not ok then return false, err end
 		self.KnownRevisions[string.lower(name)] = nil
@@ -296,8 +291,6 @@ return function(Import)
 		if not name then return false, "Selected config does not exist." end
 		local old, readError = self:_ReadConfig(name)
 		if not old then return false, "Cannot save config: " .. tostring(readError) end
-		local canModify, lockError = self:_CanModify(old, "save")
-		if not canModify then return false, lockError end
 		if not ignoreRevision then
 			local revisionOk, revisionError = self:_CheckRevision(name, old)
 			if not revisionOk then return false, revisionError end
@@ -312,6 +305,9 @@ return function(Import)
 		old.LastSavedByUserId = self.Player.UserId
 		old.LastSavedByUserName = self.Player.Name
 		old.PlaceId = Build.PlaceId
+		old.Locked = nil
+		old.LockedByUserId = nil
+		old.LockedByUserName = nil
 		old.Modules = self.Registry:SnapshotModules()
 		old.Values = nil
 		local ok, err = self.FileSystem:WriteJson(self:_ConfigPath(name), old)
@@ -350,98 +346,6 @@ return function(Import)
 		local accountOk, accountError = self:SaveAccount(true)
 		if not accountOk then return false, "Config loaded, but account state could not be saved: " .. tostring(accountError) end
 		return true, data
-	end
-
-	function ConfigManager:Duplicate(sourceName, newName)
-		sourceName = self:ResolveName(sourceName or self.Account.SelectedConfig)
-		newName = self:SanitizeName(newName)
-		if not sourceName then return false, "Source config does not exist." end
-		if newName == "" then return false, "Enter a name for the duplicate." end
-		if self:Exists(newName) then return false, "A config with that name already exists (names are case-insensitive)." end
-		local source, readError = self:_ReadConfig(sourceName)
-		if not source then return false, "Cannot duplicate config: " .. tostring(readError) end
-		local now = os.time()
-		source.Name = newName
-		source.Revision = 1
-		source.OwnerUserId = self.Player.UserId
-		source.OwnerUserName = self.Player.Name
-		source.CreatedAt = now
-		source.UpdatedAt = now
-		source.SavedAt = now
-		source.LastSavedByUserId = self.Player.UserId
-		source.LastSavedByUserName = self.Player.Name
-		source.Locked = false
-		source.LockedByUserId = nil
-		source.LockedByUserName = nil
-		local ok, err = self.FileSystem:WriteJson(self:_ConfigPath(newName), source)
-		if ok then
-			self.KnownRevisions[string.lower(newName)] = source.Revision
-			self.Account.SelectedConfig = newName
-			self:SaveAccount(true)
-		end
-		return ok, err
-	end
-
-	function ConfigManager:Rename(name, newName)
-		name = self:ResolveName(name or self.Account.SelectedConfig)
-		newName = self:SanitizeName(newName)
-		if not name then return false, "Selected config does not exist." end
-		if newName == "" then return false, "Enter a new config name." end
-		if string.lower(name) == string.lower(newName) then
-			if name == newName then return false, "The new name is unchanged." end
-			return false, "Case-only renames are not supported by all executor filesystems."
-		end
-		if self:Exists(newName) then return false, "A config with that name already exists (names are case-insensitive)." end
-		local data, readError = self:_ReadConfig(name)
-		if not data then return false, "Cannot rename config: " .. tostring(readError) end
-		local canModify, lockError = self:_CanModify(data, "rename")
-		if not canModify then return false, lockError end
-		local revisionOk, revisionError = self:_CheckRevision(name, data)
-		if not revisionOk then return false, revisionError end
-		data.Name = newName
-		data.Revision = (tonumber(data.Revision) or 1) + 1
-		data.UpdatedAt = os.time()
-		data.SavedAt = data.UpdatedAt
-		data.LastSavedByUserId = self.Player.UserId
-		data.LastSavedByUserName = self.Player.Name
-		local writeOk, writeError = self.FileSystem:WriteJson(self:_ConfigPath(newName), data)
-		if not writeOk then return false, writeError end
-		local deleteOk, deleteError = self.FileSystem:Delete(self:_ConfigPath(name))
-		if not deleteOk then return false, "New file was verified, but the old config could not be removed: " .. tostring(deleteError) end
-		self.KnownRevisions[string.lower(name)] = nil
-		self.KnownRevisions[string.lower(newName)] = data.Revision
-		self.Account.SelectedConfig = newName
-		self:SaveAccount(true)
-		return true
-	end
-
-	function ConfigManager:SetLocked(name, locked)
-		name = self:ResolveName(name or self.Account.SelectedConfig)
-		if not name then return false, "Selected config does not exist." end
-		local data, readError = self:_ReadConfig(name)
-		if not data then return false, "Cannot update lock: " .. tostring(readError) end
-		if data.Locked == true and tonumber(data.LockedByUserId) ~= self.Player.UserId then
-			return false, "Only the account that locked this config can unlock it."
-		end
-		local revisionOk, revisionError = self:_CheckRevision(name, data)
-		if not revisionOk then return false, revisionError end
-		data.Locked = locked == true
-		data.LockedByUserId = data.Locked and self.Player.UserId or nil
-		data.LockedByUserName = data.Locked and self.Player.Name or nil
-		data.Revision = (tonumber(data.Revision) or 1) + 1
-		data.UpdatedAt = os.time()
-		data.SavedAt = data.UpdatedAt
-		data.LastSavedByUserId = self.Player.UserId
-		data.LastSavedByUserName = self.Player.Name
-		local ok, err = self.FileSystem:WriteJson(self:_ConfigPath(name), data)
-		if ok then self.KnownRevisions[string.lower(name)] = data.Revision end
-		return ok, err
-	end
-
-	function ConfigManager:GetMetadata(name)
-		name = self:ResolveName(name or self.Account.SelectedConfig)
-		if not name then return nil end
-		return self:_ReadConfig(name)
 	end
 
 	function ConfigManager:ScheduleAutoSave()

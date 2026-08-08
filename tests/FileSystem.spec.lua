@@ -47,24 +47,26 @@ local ok, err = store:WriteJson(path, {Revision = 1})
 assert(ok, err)
 assert(files[path] == "VALID:1" and files[temporaryPath] == nil, "initial transaction did not commit cleanly")
 
+files[backupPath] = "VALID:1"
 ok, err = store:WriteJson(path, {Revision = 2})
 assert(ok, err)
-assert(files[path] == "VALID:2" and files[backupPath] == "VALID:1", "backup was not preserved")
+assert(files[path] == "VALID:2" and files[backupPath] == nil, "legacy backup was not removed")
 
 files[path] = "CORRUPTED"
 local recovered, source = store:ReadJsonDetailed(path)
-assert(recovered.Revision == 1 and source == backupPath, "backup recovery failed")
-assert(files[path] == "VALID:1", "recovery did not repair primary")
+assert(recovered == nil, "a backup was unexpectedly used for recovery")
 
-files[path] = "CORRUPTED"
 files[temporaryPath] = "VALID:3"
 recovered, source = store:ReadJsonDetailed(path)
 assert(recovered.Revision == 3 and source == temporaryPath, "interrupted temp recovery failed")
+assert(files[path] == "VALID:3", "temporary recovery did not repair primary")
 
 files[temporaryPath] = nil
 FAIL_PRIMARY = path
 ok, err = store:WriteJson(path, {Revision = 4})
-assert(not ok and string.find(err, "backup restored", 1, true), "failed write did not report rollback")
-assert(files[path] == "VALID:3", "failed write did not restore last good primary")
+assert(not ok, "failed primary write unexpectedly succeeded")
+recovered, source = store:ReadJsonDetailed(path)
+assert(recovered.Revision == 4 and source == temporaryPath, "verified temporary write was not recoverable")
+assert(files[backupPath] == nil, "write created a backup file")
 
 print("FileSystem tests passed")

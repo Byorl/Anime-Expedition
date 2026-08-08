@@ -1,7 +1,7 @@
 return function()
 	return {
 		Name = "Settings",
-		Version = 2,
+		Version = 3,
 		Priority = 20,
 		Dependencies = {},
 
@@ -36,7 +36,7 @@ return function()
 			local pendingName = ""
 			local nameInput = left:Input({
 				Name = "Config Name",
-				Placeholder = "Create, duplicate or rename",
+				Placeholder = "Create config",
 				AcceptedCharacters = "All",
 				Default = "",
 				onChanged = function(value) if isActive() then pendingName = value end end,
@@ -113,40 +113,6 @@ return function()
 					ctx.Config.ConfigDirty = true
 					local ok, err = ctx.Config:Flush()
 					notifyResult("Save config", ok, ok and ("Saved " .. ctx.Config.Account.SelectedConfig) or err)
-				end,
-			})
-			left:Button({
-				Name = "Duplicate",
-				Callback = function()
-					if not isActive() then return end
-					local clean = ctx.Config:SanitizeName(pendingName)
-					local source = ctx.Config.Account.SelectedConfig
-					local ok, err = ctx.Config:Duplicate(source, clean)
-					if ok then refresh(clean); clearName() end
-					notifyResult("Duplicate config", ok, ok and ("Duplicated " .. source .. " as " .. clean) or err)
-				end,
-			})
-			left:Button({
-				Name = "Rename",
-				Callback = function()
-					if not isActive() then return end
-					local clean = ctx.Config:SanitizeName(pendingName)
-					local oldName = ctx.Config.Account.SelectedConfig
-					local ok, err = ctx.Config:Rename(oldName, clean)
-					if ok then refresh(clean); clearName() end
-					notifyResult("Rename config", ok, ok and ("Renamed " .. oldName .. " to " .. clean) or err)
-				end,
-			})
-			left:Button({
-				Name = "Toggle Lock",
-				Callback = function()
-					if not isActive() then return end
-					local target = ctx.Config.Account.SelectedConfig
-					local metadata, err = ctx.Config:GetMetadata(target)
-					if not metadata then return notifyResult("Config lock", false, err) end
-					local locked = metadata.Locked ~= true
-					local ok, lockError = ctx.Config:SetLocked(target, locked)
-					notifyResult("Config lock", ok, ok and ((locked and "Locked " or "Unlocked ") .. target) or lockError)
 				end,
 			})
 			left:Toggle({

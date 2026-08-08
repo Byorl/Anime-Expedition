@@ -51,10 +51,8 @@ local createOk, createError = first:Create("Work")
 assert(createOk, createError)
 local collisionOk = first:Create("work")
 assert(not collisionOk, "case-insensitive collision was accepted")
-
-local duplicateOk, duplicateError = first:Duplicate("Work", "Work Copy")
-assert(duplicateOk, duplicateError)
-assert(first.Account.SelectedConfig == "Work Copy", "duplicate was not selected")
+assert(first.Duplicate == nil and first.Rename == nil and first.SetLocked == nil and first.GetMetadata == nil,
+	"removed config operations are still exposed")
 
 local loadOk, loaded = first:Load("Work")
 assert(loadOk, loaded)
@@ -65,19 +63,24 @@ assert(not conflictOk and string.find(conflictError, "changed on disk", 1, true)
 
 loadOk, loaded = first:Load("Work")
 assert(loadOk, loaded)
-local lockOk, lockError = first:SetLocked("Work", true)
-assert(lockOk, lockError)
+
+local phantomBackup = first.ConfigFolder .. "/Work.bak.json"
+files[phantomBackup] = clone(files[workPath])
+local visibleConfigs = first:List()
+assert(files[phantomBackup] == nil and not table.find(visibleConfigs, "Work.bak"), "backup sidecar appeared as a config")
 
 local second = ConfigManager.new(store, registry, {UserId = 200, Name = "Second"})
 initOk, initError = second:Initialize()
 assert(initOk, initError)
 local deleteOk, deleteError = second:Delete("Work")
-assert(not deleteOk and string.find(deleteError, "locked by First", 1, true), "foreign lock did not protect config")
+assert(deleteOk, deleteError)
 
 files[first:_ConfigPath("Legacy")] = {
 	Schema = 2,
 	Name = "Legacy",
 	Revision = 1,
+	Locked = true,
+	LockedByUserId = 999,
 	Values = {
 		["misc.auto_reconnect"] = true,
 		["settings.ui_scale"] = 140,
@@ -85,6 +88,7 @@ files[first:_ConfigPath("Legacy")] = {
 }
 loadOk, loaded = first:Load("Legacy")
 assert(loadOk, loaded)
+assert(loaded.Locked == nil and loaded.LockedByUserId == nil, "legacy lock metadata was not removed")
 assert(currentValues["misc.auto_reconnect"] == true, "schema 2 feature value was not migrated")
 assert(currentValues["settings.ui_scale"] == nil, "legacy global UI scale was not removed")
 

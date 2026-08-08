@@ -16,6 +16,13 @@ return function(Import)
 		return path .. "." .. label .. ".json"
 	end
 
+	local function discardBackups(path)
+		if type(delfile) ~= "function" then return end
+		for _, backupPath in ipairs({sidecarPath(path, "bak"), path .. ".bak"}) do
+			if isfile(backupPath) then pcall(delfile, backupPath) end
+		end
+	end
+
 	function FileSystem.new(root)
 		local self = setmetatable({Root = root}, FileSystem)
 		self.Available = type(isfile) == "function"
@@ -90,17 +97,15 @@ return function(Import)
 		return decoded
 	end
 
-	-- Reads the primary file first, then an interrupted transaction and finally
-	-- the last known-good backup. A recovered copy repairs the primary path so
-	-- queue-on-teleport code can continue reading it directly.
+	-- Reads the primary file first, then an interrupted verified transaction.
+	-- Backup sidecars from older builds are discarded and never recovered.
 	function FileSystem:ReadJsonDetailed(path)
+		discardBackups(path)
 		local errors = {}
 		local candidates = {
 			path,
 			sidecarPath(path, "tmp"),
 			path .. ".tmp", -- legacy layout used before executor extension filtering
-			sidecarPath(path, "bak"),
-			path .. ".bak",
 		}
 		for _, candidate in ipairs(candidates) do
 			local raw, readError = self:Read(candidate)
@@ -126,15 +131,14 @@ return function(Import)
 		return decoded or Util.Clone(fallback)
 	end
 
-	-- Executor filesystems generally do not expose rename/replace. This uses the
-	-- safest available protocol: verified temp -> preserved backup -> primary ->
-	-- verified primary, with rollback if the final verification fails.
+	-- Executor filesystems generally do not expose rename/replace. Verify a
+	-- temporary JSON sidecar before replacing and verifying the primary file.
 	function FileSystem:WriteJson(path, value)
+		discardBackups(path)
 		local encodeOk, encoded = pcall(HttpService.JSONEncode, HttpService, value)
 		if not encodeOk then return false, describe(path, "JSON encode", encoded) end
 
 		local temporaryPath = sidecarPath(path, "tmp")
-		local backupPath = sidecarPath(path, "bak")
 		local tempOk, tempError = self:_WriteRaw(temporaryPath, encoded)
 		if not tempOk then return false, tempError end
 
@@ -144,27 +148,12 @@ return function(Import)
 			return false, tempReadError or tempDecodeError or describe(temporaryPath, "verify", "content mismatch")
 		end
 
-		local oldRaw = self:Read(path)
-		if oldRaw then
-			local oldDecoded = self:_DecodeJson(oldRaw, path)
-			if oldDecoded then
-				local backupOk, backupError = self:_WriteRaw(backupPath, oldRaw)
-				if not backupOk then return false, backupError end
-			end
-		end
-
 		local writeOk, writeError = self:_WriteRaw(path, encoded)
-		if not writeOk then
-			local backupRaw = self:Read(backupPath)
-			if backupRaw then self:_WriteRaw(path, backupRaw) end
-			return false, tostring(writeError) .. (backupRaw and "; backup restored" or "")
-		end
+		if not writeOk then return false, tostring(writeError) end
 		local finalRaw, finalReadError = self:Read(path)
 		local finalDecoded, finalDecodeError = self:_DecodeJson(finalRaw, path)
 		if not finalRaw or finalRaw ~= encoded or not finalDecoded then
-			local backupRaw = self:Read(backupPath)
-			if backupRaw then self:_WriteRaw(path, backupRaw) end
-			return false, finalReadError or finalDecodeError or describe(path, "verify", "content mismatch; backup restored")
+			return false, finalReadError or finalDecodeError or describe(path, "verify", "content mismatch")
 		end
 
 		if type(delfile) == "function" and isfile(temporaryPath) then pcall(delfile, temporaryPath) end
