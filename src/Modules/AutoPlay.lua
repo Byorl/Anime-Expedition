@@ -50,40 +50,53 @@ return function(Import)
 
 	local function fallbackPath()
 		local paths = {}
-		for _, tagged in ipairs(CollectionService:GetTagged("Path")) do
-			local nodes = {}
-			if tagged:IsA("BasePart") then
-				table.insert(nodes, tagged)
+		local function collect(container)
+			if not container then
+				return
 			end
-			for _, descendant in ipairs(tagged:GetDescendants()) do
-				if descendant:IsA("BasePart") and tonumber(descendant.Name) then
-					table.insert(nodes, descendant)
+			local groups = container.Name == "Paths" and container:GetChildren() or { container }
+			for _, group in ipairs(groups) do
+				local nodes = {}
+				if group:IsA("BasePart") and tonumber(group.Name) then
+					table.insert(nodes, group)
+				end
+				for _, descendant in ipairs(group:GetDescendants()) do
+					if descendant:IsA("BasePart") and tonumber(descendant.Name) then
+						table.insert(nodes, descendant)
+					end
+				end
+				table.sort(nodes, function(a, b)
+					return (tonumber(a.Name) or 0) < (tonumber(b.Name) or 0)
+				end)
+				local path = {}
+				for _, node in ipairs(nodes) do
+					table.insert(path, node.Position)
+				end
+				if #path >= 2 then
+					table.insert(paths, path)
 				end
 			end
-			table.sort(nodes, function(a, b)
-				return (tonumber(a.Name) or 0) < (tonumber(b.Name) or 0)
-			end)
-			local path = {}
-			for _, node in ipairs(nodes) do
-				table.insert(path, node.Position)
-			end
-			if #path >= 2 then
-				table.insert(paths, path)
-			end
+		end
+		for _, tagged in ipairs(CollectionService:GetTagged("Path")) do
+			collect(tagged)
+		end
+		local map = Workspace:FindFirstChild("Map")
+		if map then
+			collect(map:FindFirstChild("Paths"))
+			local environment = map:FindFirstChild("Enviornment") or map:FindFirstChild("Environment")
+			collect(environment and environment:FindFirstChild("Path"))
 		end
 		return longestPath(paths)
 	end
 
 	local function groundCFrame(slot, candidate)
-		local placementType = type(slot.Info) == "table" and slot.Info.PlacementType or nil
-		local tag = placementType == "Ground" and "GroundPlacement" or "HillPlacement"
-		local surfaces = CollectionService:GetTagged(tag)
-		if #surfaces == 0 then
+		local map = Workspace:FindFirstChild("Map")
+		if not map then
 			return nil
 		end
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Include
-		params.FilterDescendantsInstances = surfaces
+		params.FilterDescendantsInstances = { map }
 		local result =
 			Workspace:Raycast(candidate.Position + Vector3.new(0, 100, 0), Vector3.new(0, -300, 0), params)
 		if not result then
@@ -137,6 +150,24 @@ return function(Import)
 		return ordinal
 	end
 
+	local function pathSideCandidate(path, percent, ordinal, attempt)
+		local point, tangent = Planner.SamplePath(path, percent)
+		if not point or not tangent or tangent.Magnitude <= 0 then
+			return nil
+		end
+		local forward = Vector3.new(tangent.X, 0, tangent.Z)
+		if forward.Magnitude <= 0 then
+			return nil
+		end
+		forward = forward.Unit
+		local side = Vector3.new(-forward.Z, 0, forward.X)
+		local distances = { -6, 6, -9, 9, -12, 12, -15, 15, -18, 18, -21, 21 }
+		local lateral = distances[attempt % #distances + 1]
+		local forwardOffset = ((math.max(1, ordinal) - 1) % 3 - 1) * 2
+		local position = point + side * lateral + forward * forwardOffset
+		return CFrame.lookAt(position, position + forward)
+	end
+
 	local function findPlacement(state, snapshot, choice)
 		local path = choice.Path or snapshot.Path
 		if not path then
@@ -145,20 +176,16 @@ return function(Import)
 		local ordinal = placementOrdinal(snapshot, choice)
 		local start = state.PlaceRetries[choice.Slot.Index] or 0
 		local shifts = { 0, -5, 5, -10, 10, -15, 15 }
-		for offset = 0, 27 do
+		local distances = 12
+		for offset = 0, 47 do
 			local attempt = start + offset
 			local percent = math.clamp(
-				(choice.Percent or state.PathPosition) + shifts[attempt % #shifts + 1],
+				(choice.Percent or state.PathPosition)
+					+ shifts[math.floor(attempt / distances) % #shifts + 1],
 				8,
 				92
 			)
-			local candidate = Planner.Candidate(
-				path,
-				percent,
-				choice.Spacing or state.Spacing,
-				ordinal,
-				math.floor(attempt / #shifts)
-			)
+			local candidate = pathSideCandidate(path, percent, ordinal, attempt)
 			if candidate then
 				local pathPoint = Planner.SamplePath(path, percent)
 				candidate = groundCFrame(choice.Slot, candidate)
@@ -175,7 +202,7 @@ return function(Import)
 				end
 			end
 		end
-		state.PlaceRetries[choice.Slot.Index] = (start + 28) % (#shifts * 24)
+		state.PlaceRetries[choice.Slot.Index] = (start + 48) % (#shifts * distances)
 		return nil, "No valid placement point was found yet; another area will be tried."
 	end
 
@@ -542,10 +569,9 @@ return function(Import)
 			destroyMarkers(state)
 			return
 		end
-		local candidate = Planner.Candidate(
+		local candidate = pathSideCandidate(
 			visual.Path,
 			visual.Percent,
-			visual.Spacing,
 			visual.Ordinal or 1,
 			state.PlaceRetries[visual.Slot.Index] or 0
 		)
@@ -655,7 +681,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 5,
+		Version = 6,
 		Priority = 9,
 		Dependencies = {},
 

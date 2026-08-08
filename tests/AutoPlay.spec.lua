@@ -244,10 +244,15 @@ assert(
 assert(string.find(source, 'GamePlayerAction("PlaceGameUnit"', 1, true), "placement request is missing")
 assert(string.find(source, 'GamePlayerAction("UpgradeGameUnit"', 1, true), "upgrade request is missing")
 assert(
-	string.find(source, '"GroundPlacement"', 1, true)
-		and string.find(source, '"HillPlacement"', 1, true)
+	string.find(source, 'Workspace:FindFirstChild("Map")', 1, true)
 		and string.find(source, "Enum.RaycastFilterType.Include", 1, true),
-	"placement is not restricted to the game's tagged placement surfaces"
+	"placement projection is not restricted to active map geometry"
+)
+assert(string.find(source, "state.UnitUtils.IsPlacementAllowed", 1, true), "game placement validation is missing")
+assert(
+	string.find(source, 'map:FindFirstChild("Enviornment")', 1, true)
+		and string.find(source, 'map:FindFirstChild("Environment")', 1, true),
+	"live and exported map path layouts are not supported"
 )
 assert(string.find(source, ").Magnitude <= 22", 1, true), "placement is not bounded around the selected path")
 

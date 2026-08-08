@@ -564,15 +564,18 @@ return function(Import)
 		end
 		local placements = placementChoices(snapshot, context, strategy, options)
 		local deployment = {}
+		local farmSeed = {}
 		if strategy ~= "Economy" then
 			for _, choice in ipairs(placements) do
 				if choice.Count == 0 and choice.Role ~= "Farm" then
 					table.insert(deployment, choice)
+				elseif choice.Count == 0 and choice.Role == "Farm" and options.SmartEconomy ~= false then
+					table.insert(farmSeed, choice)
 				end
 			end
 		end
-		local choices = #deployment > 0 and deployment or placements
-		if #deployment == 0 then
+		local choices = #farmSeed > 0 and farmSeed or (#deployment > 0 and deployment or placements)
+		if #farmSeed == 0 and #deployment == 0 then
 			for _, choice in ipairs(upgradeChoices(snapshot, context, strategy)) do
 				local suppressFarm = choice.Role == "Farm" and strategy == "Win" and context.Pressure >= 0.3
 				if not suppressFarm and (options.SmartEconomy ~= false or choice.Role ~= "Farm") then
