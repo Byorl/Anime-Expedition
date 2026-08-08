@@ -8,6 +8,14 @@ return function(Import)
 		return string.format("%s failed for '%s': %s", operation, tostring(path), tostring(reason))
 	end
 
+	-- Some executors only permit writefile paths whose final extension is on an
+	-- allowlist. Keep JSON as the final extension for transaction sidecars.
+	local function sidecarPath(path, label)
+		local stem = string.match(path, "^(.*)%.json$")
+		if stem then return stem .. "." .. label .. ".json" end
+		return path .. "." .. label .. ".json"
+	end
+
 	function FileSystem.new(root)
 		local self = setmetatable({Root = root}, FileSystem)
 		self.Available = type(isfile) == "function"
@@ -87,7 +95,14 @@ return function(Import)
 	-- queue-on-teleport code can continue reading it directly.
 	function FileSystem:ReadJsonDetailed(path)
 		local errors = {}
-		for _, candidate in ipairs({path, path .. ".tmp", path .. ".bak"}) do
+		local candidates = {
+			path,
+			sidecarPath(path, "tmp"),
+			path .. ".tmp", -- legacy layout used before executor extension filtering
+			sidecarPath(path, "bak"),
+			path .. ".bak",
+		}
+		for _, candidate in ipairs(candidates) do
 			local raw, readError = self:Read(candidate)
 			if raw then
 				local decoded, decodeError = self:_DecodeJson(raw, candidate)
@@ -118,8 +133,8 @@ return function(Import)
 		local encodeOk, encoded = pcall(HttpService.JSONEncode, HttpService, value)
 		if not encodeOk then return false, describe(path, "JSON encode", encoded) end
 
-		local temporaryPath = path .. ".tmp"
-		local backupPath = path .. ".bak"
+		local temporaryPath = sidecarPath(path, "tmp")
+		local backupPath = sidecarPath(path, "bak")
 		local tempOk, tempError = self:_WriteRaw(temporaryPath, encoded)
 		if not tempOk then return false, tempError end
 

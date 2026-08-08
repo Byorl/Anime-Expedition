@@ -4,6 +4,7 @@ FAIL_PRIMARY = nil
 isfile = function(path) return files[path] ~= nil end
 readfile = function(path) if files[path] == nil then error("missing") end return files[path] end
 writefile = function(path, data)
+	if not string.match(path, "%.json$") then error("Illegal path") end
 	if FAIL_PRIMARY == path then
 		FAIL_PRIMARY = nil
 		files[path] = "CORRUPTED_PARTIAL_WRITE"
@@ -39,26 +40,28 @@ end
 local store = Import("FileSystem").new("Test")
 assert(store.Available, "mock executor filesystem was not detected")
 local path = "Test/config.json"
+local temporaryPath = "Test/config.tmp.json"
+local backupPath = "Test/config.bak.json"
 
 local ok, err = store:WriteJson(path, {Revision = 1})
 assert(ok, err)
-assert(files[path] == "VALID:1" and files[path .. ".tmp"] == nil, "initial transaction did not commit cleanly")
+assert(files[path] == "VALID:1" and files[temporaryPath] == nil, "initial transaction did not commit cleanly")
 
 ok, err = store:WriteJson(path, {Revision = 2})
 assert(ok, err)
-assert(files[path] == "VALID:2" and files[path .. ".bak"] == "VALID:1", "backup was not preserved")
+assert(files[path] == "VALID:2" and files[backupPath] == "VALID:1", "backup was not preserved")
 
 files[path] = "CORRUPTED"
 local recovered, source = store:ReadJsonDetailed(path)
-assert(recovered.Revision == 1 and source == path .. ".bak", "backup recovery failed")
+assert(recovered.Revision == 1 and source == backupPath, "backup recovery failed")
 assert(files[path] == "VALID:1", "recovery did not repair primary")
 
 files[path] = "CORRUPTED"
-files[path .. ".tmp"] = "VALID:3"
+files[temporaryPath] = "VALID:3"
 recovered, source = store:ReadJsonDetailed(path)
-assert(recovered.Revision == 3 and source == path .. ".tmp", "interrupted temp recovery failed")
+assert(recovered.Revision == 3 and source == temporaryPath, "interrupted temp recovery failed")
 
-files[path .. ".tmp"] = nil
+files[temporaryPath] = nil
 FAIL_PRIMARY = path
 ok, err = store:WriteJson(path, {Revision = 4})
 assert(not ok and string.find(err, "backup restored", 1, true), "failed write did not report rollback")

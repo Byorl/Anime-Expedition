@@ -1,5 +1,5 @@
 return {
-	Version = "1.2.0",
+	Version = "1.3.0",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -12,7 +12,11 @@ return {
 		ModuleManager = "src/Core/ModuleManager.lua",
 		UIManager = "src/Core/UIManager.lua",
 		MacLibProvider = "src/Core/MacLibProvider.lua",
+		GameAdapter = "src/Core/GameAdapter.lua",
+		RewardScanner = "src/Core/RewardScanner.lua",
 		Misc = "src/Modules/Misc.lua",
+		AutoClaim = "src/Modules/AutoClaim.lua",
+		Performance = "src/Modules/Performance.lua",
 		Settings = "src/Modules/Settings.lua",
 		Main = "src/Main.lua",
 	},

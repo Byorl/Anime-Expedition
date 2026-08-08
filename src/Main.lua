@@ -9,7 +9,10 @@ return function(Import)
 	local ModuleManager = Import("ModuleManager")
 	local UIManager = Import("UIManager")
 	local MacLibProvider = Import("MacLibProvider")
+	local GameAdapter = Import("GameAdapter")
 	local MiscModule = Import("Misc")
+	local AutoClaimModule = Import("AutoClaim")
+	local PerformanceModule = Import("Performance")
 	local SettingsModule = Import("Settings")
 
 	local Players = game:GetService("Players")
@@ -167,6 +170,7 @@ return function(Import)
 		Player = LocalPlayer,
 		Build = Build,
 		UIManager = ResponsiveUI,
+		Game = GameAdapter.new(),
 	}
 	local Session = SessionManager.new(Runtime, Config)
 	Context.Session = Session
@@ -175,6 +179,8 @@ return function(Import)
 	local Modules = ModuleManager.new(Context)
 	Runtime.Modules = Modules
 	Modules:Register(MiscModule)
+	Modules:Register(AutoClaimModule)
+	Modules:Register(PerformanceModule)
 	Modules:Register(SettingsModule)
 
 	Registry.OnChanged = function() Config:ScheduleAutoSave() end
