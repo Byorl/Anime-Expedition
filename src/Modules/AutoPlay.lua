@@ -117,6 +117,28 @@ return function(Import)
 		return positions
 	end
 
+	local function pathGeometry()
+		local map = Workspace:FindFirstChild("Map")
+		local environment = map and (map:FindFirstChild("Enviornment") or map:FindFirstChild("Environment"))
+		return environment and environment:FindFirstChild("Path")
+	end
+
+	local function isPathSurface(instance)
+		local geometry = pathGeometry()
+		return geometry and instance and (instance == geometry or instance:IsDescendantOf(geometry)) or false
+	end
+
+	local function isOverPath(position)
+		local geometry = pathGeometry()
+		if not geometry then
+			return false
+		end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = { geometry }
+		return Workspace:Raycast(position + Vector3.new(0, 80, 0), Vector3.new(0, -160, 0), params) ~= nil
+	end
+
 	local function groundCFrame(slot, candidate)
 		local map = Workspace:FindFirstChild("Map")
 		if not map then
@@ -130,12 +152,15 @@ return function(Import)
 		if not result then
 			return nil
 		end
+		if isPathSurface(result.Instance) then
+			return nil
+		end
 		local position = result.Position
 		local look = Vector3.new(candidate.LookVector.X, 0, candidate.LookVector.Z)
 		if look.Magnitude <= 0 then
 			look = Vector3.new(0, 0, -1)
 		end
-		return CFrame.lookAt(position, position + look.Unit)
+		return CFrame.lookAt(position, position + look.Unit), result.Instance
 	end
 
 	local function isAllowed(state, asset, cframe)
@@ -189,11 +214,58 @@ return function(Import)
 		end
 		forward = forward.Unit
 		local side = Vector3.new(-forward.Z, 0, forward.X)
-		local distances = { -10, 10, -14, 14, -18, 18, -21, 21 }
+		local distances = { -4, 4, -6, 6, -8, 8, -10, 10, -12, 12, -15, 15, -18, 18, -21, 21 }
 		local lateral = distances[attempt % #distances + 1]
 		local forwardOffset = ((math.max(1, ordinal) - 1) % 3 - 1) * 2
 		local position = point + side * lateral + forward * forwardOffset
 		return CFrame.lookAt(position, position + forward)
+	end
+
+	local function taggedPlacementCFrame(state, slot, pathPoint, tangent)
+		local placementType = type(slot.Info) == "table" and slot.Info.PlacementType or nil
+		local tag = placementType == "Ground" and "GroundPlacement" or "HillPlacement"
+		local map = Workspace:FindFirstChild("Map")
+		local footprint = math.max(2, tonumber(slot.BoundingSize) or 6)
+		local candidates = {}
+		for _, tagged in ipairs(CollectionService:GetTagged(tag)) do
+			local parts = tagged:IsA("BasePart") and { tagged } or tagged:GetDescendants()
+			for _, part in ipairs(parts) do
+				if
+					part:IsA("BasePart")
+					and map
+					and part:IsDescendantOf(map)
+					and not isPathSurface(part)
+				then
+					local localPoint = part.CFrame:PointToObjectSpace(pathPoint)
+					local halfX, halfZ = part.Size.X / 2, part.Size.Z / 2
+					local marginX = math.min(math.max(0, halfX - 0.1), footprint / 2 + 0.75)
+					local marginZ = math.min(math.max(0, halfZ - 0.1), footprint / 2 + 0.75)
+					local minimumX, maximumX = -halfX + marginX, halfX - marginX
+					local minimumZ, maximumZ = -halfZ + marginZ, halfZ - marginZ
+					local x = minimumX <= maximumX and math.clamp(localPoint.X, minimumX, maximumX) or 0
+					local z = minimumZ <= maximumZ and math.clamp(localPoint.Z, minimumZ, maximumZ) or 0
+					local position = part.CFrame:PointToWorldSpace(Vector3.new(x, part.Size.Y / 2, z))
+					local distance = Vector3.new(position.X - pathPoint.X, 0, position.Z - pathPoint.Z).Magnitude
+					if distance <= 28 and not isOverPath(position) then
+						table.insert(candidates, { Position = position, Distance = distance })
+					end
+				end
+			end
+		end
+		table.sort(candidates, function(a, b)
+			return a.Distance < b.Distance
+		end)
+		local look = Vector3.new(tangent.X, 0, tangent.Z)
+		if look.Magnitude <= 0 then
+			look = Vector3.new(0, 0, -1)
+		end
+		for _, candidate in ipairs(candidates) do
+			local cframe = CFrame.lookAt(candidate.Position, candidate.Position + look.Unit)
+			if isAllowed(state, slot.Asset, cframe) then
+				return cframe
+			end
+		end
+		return nil
 	end
 
 	local function findPlacement(state, snapshot, choice)
@@ -204,7 +276,8 @@ return function(Import)
 		local ordinal = placementOrdinal(snapshot, choice)
 		local start = state.PlaceRetries[choice.Slot.Index] or 0
 		local shifts = { 0, -5, 5, -10, 10, -15, 15 }
-		local distances = 8
+		local distances = 16
+		local checkedTagged = {}
 		for offset = 0, 47 do
 			local attempt = start + offset
 			local percent = math.clamp(
@@ -215,7 +288,16 @@ return function(Import)
 			)
 			local candidate = pathSideCandidate(path, percent, ordinal, attempt)
 			if candidate then
-				local pathPoint = Planner.SamplePath(path, percent)
+				local pathPoint, tangent = Planner.SamplePath(path, percent)
+				local taggedCandidate
+				if pathPoint and tangent and not checkedTagged[percent] then
+					checkedTagged[percent] = true
+					taggedCandidate = taggedPlacementCFrame(state, choice.Slot, pathPoint, tangent)
+				end
+				if taggedCandidate then
+					state.PlaceRetries[choice.Slot.Index] = attempt
+					return taggedCandidate
+				end
 				candidate = groundCFrame(choice.Slot, candidate)
 				local closeToPath = candidate
 					and pathPoint
@@ -716,7 +798,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 9,
+		Version = 10,
 		Priority = 9,
 		Dependencies = {},
 

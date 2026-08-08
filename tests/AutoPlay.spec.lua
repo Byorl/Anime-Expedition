@@ -281,8 +281,10 @@ assert(
 	"Smart preview and placement do not share the exact validated CFrame"
 )
 assert(
-	string.find(source, "{ -10, 10, -14, 14, -18, 18, -21, 21 }", 1, true),
-	"placement search does not maintain road clearance"
+	string.find(source, 'CollectionService:GetTagged(tag)', 1, true)
+		and string.find(source, 'environment:FindFirstChild("Path")', 1, true)
+		and string.find(source, "not isOverPath(position)", 1, true),
+	"placement search does not use tagged surfaces while excluding the enemy road"
 )
 assert(
 	string.find(source, 'Workspace:FindFirstChild("Map")', 1, true)
