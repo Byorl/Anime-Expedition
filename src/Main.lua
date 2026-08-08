@@ -56,6 +56,7 @@ return function(Import)
 	Environment.__ANIME_EXPEDITIONS_RUNTIME = Runtime
 
 	function Runtime:Notify(title, description)
+		local restoreIdentity = Util.ElevateIdentity()
 		if self.Window then
 			Util.SafeCall("notification", self.Window.Notify, self.Window, {
 				Title = tostring(title),
@@ -65,12 +66,14 @@ return function(Import)
 		else
 			Util.Warn(title .. ": " .. description)
 		end
+		restoreIdentity()
 	end
 
 	function Runtime:Shutdown(reason, windowAlreadyUnloaded)
 		if self.ShuttingDown then
 			return
 		end
+		local restoreIdentity = Util.ElevateIdentity()
 		self.ShuttingDown = true
 		if self.Registry then
 			self.Registry.OnChanged = nil
@@ -118,6 +121,7 @@ return function(Import)
 			Environment.__ANIME_EXPEDITIONS_RUNTIME = nil
 		end
 		self.Reason = reason
+		restoreIdentity()
 	end
 
 	local function guiParent()

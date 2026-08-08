@@ -52,13 +52,24 @@ return function()
 			end
 			state.WasInGame = inGame
 
-			local canStart = inGame and gameState.EndTime == nil and gameState.GameEnded ~= true
+			local canStart = inGame
+				and gameState.Active ~= true
+				and gameState.EndTime == nil
+				and gameState.GameEnded ~= true
 			local startReady = state.AutoStart
 				and canStart
 				and state.GameStartedAt
 				and os.clock() - state.GameStartedAt >= state.StartDelay
 			manageSetting(ctx, state, "AutoVoteStart", state.AutoStart, startReady == true)
 			manageSetting(ctx, state, "AutoSkipWaves", state.AutoSkip, true)
+			if startReady and os.clock() - state.LastStartVote >= 0.75 then
+				state.LastStartVote = os.clock()
+				ctx.Game:RespondToVote("start game")
+			end
+			if state.AutoSkip and gameState.Active == true and os.clock() - state.LastSkipVote >= 0.75 then
+				state.LastSkipVote = os.clock()
+				ctx.Game:RespondToVote("skip wave")
+			end
 
 			local session = ctx.Game:State("SessionData")
 			if
@@ -91,6 +102,8 @@ return function()
 				StartDelay = 0,
 				LeaveAFK = false,
 				LastAFKAttempt = 0,
+				LastStartVote = 0,
+				LastSkipVote = 0,
 				SettingAttempts = {},
 				ManagedSettings = {},
 				OriginalSettings = {},

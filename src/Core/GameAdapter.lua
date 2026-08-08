@@ -4,23 +4,31 @@ return function(Import)
 	GameAdapter.__index = GameAdapter
 
 	local function loadModule(instance, label)
-		if not instance then return nil, label .. " was not found" end
-		local ok, result = xpcall(function() return require(instance) end, Util.Traceback)
-		if not ok then return nil, label .. " failed to load:\n" .. tostring(result) end
-		if type(result) ~= "table" then return nil, label .. " returned " .. type(result) end
+		if not instance then
+			return nil, label .. " was not found"
+		end
+		local ok, result = xpcall(function()
+			return require(instance)
+		end, Util.Traceback)
+		if not ok then
+			return nil, label .. " failed to load:\n" .. tostring(result)
+		end
+		if type(result) ~= "table" then
+			return nil, label .. " returned " .. type(result)
+		end
 		return result
 	end
 
 	function GameAdapter.new()
-		local self = setmetatable({Ready = false}, GameAdapter)
+		local self = setmetatable({ Ready = false }, GameAdapter)
 		local replicatedStorage = game:GetService("ReplicatedStorage")
 		local fusionPackage = replicatedStorage:FindFirstChild("FusionPackage")
+		local shared = replicatedStorage:FindFirstChild("Shared")
 		local nodes, nodesError = loadModule(replicatedStorage:FindFirstChild("Nodes"), "ReplicatedStorage.Nodes")
-		local dependencies, dependenciesError = loadModule(
-			fusionPackage and fusionPackage:FindFirstChild("Dependencies"),
-			"FusionPackage.Dependencies"
-		)
-		local fusion, fusionError = loadModule(fusionPackage and fusionPackage:FindFirstChild("Fusion"), "FusionPackage.Fusion")
+		local dependencies, dependenciesError =
+			loadModule(fusionPackage and fusionPackage:FindFirstChild("Dependencies"), "FusionPackage.Dependencies")
+		local fusion, fusionError =
+			loadModule(fusionPackage and fusionPackage:FindFirstChild("Fusion"), "FusionPackage.Fusion")
 		if not nodes or not dependencies or not fusion or type(fusion.peek) ~= "function" then
 			self.Error = table.concat({
 				nodesError or "",
@@ -32,37 +40,55 @@ return function(Import)
 		self.Nodes = nodes
 		self.Dependencies = dependencies
 		self.Fusion = fusion
+		self.ReplicaClient =
+			select(1, loadModule(shared and shared:FindFirstChild("ReplicaClient"), "Shared.ReplicaClient"))
 		self.Ready = true
 		return self
 	end
 
 	function GameAdapter:Peek(value)
-		if not self.Ready then return nil, self.Error end
-		local ok, result = xpcall(function() return self.Fusion.peek(value) end, Util.Traceback)
-		if not ok then return nil, tostring(result) end
+		if not self.Ready then
+			return nil, self.Error
+		end
+		local ok, result = xpcall(function()
+			return self.Fusion.peek(value)
+		end, Util.Traceback)
+		if not ok then
+			return nil, tostring(result)
+		end
 		return result
 	end
 
 	function GameAdapter:State(name)
-		if not self.Ready then return nil, self.Error end
+		if not self.Ready then
+			return nil, self.Error
+		end
 		local state = self.Dependencies[name]
-		if state == nil then return nil, "unknown replicated state '" .. tostring(name) .. "'" end
+		if state == nil then
+			return nil, "unknown replicated state '" .. tostring(name) .. "'"
+		end
 		return self:Peek(state)
 	end
 
 	function GameAdapter:PlayerData()
 		local data, err = self:State("PlayerData")
-		if type(data) == "table" then return data end
+		if type(data) == "table" then
+			return data
+		end
 		return nil, err or "PlayerData has not replicated yet"
 	end
 
 	function GameAdapter:Information()
-		if not self.Ready then return nil, self.Error end
+		if not self.Ready then
+			return nil, self.Error
+		end
 		return self.Dependencies.Information
 	end
 
 	function GameAdapter:InvokeSelf(nodeName, ...)
-		if not self.Ready then return false, self.Error end
+		if not self.Ready then
+			return false, self.Error
+		end
 		local node = self.Nodes[nodeName]
 		if type(node) ~= "table" or type(node.InvokeSelf) ~= "function" then
 			return false, "local node '" .. tostring(nodeName) .. "' is unavailable"
@@ -71,23 +97,33 @@ return function(Import)
 		local results = table.pack(xpcall(function()
 			return node:InvokeSelf(table.unpack(arguments, 1, arguments.n))
 		end, Util.Traceback))
-		if not results[1] then return false, tostring(results[2]) end
+		if not results[1] then
+			return false, tostring(results[2])
+		end
 		return true, table.unpack(results, 2, results.n)
 	end
 
 	function GameAdapter:Connect(nodeName, callback)
-		if not self.Ready then return nil, self.Error end
+		if not self.Ready then
+			return nil, self.Error
+		end
 		local node = self.Nodes[nodeName]
 		if type(node) ~= "table" or type(node.Connect) ~= "function" then
 			return nil, "network node '" .. tostring(nodeName) .. "' is unavailable or cannot be observed"
 		end
-		local ok, connection = xpcall(function() return node:Connect(callback) end, Util.Traceback)
-		if not ok then return nil, tostring(connection) end
+		local ok, connection = xpcall(function()
+			return node:Connect(callback)
+		end, Util.Traceback)
+		if not ok then
+			return nil, tostring(connection)
+		end
 		return connection
 	end
 
 	function GameAdapter:Fire(nodeName, ...)
-		if not self.Ready then return false, self.Error end
+		if not self.Ready then
+			return false, self.Error
+		end
 		local node = self.Nodes[nodeName]
 		if type(node) ~= "table" or type(node.FireServer) ~= "function" then
 			return false, "network node '" .. tostring(nodeName) .. "' is unavailable or is not a server event"
@@ -96,12 +132,16 @@ return function(Import)
 		local ok, err = xpcall(function()
 			node:FireServer(table.unpack(arguments, 1, arguments.n))
 		end, Util.Traceback)
-		if not ok then return false, tostring(err) end
+		if not ok then
+			return false, tostring(err)
+		end
 		return true
 	end
 
 	function GameAdapter:Request(nodeName, timeout, ...)
-		if not self.Ready then return false, self.Error end
+		if not self.Ready then
+			return false, self.Error
+		end
 		local node = self.Nodes[nodeName]
 		if type(node) ~= "table" or type(node.Request) ~= "function" then
 			return false, "network node '" .. tostring(nodeName) .. "' is unavailable or is not a request node"
@@ -112,10 +152,14 @@ return function(Import)
 			if type(request) ~= "table" or type(request.Wait) ~= "function" then
 				error("request node '" .. tostring(nodeName) .. "' returned an invalid request object")
 			end
-			if type(request.Timeout) == "function" then request:Timeout(tonumber(timeout) or 5) end
+			if type(request.Timeout) == "function" then
+				request:Timeout(tonumber(timeout) or 5)
+			end
 			return request:Wait()
 		end, Util.Traceback))
-		if not results[1] then return false, tostring(results[2]) end
+		if not results[1] then
+			return false, tostring(results[2])
+		end
 		return true, table.unpack(results, 2, results.n)
 	end
 
@@ -126,76 +170,153 @@ return function(Import)
 
 	function GameAdapter:LeaveMatchmaking()
 		local ok, response = self:Request("REQUEST_LEAVE_MATCHMAKING", 5)
-		if not ok then return false, response end
-		if response == false then return false, "the game rejected the matchmaking leave request" end
+		if not ok then
+			return false, response
+		end
+		if response == false then
+			return false, "the game rejected the matchmaking leave request"
+		end
 		return true
 	end
 
 	function GameAdapter:Join(queueData, matchmaking, timeout)
-		if type(queueData) ~= "table" then return false, "queue data is invalid" end
+		if type(queueData) ~= "table" then
+			return false, "queue data is invalid"
+		end
 		if matchmaking then
 			local session = self:State("SessionData")
-			if type(session) == "table" and (session.Matchmaking == true or session.MatchmakingFound == true) then return true end
+			if type(session) == "table" and (session.Matchmaking == true or session.MatchmakingFound == true) then
+				return true
+			end
 			local ok, response = self:Request("REQUEST_ENTER_MATCHMAKING", timeout or 5, queueData)
-			if not ok then return false, response end
-			if response == false then return false, "the game rejected the matchmaking request" end
+			if not ok then
+				return false, response
+			end
+			if response == false then
+				return false, "the game rejected the matchmaking request"
+			end
 			return true
 		end
 
 		local replicaOk, replica = self:InvokeSelf("GET_PARTY_DATA_REPLICA")
-		if not replicaOk then return false, replica end
+		if not replicaOk then
+			return false, replica
+		end
 		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then
 			local createOk, response = self:Request("PARTY_CREATE", timeout or 5, queueData)
-			if not createOk then return false, response end
-			if response == false then return false, "the game rejected the party creation request" end
+			if not createOk then
+				return false, response
+			end
+			if response == false then
+				return false, "the game rejected the party creation request"
+			end
 			local waitOk
 			waitOk, replica = self:InvokeSelf("WAIT_FOR_PARTY_REPLICA")
-			if not waitOk then return false, replica end
+			if not waitOk then
+				return false, replica
+			end
 		end
-		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then return false, "party replica did not become available" end
+		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then
+			return false, "party replica did not become available"
+		end
 		local ok, err = xpcall(function()
 			replica:FireServer("SetQueueData", queueData)
 			replica:FireServer("StartGame")
 		end, Util.Traceback)
-		if not ok then return false, tostring(err) end
+		if not ok then
+			return false, tostring(err)
+		end
 		return true
 	end
 
 	function GameAdapter:ReturnToLobby()
 		local ok, replica = self:InvokeSelf("GET_GAME_REPLICA")
-		if not ok then return false, replica end
-		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then return false, "game replica is unavailable" end
-		local fired, err = xpcall(function() replica:FireServer("Lobby") end, Util.Traceback)
-		if not fired then return false, tostring(err) end
+		if not ok then
+			return false, replica
+		end
+		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then
+			return false, "game replica is unavailable"
+		end
+		local fired, err = xpcall(function()
+			replica:FireServer("Lobby")
+		end, Util.Traceback)
+		if not fired then
+			return false, tostring(err)
+		end
 		return true
 	end
 
 	function GameAdapter:GameAction(action, ...)
 		local ok, replica = self:InvokeSelf("GET_GAME_REPLICA")
-		if not ok then return false, replica end
-		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then return false, "game replica is unavailable" end
+		if not ok then
+			return false, replica
+		end
+		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then
+			return false, "game replica is unavailable"
+		end
 		local arguments = table.pack(...)
 		local fired, err = xpcall(function()
 			replica:FireServer(tostring(action), table.unpack(arguments, 1, arguments.n))
 		end, Util.Traceback)
-		if not fired then return false, tostring(err) end
+		if not fired then
+			return false, tostring(err)
+		end
 		return true
 	end
 
 	function GameAdapter:GamePlayerAction(action, ...)
 		local ok, replica = self:InvokeSelf("GET_GAME_PLAYER_REPLICA")
-		if not ok then return false, replica end
-		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then return false, "game player replica is unavailable" end
+		if not ok then
+			return false, replica
+		end
+		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then
+			return false, "game player replica is unavailable"
+		end
 		local arguments = table.pack(...)
 		local fired, err = xpcall(function()
 			replica:FireServer(tostring(action), table.unpack(arguments, 1, arguments.n))
 		end, Util.Traceback)
-		if not fired then return false, tostring(err) end
+		if not fired then
+			return false, tostring(err)
+		end
 		return true
 	end
 
 	function GameAdapter:ChangeSetting(name, value)
 		return self:Fire("CLIENT_CHANGE_SETTING", tostring(name), value)
+	end
+
+	function GameAdapter:RespondToVote(kind)
+		local replicaClient = self.ReplicaClient
+		if type(replicaClient) ~= "table" or type(replicaClient.Test) ~= "function" then
+			return false, "vote prompt registry is unavailable"
+		end
+		local wanted = string.lower(tostring(kind or ""))
+		local ok, registry = xpcall(function()
+			return replicaClient.Test()
+		end, Util.Traceback)
+		if not ok then
+			return false, tostring(registry)
+		end
+		local prompts = type(registry) == "table"
+				and type(registry.TokenReplicas) == "table"
+				and registry.TokenReplicas.VotePrompt
+			or nil
+		for replica in pairs(type(prompts) == "table" and prompts or {}) do
+			local data = type(replica) == "table" and replica.Data or nil
+			local parameters = type(data) == "table" and data.Parameters or nil
+			local title = string.lower(tostring(type(parameters) == "table" and parameters.Title or ""))
+			if string.find(title, wanted, 1, true) and type(replica.FireServer) == "function" then
+				local fired, fireError = xpcall(function()
+					replica:FireServer("Response", true)
+				end, Util.Traceback)
+				if not fired then
+					return false, tostring(fireError)
+				end
+				return true, true
+			end
+		end
+		return true, false
 	end
 
 	return GameAdapter

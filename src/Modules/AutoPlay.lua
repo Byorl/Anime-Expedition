@@ -280,6 +280,7 @@ return function(Import)
 		if
 			type(gameState) ~= "table"
 			or type(gameState.Parameters) ~= "table"
+			or gameState.Active ~= true
 			or gameState.GameEnded == true
 			or gameState.EndTime ~= nil
 		then
@@ -499,6 +500,22 @@ return function(Import)
 		end
 	end
 
+	local function updateSmartWaitingLabels(state)
+		local labels = {
+			{ "SmartStatusText", "SmartStatusLabel", "Planning: Armed and waiting" },
+			{ "SmartScenarioText", "SmartScenarioLabel", "Scenario: Waiting for match to start" },
+			{ "SmartThreatText", "SmartThreatLabel", "Threat: Waiting for active match" },
+			{ "SmartAutomationText", "SmartAutomationLabel", "Automatic: Waiting for active match" },
+			{ "SmartDecisionText", "SmartDecisionLabel", "Decision: No actions before the match starts" },
+		}
+		for _, entry in ipairs(labels) do
+			if state[entry[1]] ~= entry[3] and state[entry[2]] then
+				state[entry[1]] = entry[3]
+				state[entry[2]]:UpdateName(entry[3])
+			end
+		end
+	end
+
 	local function updateSmartVisualization(state, decision)
 		if not state.SmartVisualize or not decision or decision.Kind ~= "Place" or not decision.Path then
 			destroyMarkers(state)
@@ -566,11 +583,7 @@ return function(Import)
 					state.Pending = nil
 					state.LastWave, state.LastTime, state.LastTotal = nil, nil, nil
 					if state.SmartEnabled then
-						updateSmartLabels(state, {
-							Kind = "Wait",
-							Reason = "waiting for an active match",
-							Context = {},
-						})
+						updateSmartWaitingLabels(state)
 					end
 					destroyMarkers(state)
 					return
@@ -842,10 +855,10 @@ return function(Import)
 
 			local live = ctx.Tabs.AutoPlaySmart:Section({ Side = "Right" })
 			live:Header({ Text = "Live Planner" })
-			state.SmartScenarioLabel = live:Label({ Text = "Scenario: Waiting for match data" })
-			state.SmartThreatLabel = live:Label({ Text = "Threat: 0% | Enemies: 0 | Wave: 0/0" })
-			state.SmartAutomationLabel = live:Label({ Text = "Automatic: Yen Reserve 0% | Placement Spacing Planning" })
-			state.SmartDecisionLabel = live:Label({ Text = "Decision: Waiting for match data" })
+			state.SmartScenarioLabel = live:Label({ Text = "Scenario: Waiting for match to start" })
+			state.SmartThreatLabel = live:Label({ Text = "Threat: Waiting for active match" })
+			state.SmartAutomationLabel = live:Label({ Text = "Automatic: Waiting for active match" })
+			state.SmartDecisionLabel = live:Label({ Text = "Decision: No actions before the match starts" })
 			live:Paragraph({
 				Header = "How it works",
 				Body = "Smart mode ignores every Normal setting. It recalculates placement, upgrades, economy and risk from the live map, mode, act, difficulty, wave and enemies before every confirmed action.",

@@ -1,8 +1,8 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.9.1", "interface release version is wrong")
+assert(Build.Version == "1.9.2", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
-		== "https://raw.githubusercontent.com/Byorl/Maclib/31b7139a6c0779f1218587a2d513b9ef94a33ed2/src/maclib.lua",
+		== "https://raw.githubusercontent.com/Byorl/Maclib/65f3353d47660ed5f372bddd2ccbde02ba1d733d/src/maclib.lua",
 	"interface is not pinned to the tested Byorl Maclib revision"
 )
 
@@ -27,8 +27,20 @@ assert(splitSubtabs == 5, "Misc and Auto Play subtabs should keep split sections
 
 local gameMatchSource = fs.read("src/Modules/GameMatch.lua", "bin")
 local gameEndSource = fs.read("src/Modules/GameEnd.lua", "bin")
+local gameAdapterSource = fs.read("src/Core/GameAdapter.lua", "bin")
+local autoPlaySource = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(not string.find(gameMatchSource, "Leave at Wave (0=off)", 1, true), "Leave at Wave is still in Match")
 assert(string.find(gameEndSource, "Leave at Wave (0=off)", 1, true), "Leave at Wave is missing from End of Match")
+assert(string.find(gameMatchSource, 'RespondToVote("start game")', 1, true), "Auto Start does not accept start votes")
+assert(
+	string.find(gameAdapterSource, 'FireServer("Response", true)', 1, true),
+	"vote prompts are not accepted directly"
+)
+assert(string.find(autoPlaySource, "or gameState.Active ~= true", 1, true), "Auto Play can act before a match starts")
+assert(
+	string.find(autoPlaySource, "Scenario: Waiting for match to start", 1, true),
+	"Smart Auto Play has no pre-match planner state"
+)
 
 local organizedSections = {
 	["src/Modules/GameMatch.lua"] = { "Match Automation", "AFK Chamber" },
