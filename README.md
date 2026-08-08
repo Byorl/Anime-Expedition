@@ -51,7 +51,7 @@ src/
 - Configs can be duplicated, renamed and locked; names collide case-insensitively.
 - Auto Save covers every stateful element registered through `ControlRegistry`.
 - Config loads run as transactions, hold autosave callbacks until deferred MacLib setters settle, and roll back on failure.
-- Writes use verified `.tmp` and `.bak` files and repair the primary JSON automatically after corruption/interruption.
+- Writes use verified `.tmp.json` and `.bak.json` sidecars (compatible with executor extension allowlists) and repair the primary JSON automatically after corruption/interruption.
 - Dirty autosaves are flushed before re-execution and teleport, while Auto Save off still requires the Save button.
 
 ## Runtime modules
