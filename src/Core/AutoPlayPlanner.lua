@@ -75,6 +75,13 @@ return function()
 		return limit
 	end
 
+	local function traitInfo(profile, information)
+		local key = type(profile) == "table" and profile.Trait or nil
+		local traits = type(information) == "table" and information.Traits or nil
+		local values = type(traits) == "table" and (traits.TraitData or traits) or nil
+		return key ~= nil and type(values) == "table" and values[key] or nil
+	end
+
 	function Planner.Slots(hotbarState, playerData, information, count)
 		local output = {}
 		local slots = type(hotbarState) == "table" and hotbarState.Slots or nil
@@ -96,6 +103,7 @@ return function()
 						Name = info.DisplayName or info.Name or tostring(asset),
 						Profile = profile,
 						Info = info,
+						TraitInfo = traitInfo(profile, information),
 						PlacementCost = number(base.Cost, number(info.Cost, 0)),
 						PlacementLimit = placementLimit(raw, profile, info, information),
 						MaxUpgrade = maxUpgrade(info),
@@ -250,23 +258,29 @@ return function()
 		return total
 	end
 
-	function Planner.SelectPath(mapState)
+	function Planner.ActivePaths(mapState)
+		local output = {}
 		local paths = type(mapState) == "table" and mapState.Paths or nil
 		local disabled = type(mapState) == "table" and mapState.DisabledPaths or nil
-		local selected, selectedLength
 		for key, path in pairs(type(paths) == "table" and paths or {}) do
 			if
 				type(path) == "table"
 				and #path >= 2
 				and not (type(disabled) == "table" and (disabled[key] or disabled[tostring(key)]))
 			then
-				local length = pathLength(path)
-				if not selectedLength or length > selectedLength then
-					selected, selectedLength = path, length
-				end
+				table.insert(output, path)
 			end
 		end
-		return selected, selectedLength or 0
+		table.sort(output, function(a, b)
+			return pathLength(a) > pathLength(b)
+		end)
+		return output
+	end
+
+	function Planner.SelectPath(mapState)
+		local paths = Planner.ActivePaths(mapState)
+		local selected = paths[1]
+		return selected, selected and pathLength(selected) or 0
 	end
 
 	function Planner.SamplePath(path, percent)

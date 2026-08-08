@@ -1,5 +1,6 @@
 return function(Import)
 	local Planner = Import("AutoPlayPlanner")
+	local SmartPlanner = Import("SmartAutoPlayPlanner")
 	local AutoPlay = {}
 	local Players = game:GetService("Players")
 	local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -120,6 +121,9 @@ return function(Import)
 	end
 
 	local function placementOrdinal(snapshot, choice)
+		if choice.Ordinal then
+			return choice.Ordinal
+		end
 		local ordinal = choice.Count + 1
 		for _, slot in ipairs(snapshot.Slots) do
 			if slot.Index >= choice.Slot.Index then
@@ -131,7 +135,7 @@ return function(Import)
 	end
 
 	local function findPlacement(state, snapshot, choice)
-		local path = snapshot.Path
+		local path = choice.Path or snapshot.Path
 		if not path then
 			return nil, "No active map path was found."
 		end
@@ -139,7 +143,13 @@ return function(Import)
 		local start = state.PlaceRetries[choice.Slot.Index] or 0
 		for offset = 0, 15 do
 			local attempt = start + offset
-			local candidate = Planner.Candidate(path, state.PathPosition, state.Spacing, ordinal, attempt)
+			local candidate = Planner.Candidate(
+				path,
+				choice.Percent or state.PathPosition,
+				choice.Spacing or state.Spacing,
+				ordinal,
+				attempt
+			)
 			if candidate then
 				candidate = groundCFrame(state, candidate)
 				if isAllowed(state, choice.Slot.Asset, candidate) then
@@ -265,9 +275,13 @@ return function(Import)
 		local placed = Planner.Placed(slots, gameUnits, Players.LocalPlayer)
 		local playerState = ctx.Game:State("GamePlayerState")
 		local mapState = ctx.Game:State("MapState")
-		local path = Planner.SelectPath(mapState)
+		local paths = Planner.ActivePaths(mapState)
+		local path = paths[1]
 		if not path then
 			path = fallbackPath()
+			if path then
+				paths = { path }
+			end
 		end
 		return {
 			GameState = gameState,
@@ -275,6 +289,13 @@ return function(Import)
 			Placed = placed,
 			Yen = math.max(0, tonumber(type(playerState) == "table" and playerState.Yen) or 0),
 			Path = path,
+			Paths = paths,
+			Enemies = ctx.Game:State("GameEnemies") or {},
+			PlacementCap = tonumber(
+				type(playerState) == "table" and playerState.TotalUnitPlacementCap
+					or gameState.GlobalUnitPlacementCap
+					or gameState.TotalPlacementCap
+			),
 			MaxPlace = state.MaxPlace,
 			MaxUpgrade = state.MaxUpgrade,
 		}
@@ -418,11 +439,96 @@ return function(Import)
 		end
 	end
 
+	local function updateSmartLabels(state, decision)
+		local context = decision.Context or {}
+		local status = decision.Kind == "Wait" and "Planning: Waiting" or "Planning: " .. tostring(decision.Kind)
+		if state.SmartStatusText ~= status and state.SmartStatusLabel then
+			state.SmartStatusText = status
+			state.SmartStatusLabel:UpdateName(status)
+		end
+		local scenario = "Scenario: " .. tostring(context.Scenario or "Waiting for match data")
+		if state.SmartScenarioText ~= scenario and state.SmartScenarioLabel then
+			state.SmartScenarioText = scenario
+			state.SmartScenarioLabel:UpdateName(scenario)
+		end
+		local threat = string.format(
+			"Threat: %d%% | Enemies: %d | Wave: %d/%d%s",
+			math.floor((tonumber(context.Pressure) or 0) * 100 + 0.5),
+			tonumber(context.EnemyCount) or 0,
+			tonumber(context.Wave) or 0,
+			tonumber(context.MaxWave) or 0,
+			context.Boss and " | Boss detected" or ""
+		)
+		if state.SmartThreatText ~= threat and state.SmartThreatLabel then
+			state.SmartThreatText = threat
+			state.SmartThreatLabel:UpdateName(threat)
+		end
+		local reason = state.ShowSmartDecisions and ("Decision: " .. tostring(decision.Reason))
+			or "Decision details are hidden."
+		if state.SmartDecisionText ~= reason and state.SmartDecisionLabel then
+			state.SmartDecisionText = reason
+			state.SmartDecisionLabel:UpdateName(reason)
+		end
+	end
+
+	local function updateSmartVisualization(state, decision)
+		if not state.SmartVisualize or not decision or decision.Kind ~= "Place" or not decision.Path then
+			destroyMarkers(state)
+			return
+		end
+		local candidate = Planner.Candidate(
+			decision.Path,
+			decision.Percent,
+			decision.Spacing,
+			decision.Ordinal or 1,
+			state.PlaceRetries[decision.Slot.Index] or 0
+		)
+		if not candidate then
+			destroyMarkers(state)
+			return
+		end
+		candidate = groundCFrame(state, candidate)
+		local current = marker(state, "smart_next")
+		current.Part.Color = Color3.fromRGB(75, 235, 130)
+		current.Part.Size = Vector3.new(0.16, math.max(3, decision.Spacing), math.max(3, decision.Spacing))
+		current.Part.CFrame = candidate * CFrame.Angles(0, 0, math.pi / 2)
+		current.Label.Text = string.format("Next | Slot %d | %s", decision.Slot.Index, decision.Slot.Name)
+		for key, value in pairs(state.Markers) do
+			if key ~= "smart_next" then
+				value.Part:Destroy()
+				state.Markers[key] = nil
+			end
+		end
+	end
+
+	local function smartAct(ctx, state, current)
+		if not state.SmartEnabled or os.clock() < state.NextActionAt or not pendingComplete(state, current) then
+			return
+		end
+		local decision = SmartPlanner.Decide(current, {
+			Strategy = state.Strategy,
+			AdaptivePlacement = state.AdaptivePlacement,
+			SmartEconomy = state.SmartEconomy,
+			ReactToEnemies = state.ReactToEnemies,
+			ReservePercent = state.ReservePercent,
+			Spacing = state.SmartSpacing,
+		})
+		state.LastSmartDecision = decision
+		updateSmartLabels(state, decision)
+		updateSmartVisualization(state, decision)
+		if decision.Kind == "Place" then
+			place(ctx, state, current, decision)
+		elseif decision.Kind == "Upgrade" then
+			upgrade(ctx, state, decision)
+		else
+			state.NextActionAt = os.clock() + 0.15
+		end
+	end
+
 	local function run(ctx, state)
 		while state.Alive and ctx.Runtime.Alive do
 			local ok, err = xpcall(function()
-				if not state.Enabled and not state.Visualize then
-					state.Pending = nil
+				if not state.Enabled and not state.Visualize and not state.SmartEnabled then
 					state.LastWave, state.LastTime, state.LastTotal = nil, nil, nil
 					if state.VisualFolder then
 						destroyMarkers(state)
@@ -433,23 +539,34 @@ return function(Import)
 				if not current then
 					state.Pending = nil
 					state.LastWave, state.LastTime, state.LastTotal = nil, nil, nil
+					if state.SmartEnabled then
+						updateSmartLabels(state, {
+							Kind = "Wait",
+							Reason = "waiting for an active match",
+							Context = {},
+						})
+					end
 					destroyMarkers(state)
 					return
 				end
 				reconcileRound(state, current)
-				if state.Visualize and (state.VisualDirty or os.clock() - state.LastVisual >= 1) then
+				if state.SmartEnabled then
+					smartAct(ctx, state, current)
+				elseif state.Visualize and (state.VisualDirty or os.clock() - state.LastVisual >= 1) then
 					state.LastVisual = os.clock()
 					state.VisualDirty = false
 					updateVisualization(state, current)
 				elseif not state.Visualize and state.VisualFolder then
 					destroyMarkers(state)
 				end
-				act(ctx, state, current)
+				if not state.SmartEnabled then
+					act(ctx, state, current)
+				end
 			end, debug.traceback)
 			if not ok then
 				notify(ctx, state, "worker", err)
 			end
-			task.wait(0.25)
+			task.wait(state.SmartEnabled and 0.1 or 0.25)
 		end
 	end
 
@@ -470,7 +587,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 1,
+		Version = 2,
 		Priority = 9,
 		Dependencies = {},
 
@@ -481,6 +598,15 @@ return function(Import)
 				FarmFirst = false,
 				PlaceFirst = false,
 				Visualize = false,
+				SmartEnabled = false,
+				Strategy = "Win",
+				AdaptivePlacement = true,
+				SmartEconomy = true,
+				ReactToEnemies = true,
+				ReservePercent = 10,
+				SmartSpacing = 6,
+				SmartVisualize = true,
+				ShowSmartDecisions = true,
 				UsePriority = false,
 				Spacing = 6,
 				PathPosition = 50,
@@ -499,16 +625,13 @@ return function(Import)
 				UnitUtils = loadHelper("UnitUtils"),
 				SharedUtils = loadHelper("Utils"),
 			}
-			local automation = ctx.Tabs.AutoPlay:Section({ Side = "Left" })
+			local automation = ctx.Tabs.AutoPlayNormal:Section({ Side = "Left" })
 			automation:Header({ Text = "Auto Play" })
 			ctx.Registry:Toggle(automation, {
 				Name = "Auto Play",
 				Default = false,
 				Callback = function(value)
 					state.Enabled = value == true
-					if not value then
-						state.Pending = nil
-					end
 				end,
 			}, "auto_play.enabled")
 			ctx.Registry:Toggle(automation, {
@@ -531,7 +654,7 @@ return function(Import)
 				Callback = function(value)
 					state.Visualize = value == true
 					state.VisualDirty = true
-					if not value then
+					if not value and not state.SmartEnabled then
 						destroyMarkers(state)
 					end
 				end,
@@ -563,7 +686,7 @@ return function(Import)
 			}, "auto_play.path_position")
 			automation:Paragraph({ Header = "Path Position", Body = "99 = near base, 1 = near enemy spawn." })
 
-			local priorities = ctx.Tabs.AutoPlay:Section({ Side = "Left" })
+			local priorities = ctx.Tabs.AutoPlayNormal:Section({ Side = "Left" })
 			priorities:Header({ Text = "Upgrade Priority" })
 			ctx.Registry:Toggle(priorities, {
 				Name = "Use Upgrade Priority",
@@ -590,7 +713,7 @@ return function(Import)
 				Body = "Higher = upgraded first. 0 = never upgrade that slot.",
 			})
 
-			local placements = ctx.Tabs.AutoPlay:Section({ Side = "Right" })
+			local placements = ctx.Tabs.AutoPlayNormal:Section({ Side = "Right" })
 			placements:Header({ Text = "Placement Limits" })
 			for index = 1, 6 do
 				slider(
@@ -606,7 +729,7 @@ return function(Import)
 				)
 			end
 
-			local upgrades = ctx.Tabs.AutoPlay:Section({ Side = "Right" })
+			local upgrades = ctx.Tabs.AutoPlayNormal:Section({ Side = "Right" })
 			upgrades:Header({ Text = "Upgrade Limits" })
 			for index = 1, 6 do
 				slider(
@@ -621,6 +744,109 @@ return function(Import)
 					"auto_play.max_upgrade_" .. index
 				)
 			end
+
+			local smart = ctx.Tabs.AutoPlaySmart:Section({ Side = "Left" })
+			smart:Header({ Text = "Smart Auto Play" })
+			state.SmartStatusLabel = smart:Label({ Text = "Planning: Idle" })
+			ctx.Registry:Toggle(smart, {
+				Name = "Smart Auto Play",
+				Default = false,
+				Callback = function(value)
+					state.SmartEnabled = value == true
+					if not state.Pending then
+						state.NextActionAt = 0
+					end
+					state.LastSmartDecision = nil
+					destroyMarkers(state)
+					if not value and state.SmartStatusLabel then
+						state.SmartStatusText = "Planning: Idle"
+						state.SmartStatusLabel:UpdateName(state.SmartStatusText)
+					end
+				end,
+			}, "auto_play.smart.enabled")
+			ctx.Registry:Dropdown(smart, {
+				Name = "Strategy",
+				Search = true,
+				Multi = false,
+				Required = true,
+				Options = { "Win", "Balanced", "Economy", "Rush", "Boss" },
+				Default = 1,
+				Callback = function(value)
+					state.Strategy = tostring(value or "Win")
+				end,
+			}, "auto_play.smart.strategy")
+			ctx.Registry:Toggle(smart, {
+				Name = "Adaptive Placement",
+				Default = true,
+				Callback = function(value)
+					state.AdaptivePlacement = value == true
+				end,
+			}, "auto_play.smart.adaptive_placement")
+			ctx.Registry:Toggle(smart, {
+				Name = "Smart Economy",
+				Default = true,
+				Callback = function(value)
+					state.SmartEconomy = value == true
+				end,
+			}, "auto_play.smart.economy")
+			ctx.Registry:Toggle(smart, {
+				Name = "React to Current Enemies",
+				Default = true,
+				Callback = function(value)
+					state.ReactToEnemies = value == true
+				end,
+			}, "auto_play.smart.react_to_enemies")
+			ctx.Registry:Slider(smart, {
+				Name = "Emergency Yen Reserve",
+				Default = 10,
+				Minimum = 0,
+				Maximum = 50,
+				DisplayMethod = "LiteralPercent",
+				Precision = 0,
+				Step = 1,
+				Callback = function(value)
+					state.ReservePercent = math.floor(value)
+				end,
+			}, "auto_play.smart.reserve")
+			ctx.Registry:Slider(smart, {
+				Name = "Smart Placement Spacing",
+				Default = 6,
+				Minimum = 1,
+				Maximum = 20,
+				Precision = 0,
+				Step = 1,
+				Callback = function(value)
+					state.SmartSpacing = math.floor(value)
+				end,
+			}, "auto_play.smart.spacing")
+			ctx.Registry:Toggle(smart, {
+				Name = "Visualize Smart Placement",
+				Default = true,
+				Callback = function(value)
+					state.SmartVisualize = value == true
+					if not value then
+						destroyMarkers(state)
+					end
+				end,
+			}, "auto_play.smart.visualize")
+			ctx.Registry:Toggle(smart, {
+				Name = "Show Smart Decisions",
+				Default = true,
+				Callback = function(value)
+					state.ShowSmartDecisions = value == true
+					state.SmartDecisionText = nil
+				end,
+			}, "auto_play.smart.show_decisions")
+
+			local live = ctx.Tabs.AutoPlaySmart:Section({ Side = "Right" })
+			live:Header({ Text = "Live Planner" })
+			state.SmartScenarioLabel = live:Label({ Text = "Scenario: Waiting for match data" })
+			state.SmartThreatLabel = live:Label({ Text = "Threat: 0% | Enemies: 0 | Wave: 0/0" })
+			state.SmartDecisionLabel = live:Label({ Text = "Decision: Waiting for match data" })
+			live:Paragraph({
+				Header = "How it works",
+				Body = "Smart mode ignores every Normal setting. It recalculates placement, upgrades, economy and risk from the live map, mode, act, difficulty, wave and enemies before every confirmed action.",
+			})
 			ctx:RegisterCleanup(function()
 				state.Alive = false
 				destroyMarkers(state)
@@ -639,6 +865,7 @@ return function(Import)
 		Disable = function(self, ctx, state)
 			state.Alive = false
 			state.Enabled = false
+			state.SmartEnabled = false
 			state.Pending = nil
 			destroyMarkers(state)
 		end,

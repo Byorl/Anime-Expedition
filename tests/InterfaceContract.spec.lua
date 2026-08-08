@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.8.0", "interface release version is wrong")
+assert(Build.Version == "1.9.0", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/31b7139a6c0779f1218587a2d513b9ef94a33ed2/src/maclib.lua",
@@ -14,13 +14,16 @@ assert(joinPosition < autoPlayPosition and autoPlayPosition < gamePosition, "Aut
 for _, name in ipairs({ "MiscClaims", "MiscUnits", "MiscPerformance" }) do
 	assert(string.find(mainSource, "Tabs." .. name, 1, true), "missing subtab " .. name)
 end
+for _, name in ipairs({ "AutoPlayNormal", "AutoPlaySmart" }) do
+	assert(string.find(mainSource, "Tabs." .. name, 1, true), "missing Auto Play subtab " .. name)
+end
 assert(not string.find(mainSource, "Tabs.Join:SubTabGroup()", 1, true), "Join should use one split page")
 assert(not string.find(mainSource, "Tabs.Game:SubTabGroup()", 1, true), "Game should use one split page")
 local splitSubtabs = 0
 for _ in string.gmatch(mainSource, "Columns = 2") do
 	splitSubtabs = splitSubtabs + 1
 end
-assert(splitSubtabs == 3, "Misc subtabs should keep split sections")
+assert(splitSubtabs == 5, "Misc and Auto Play subtabs should keep split sections")
 
 local gameMatchSource = fs.read("src/Modules/GameMatch.lua", "bin")
 local gameEndSource = fs.read("src/Modules/GameEnd.lua", "bin")
@@ -31,7 +34,14 @@ local organizedSections = {
 	["src/Modules/GameMatch.lua"] = { "Match Automation", "AFK Chamber" },
 	["src/Modules/GameEnd.lua"] = { "Match Actions", "Exit Conditions", "Timed Return" },
 	["src/Modules/Webhook.lua"] = { "Delivery", "Webhook Destination", "Mentions", "Drop Alerts" },
-	["src/Modules/Settings.lua"] = { "Configs", "Create Config", "Config Actions", "Config Behavior", "Runtime", "Appearance" },
+	["src/Modules/Settings.lua"] = {
+		"Configs",
+		"Create Config",
+		"Config Actions",
+		"Config Behavior",
+		"Runtime",
+		"Appearance",
+	},
 }
 for path, names in pairs(organizedSections) do
 	local source = fs.read(path, "bin")

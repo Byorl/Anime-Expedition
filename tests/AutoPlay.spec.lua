@@ -116,6 +116,7 @@ local factories = {
 	AutoPlayPlanner = function()
 		return Planner
 	end,
+	SmartAutoPlayPlanner = rbxmk.loadFile("src/Core/SmartAutoPlayPlanner.lua")(),
 	AutoPlay = rbxmk.loadFile("src/Modules/AutoPlay.lua")(),
 }
 local function Import(name)
@@ -125,6 +126,9 @@ local controls, sections = {}, {}
 local section = {}
 function section:Header() end
 function section:Paragraph() end
+function section:Label()
+	return { UpdateName = function() end }
+end
 local registry = {}
 local function add(settings, flag)
 	controls[flag] = { Settings = settings }
@@ -136,14 +140,21 @@ end
 function registry:Slider(_, settings, flag)
 	return add(settings, flag)
 end
+function registry:Dropdown(_, settings, flag)
+	return add(settings, flag)
+end
+local function page(name)
+	return {
+		Section = function(_, settings)
+			table.insert(sections, { Page = name, Side = settings.Side })
+			return section
+		end,
+	}
+end
 local context = {
 	Tabs = {
-		AutoPlay = {
-			Section = function(_, settings)
-				table.insert(sections, settings)
-				return section
-			end,
-		},
+		AutoPlayNormal = page("Normal"),
+		AutoPlaySmart = page("Smart"),
 	},
 	Registry = registry,
 	Runtime = { Alive = false, Generation = 1, Notify = function() end },
@@ -153,7 +164,11 @@ local module = Import("AutoPlay")
 local ok, state = pcall(module.Init, module, context)
 assert(ok, "Auto Play UI initialization failed: " .. tostring(state))
 assert(
-	#sections == 4 and sections[1].Side == "Left" and sections[3].Side == "Right",
+	#sections == 6
+		and sections[1].Page == "Normal"
+		and sections[1].Side == "Left"
+		and sections[3].Side == "Right"
+		and sections[5].Page == "Smart",
 	"Auto Play sections are not split correctly"
 )
 assert(
@@ -174,6 +189,13 @@ for index = 1, 6 do
 	assert(controls["auto_play.max_place_" .. index].Settings.Maximum == 20, "placement cap range is wrong")
 	assert(controls["auto_play.max_upgrade_" .. index].Settings.Maximum == 20, "upgrade cap range is wrong")
 end
+assert(controls["auto_play.smart.enabled"], "Smart Auto Play toggle is missing")
+assert(controls["auto_play.smart.strategy"].Settings.Search == true, "Smart strategy dropdown is not searchable")
+assert(
+	controls["auto_play.smart.reserve"].Settings.Minimum == 0
+		and controls["auto_play.smart.reserve"].Settings.Maximum == 50,
+	"Smart emergency reserve range is wrong"
+)
 
 local source = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(
