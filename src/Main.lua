@@ -10,6 +10,11 @@ return function(Import)
 	local UIManager = Import("UIManager")
 	local MacLibProvider = Import("MacLibProvider")
 	local GameAdapter = Import("GameAdapter")
+	local JoinCoordinator = Import("JoinCoordinator")
+	local JoinStoryModule = Import("JoinStory")
+	local JoinChallengeModule = Import("JoinChallenge")
+	local JoinEventModule = Import("JoinEvent")
+	local JoinRaidModule = Import("JoinRaid")
 	local MiscModule = Import("Misc")
 	local AutoClaimModule = Import("AutoClaim")
 	local AutoSummonModule = Import("AutoSummon")
@@ -66,6 +71,7 @@ return function(Import)
 			if not accountOk then Util.Warn("disable auto execute failed: " .. tostring(accountError)) end
 		end
 		if self.Modules then self.Modules:DestroyAll() end
+		if self.Join then self.Join:Destroy() end
 		if self.Session then self.Session:Destroy() end
 		if self.UIManager then self.UIManager:Destroy() end
 		if self.Config then
@@ -159,10 +165,14 @@ return function(Import)
 
 	local TabGroup = Window:TabGroup()
 	local Tabs = {
+		Join = TabGroup:Tab({Name = "Join", Image = "rbxassetid://10734950309"}),
 		Misc = TabGroup:Tab({Name = "Misc", Image = "rbxassetid://10734950309"}),
 		Settings = TabGroup:Tab({Name = "Settings", Image = "rbxassetid://10734950020"}),
 	}
 
+	local Adapter = GameAdapter.new()
+	local Join = JoinCoordinator.new(Runtime, Adapter)
+	Runtime.Join = Join
 	local Context = {
 		Runtime = Runtime,
 		Window = Window,
@@ -174,7 +184,8 @@ return function(Import)
 		Player = LocalPlayer,
 		Build = Build,
 		UIManager = ResponsiveUI,
-		Game = GameAdapter.new(),
+		Game = Adapter,
+		Join = Join,
 	}
 	local Session = SessionManager.new(Runtime, Config)
 	Context.Session = Session
@@ -182,6 +193,10 @@ return function(Import)
 
 	local Modules = ModuleManager.new(Context)
 	Runtime.Modules = Modules
+	Modules:Register(JoinStoryModule)
+	Modules:Register(JoinChallengeModule)
+	Modules:Register(JoinEventModule)
+	Modules:Register(JoinRaidModule)
 	Modules:Register(MiscModule)
 	Modules:Register(AutoClaimModule)
 	Modules:Register(AutoSummonModule)
@@ -208,7 +223,7 @@ return function(Import)
 
 	if Config.Account.UI.HiddenOnExecute == true then Window:SetState(false) end
 	Window.onUnloaded(function() Runtime:Shutdown("window unloaded", true) end)
-	Tabs.Misc:Select()
+	Tabs.Join:Select()
 	Runtime:Notify("Loaded", string.format(
 		"Account %s | Config %s",
 		LocalPlayer.Name,

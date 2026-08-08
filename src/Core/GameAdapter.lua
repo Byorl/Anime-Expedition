@@ -61,6 +61,20 @@ return function(Import)
 		return self.Dependencies.Information
 	end
 
+	function GameAdapter:InvokeSelf(nodeName, ...)
+		if not self.Ready then return false, self.Error end
+		local node = self.Nodes[nodeName]
+		if type(node) ~= "table" or type(node.InvokeSelf) ~= "function" then
+			return false, "local node '" .. tostring(nodeName) .. "' is unavailable"
+		end
+		local arguments = table.pack(...)
+		local results = table.pack(xpcall(function()
+			return node:InvokeSelf(table.unpack(arguments, 1, arguments.n))
+		end, Util.Traceback))
+		if not results[1] then return false, tostring(results[2]) end
+		return true, table.unpack(results, 2, results.n)
+	end
+
 	function GameAdapter:Fire(nodeName, ...)
 		if not self.Ready then return false, self.Error end
 		local node = self.Nodes[nodeName]
@@ -92,6 +106,57 @@ return function(Import)
 		end, Util.Traceback))
 		if not results[1] then return false, tostring(results[2]) end
 		return true, table.unpack(results, 2, results.n)
+	end
+
+	function GameAdapter:IsInGame()
+		local ok, replica = self:InvokeSelf("GET_GAME_REPLICA")
+		return ok and type(replica) == "table" and type(replica.FireServer) == "function"
+	end
+
+	function GameAdapter:LeaveMatchmaking()
+		local ok, response = self:Request("REQUEST_LEAVE_MATCHMAKING", 5)
+		if not ok then return false, response end
+		if response == false then return false, "the game rejected the matchmaking leave request" end
+		return true
+	end
+
+	function GameAdapter:Join(queueData, matchmaking, timeout)
+		if type(queueData) ~= "table" then return false, "queue data is invalid" end
+		if matchmaking then
+			local session = self:State("SessionData")
+			if type(session) == "table" and (session.Matchmaking == true or session.MatchmakingFound == true) then return true end
+			local ok, response = self:Request("REQUEST_ENTER_MATCHMAKING", timeout or 5, queueData)
+			if not ok then return false, response end
+			if response == false then return false, "the game rejected the matchmaking request" end
+			return true
+		end
+
+		local replicaOk, replica = self:InvokeSelf("GET_PARTY_DATA_REPLICA")
+		if not replicaOk then return false, replica end
+		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then
+			local createOk, response = self:Request("PARTY_CREATE", timeout or 5, queueData)
+			if not createOk then return false, response end
+			if response == false then return false, "the game rejected the party creation request" end
+			local waitOk
+			waitOk, replica = self:InvokeSelf("WAIT_FOR_PARTY_REPLICA")
+			if not waitOk then return false, replica end
+		end
+		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then return false, "party replica did not become available" end
+		local ok, err = xpcall(function()
+			replica:FireServer("SetQueueData", queueData)
+			replica:FireServer("StartGame")
+		end, Util.Traceback)
+		if not ok then return false, tostring(err) end
+		return true
+	end
+
+	function GameAdapter:ReturnToLobby()
+		local ok, replica = self:InvokeSelf("GET_GAME_REPLICA")
+		if not ok then return false, replica end
+		if type(replica) ~= "table" or type(replica.FireServer) ~= "function" then return false, "game replica is unavailable" end
+		local fired, err = xpcall(function() replica:FireServer("Lobby") end, Util.Traceback)
+		if not fired then return false, tostring(err) end
+		return true
 	end
 
 	return GameAdapter

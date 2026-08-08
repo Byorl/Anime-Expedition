@@ -1,5 +1,5 @@
 return {
-	Version = "1.4.3",
+	Version = "1.5.0",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -13,8 +13,14 @@ return {
 		UIManager = "src/Core/UIManager.lua",
 		MacLibProvider = "src/Core/MacLibProvider.lua",
 		GameAdapter = "src/Core/GameAdapter.lua",
+		JoinCatalog = "src/Core/JoinCatalog.lua",
+		JoinCoordinator = "src/Core/JoinCoordinator.lua",
 		RewardScanner = "src/Core/RewardScanner.lua",
 		AutomationCatalog = "src/Core/AutomationCatalog.lua",
+		JoinStory = "src/Modules/JoinStory.lua",
+		JoinChallenge = "src/Modules/JoinChallenge.lua",
+		JoinEvent = "src/Modules/JoinEvent.lua",
+		JoinRaid = "src/Modules/JoinRaid.lua",
 		Misc = "src/Modules/Misc.lua",
 		AutoClaim = "src/Modules/AutoClaim.lua",
 		AutoSummon = "src/Modules/AutoSummon.lua",
