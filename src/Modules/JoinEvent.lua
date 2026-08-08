@@ -67,11 +67,9 @@ return function(Import)
 			state.Acts = Catalog.Acts(information, "VillainInvasion", state.Map)
 			state.Act = state.Acts[1]
 			for _, act in ipairs(state.Acts) do if act ~= "Crow" then state.Act = act break end end
-			local section = ctx.Tabs.Join:Section({Side = "Right"})
-			section:Header({Text = "Event"})
-			section:Header({Text = "Act"})
+			local section = ctx.Tabs.JoinEvent:Section({Side = "Left"})
 			state.ActControl = ctx.Registry:Dropdown(section, {
-				Name = state.Act or "No event acts", Search = true, Multi = false, Required = true,
+				Name = "Act", Search = true, Multi = false, Required = true,
 				Options = #state.Acts > 0 and state.Acts or {"Unavailable"}, Default = 1,
 				Callback = function(value) state.Act = tostring(value) state.Draining = false end,
 			}, "join.event.act")

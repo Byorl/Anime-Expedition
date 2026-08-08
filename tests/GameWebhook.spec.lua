@@ -119,8 +119,10 @@ function registry:Input(_, settings, flag) return addControl(settings, flag) end
 local subscriptions = {}
 local context = {
 	Tabs = {
-		Game = {Section = function() return section end},
-		Webhook = {Section = function() return section end},
+		GameMatch = {Section = function() return section end},
+		GameEnd = {Section = function() return section end},
+		WebhookDelivery = {Section = function() return section end},
+		WebhookPings = {Section = function() return section end},
 	},
 	Registry = registry,
 	Runtime = {Alive = false, Notify = function() end},

@@ -69,8 +69,9 @@ local registry = {}
 function registry:Dropdown(_, settings, flag) callbacks[flag] = settings.Callback controls[flag] = control(settings) return controls[flag] end
 function registry:Toggle(_, settings, flag) callbacks[flag] = settings.Callback controls[flag] = control(settings) return controls[flag] end
 function registry:Slider(_, settings, flag) callbacks[flag] = settings.Callback controls[flag] = control(settings) return controls[flag] end
+local joinTab = {Section = function() return section end}
 local context = {
-	Tabs = {Join = {Section = function() return section end}},
+	Tabs = {JoinStory = joinTab, JoinChallenge = joinTab, JoinEvent = joinTab, JoinRaid = joinTab},
 	Registry = registry,
 	Runtime = {Alive = false, Notify = function() end},
 	Game = {

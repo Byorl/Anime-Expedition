@@ -77,7 +77,11 @@ function registry:Dropdown(_, settings, flag)
 	return control
 end
 local performanceContext = {
-	Tabs = {Misc = {Section = function() return section end}},
+	Tabs = {
+		MiscClaims = {Section = function() return section end},
+		MiscUnits = {Section = function() return section end},
+		MiscPerformance = {Section = function() return section end},
+	},
 	Registry = registry,
 	Runtime = {Notify = function() end},
 }

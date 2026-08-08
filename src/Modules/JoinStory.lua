@@ -53,11 +53,9 @@ return function(Import)
 			state.Difficulties = Catalog.Difficulties(information, "Story", state.Map)
 			state.Difficulty = state.Difficulties[1]
 
-			local section = ctx.Tabs.Join:Section({Side = "Left"})
-			section:Header({Text = "Story"})
-			section:Header({Text = "Map"})
+			local section = ctx.Tabs.JoinStory:Section({Side = "Left"})
 			state.MapControl = ctx.Registry:Dropdown(section, {
-				Name = state.Map and maps.ByKey[state.Map] or "No story maps",
+				Name = "Map",
 				Search = true,
 				Multi = false,
 				Required = true,
@@ -69,9 +67,8 @@ return function(Import)
 					Story:_Refresh(ctx, state)
 				end,
 			}, "join.story.map")
-			section:Header({Text = "Stage"})
 			state.StageControl = ctx.Registry:Dropdown(section, {
-				Name = state.Stage or "No stages",
+				Name = "Stage",
 				Search = true,
 				Multi = false,
 				Required = true,
@@ -79,9 +76,8 @@ return function(Import)
 				Default = 1,
 				Callback = function(value) state.Stage = tostring(value) Story:_Refresh(ctx, state) end,
 			}, "join.story.stage")
-			section:Header({Text = "Difficulty"})
 			state.DifficultyControl = ctx.Registry:Dropdown(section, {
-				Name = state.Difficulty or "No difficulties",
+				Name = "Difficulty",
 				Search = true,
 				Multi = false,
 				Required = true,

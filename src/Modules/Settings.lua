@@ -10,10 +10,9 @@ return function()
 				local state = ctx.Runtime.Modules and ctx.Runtime.Modules.States.Settings
 				return state == "Loading" or state == "Running"
 			end
-			local left = ctx.Tabs.Settings:Section({Side = "Left"})
-			local right = ctx.Tabs.Settings:Section({Side = "Right"})
+			local left = ctx.Tabs.SettingsConfigs:Section({Side = "Left"})
+			local right = ctx.Tabs.SettingsAppearance:Section({Side = "Left"})
 
-			left:Header({Text = "Configs"})
 			local names = ctx.Config:List()
 			local selected = ctx.Config.Account.SelectedConfig
 			local configDropdown = left:Dropdown({
@@ -140,7 +139,6 @@ return function()
 				end,
 			})
 
-			right:Header({Text = "Appearance"})
 			right:Button({
 				Name = "Unload",
 				Callback = function()
@@ -169,8 +167,9 @@ return function()
 				Default = defaultPercent,
 				Minimum = 35,
 				Maximum = 120,
-				DisplayMethod = "Percent",
+				DisplayMethod = "LiteralPercent",
 				Precision = 0,
+				Step = 1,
 				Callback = function(value)
 					if not isActive() then return end
 					local requested = math.clamp(value / 100, 0.35, 1.2)

@@ -145,7 +145,7 @@ return function(Import)
 				Status = "Idle.",
 				Banners = Catalog.Banners(ctx.Game:State("BannerData"), ctx.Game:Information() or {}),
 			}
-			local section = ctx.Tabs.Misc:Section({Side = "Left"})
+			local section = ctx.Tabs.MiscUnits:Section({Side = "Left"})
 			section:Header({Text = "Auto Summon"})
 			section:Header({Text = "Status"})
 			state.StatusLabel = section:Label({Text = "Idle."})

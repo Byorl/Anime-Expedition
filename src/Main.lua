@@ -178,6 +178,29 @@ return function(Import)
 		Settings = TabGroup:Tab({Name = "Settings", Image = "rbxassetid://10734950020"}),
 	}
 
+	local JoinPages = Tabs.Join:SubTabGroup()
+	Tabs.JoinStory = JoinPages:SubTab({Name = "Story", Columns = 1})
+	Tabs.JoinChallenge = JoinPages:SubTab({Name = "Challenge", Columns = 1})
+	Tabs.JoinEvent = JoinPages:SubTab({Name = "Event", Columns = 1})
+	Tabs.JoinRaid = JoinPages:SubTab({Name = "Raid", Columns = 1})
+
+	local GamePages = Tabs.Game:SubTabGroup()
+	Tabs.GameMatch = GamePages:SubTab({Name = "Match", Columns = 1})
+	Tabs.GameEnd = GamePages:SubTab({Name = "End of Match", Columns = 1})
+
+	local WebhookPages = Tabs.Webhook:SubTabGroup()
+	Tabs.WebhookDelivery = WebhookPages:SubTab({Name = "Delivery", Columns = 1})
+	Tabs.WebhookPings = WebhookPages:SubTab({Name = "Pings", Columns = 1})
+
+	local MiscPages = Tabs.Misc:SubTabGroup()
+	Tabs.MiscClaims = MiscPages:SubTab({Name = "Claims", Columns = 2})
+	Tabs.MiscUnits = MiscPages:SubTab({Name = "Units", Columns = 2})
+	Tabs.MiscPerformance = MiscPages:SubTab({Name = "Performance", Columns = 1})
+
+	local SettingsPages = Tabs.Settings:SubTabGroup()
+	Tabs.SettingsConfigs = SettingsPages:SubTab({Name = "Configs", Columns = 1})
+	Tabs.SettingsAppearance = SettingsPages:SubTab({Name = "Appearance", Columns = 1})
+
 	local Adapter = GameAdapter.new()
 	local Join = JoinCoordinator.new(Runtime, Adapter)
 	Runtime.Join = Join

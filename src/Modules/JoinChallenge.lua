@@ -108,22 +108,18 @@ return function(Import)
 			for index = 1, amount do table.insert(state.IndexOptions, tostring(index)) end
 			state.Drops = Catalog.ChallengeDrops(information, ctx.Game:State("ChallengeData"))
 
-			local section = ctx.Tabs.Join:Section({Side = "Left"})
-			section:Header({Text = "Challenge"})
-			section:Header({Text = "Challenge Type"})
+			local section = ctx.Tabs.JoinChallenge:Section({Side = "Left"})
 			state.TypeControl = ctx.Registry:Dropdown(section, {
-				Name = "Regular, Daily, Weekly", Search = true, Multi = true, Required = true,
+				Name = "Challenge Type", Search = true, Multi = true, Required = true,
 				Options = #types > 0 and types or {"Unavailable"}, Default = types[1] and {types[1]} or {},
 				Callback = function(value) state.SelectedTypes = selectedTypes(value) Challenge:_Refresh(ctx, state) end,
 			}, "join.challenge.types")
-			section:Header({Text = "Regular Challenge # (blank = all)"})
 			state.IndexControl = ctx.Registry:Dropdown(section, {
-				Name = "All", Search = true, Multi = false, Required = true,
+				Name = "Regular Challenge # (blank = all)", Search = true, Multi = false, Required = true,
 				Options = state.IndexOptions, Default = 1, Callback = function(value) state.Index = tostring(value or "All") end,
 			}, "join.challenge.index")
-			section:Header({Text = "Only Join If It Drops"})
 			state.DropControl = ctx.Registry:Dropdown(section, {
-				Name = "Drops", Search = true, Multi = true, Required = false,
+				Name = "Only Join If It Drops", Search = true, Multi = true, Required = false,
 				Options = (function() local output = {} for _, option in ipairs(state.Drops.Options) do if option ~= "Any drop" then table.insert(output, option) end end return output end)(), Default = {},
 				ResolveValue = function(value) return state.Drops.ByKey[tostring(value)] or value end,
 				Callback = function(value)

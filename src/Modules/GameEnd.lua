@@ -45,8 +45,7 @@ return function()
 				Hours = 1,
 				TimeReturned = false,
 			}
-			local section = ctx.Tabs.Game:Section({Side = "Right"})
-			section:Header({Text = "End of Match"})
+			local section = ctx.Tabs.GameEnd:Section({Side = "Left"})
 			ctx.Registry:Toggle(section, {Name = "Auto Next Stage", Default = false, Callback = function(value) state.AutoNext = value == true end}, "game.end.auto_next")
 			ctx.Registry:Toggle(section, {Name = "Auto Replay", Default = false, Callback = function(value) state.AutoReplay = value == true end}, "game.end.auto_replay")
 			ctx.Registry:Toggle(section, {Name = "Auto Leave", Default = false, Callback = function(value) state.AutoLeave = value == true end}, "game.end.auto_leave")

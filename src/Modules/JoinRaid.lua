@@ -42,19 +42,15 @@ return function(Import)
 			state.Act = state.Acts[1]
 			state.Difficulties = Catalog.Difficulties(information, "Raid", state.Map)
 			state.Difficulty = state.Difficulties[1]
-			local section = ctx.Tabs.Join:Section({Side = "Right"})
-			section:Header({Text = "Raid"})
-			section:Header({Text = "Map"})
+			local section = ctx.Tabs.JoinRaid:Section({Side = "Left"})
 			state.MapControl = ctx.Registry:Dropdown(section, {
-				Name = state.Map and maps.ByKey[state.Map] or "No raid maps", Search = true, Multi = false, Required = true,
+				Name = "Map", Search = true, Multi = false, Required = true,
 				Options = #maps.Options > 0 and maps.Options or {"Unavailable"}, Default = 1,
 				ResolveValue = function(value) return state.Maps.ByKey[tostring(value)] or value end,
 				Callback = function(value) state.Map = state.Maps.ByLabel[value] or string.match(tostring(value), "%[([^%]]+)%]$") or tostring(value) Raid:_Refresh(ctx, state) end,
 			}, "join.raid.map")
-			section:Header({Text = "Act"})
-			state.ActControl = ctx.Registry:Dropdown(section, {Name = state.Act or "No acts", Search = true, Multi = false, Required = true, Options = #state.Acts > 0 and state.Acts or {"Unavailable"}, Default = 1, Callback = function(value) state.Act = tostring(value) end}, "join.raid.act")
-			section:Header({Text = "Difficulty"})
-			state.DifficultyControl = ctx.Registry:Dropdown(section, {Name = state.Difficulty or "No difficulties", Search = true, Multi = false, Required = true, Options = #state.Difficulties > 0 and state.Difficulties or {"Unavailable"}, Default = 1, Callback = function(value) state.Difficulty = tostring(value) end}, "join.raid.difficulty")
+			state.ActControl = ctx.Registry:Dropdown(section, {Name = "Act", Search = true, Multi = false, Required = true, Options = #state.Acts > 0 and state.Acts or {"Unavailable"}, Default = 1, Callback = function(value) state.Act = tostring(value) end}, "join.raid.act")
+			state.DifficultyControl = ctx.Registry:Dropdown(section, {Name = "Difficulty", Search = true, Multi = false, Required = true, Options = #state.Difficulties > 0 and state.Difficulties or {"Unavailable"}, Default = 1, Callback = function(value) state.Difficulty = tostring(value) end}, "join.raid.difficulty")
 			ctx.Registry:Toggle(section, {Name = "Auto Join", Default = false, Callback = function(value) state.Enabled = value == true end}, "join.raid.enabled")
 			ctx.Registry:Toggle(section, {Name = "Use Matchmaking", Default = false, Callback = function(value) state.Matchmaking = value == true end}, "join.raid.matchmaking")
 			ctx.Registry:Slider(section, {Name = "Auto Join Delay (s)", Default = 1, Minimum = 1, Maximum = 10, Precision = 0, Step = 1, Callback = function(value) state.Delay = value end}, "join.raid.delay")

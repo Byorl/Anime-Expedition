@@ -1,8 +1,8 @@
 # MacLib implementation notes
 
-This project uses the official [MacLib repository](https://github.com/biggaboy212/Maclib), [documentation](https://brady-xyz.gitbook.io/maclib-ui-library), and the pinned `9.Maclib` release source.
+This project uses the public [Byorl Maclib fork](https://github.com/Byorl/Maclib), based on the [original MacLib repository](https://github.com/biggaboy212/Maclib). The runtime loads `src/maclib.lua` directly from the fork.
 
-MacLib's hierarchy is `Window -> TabGroup -> Tab -> Section -> Element`. Sections use `Side = "Left"` or `"Right"`.
+The hierarchy is `Window -> TabGroup -> Tab -> SubTabGroup -> SubTab -> Section -> Element`. Subtabs support one-column and two-column layouts while retaining independent scrolling and section ownership.
 
 The config registry restores controls with their public setters:
 
@@ -22,4 +22,4 @@ The custom config layer avoids two problems observed in MacLib's built-in config
 
 This project instead applies every registered flag in sorted order and uses defaults for flags added after an older config was created.
 
-MacLib's `Window:GlobalSetting` API is used for `UI Blur` and `Hide Private Info`. Blur defaults off; private user information is redacted by default. Window scaling is handled by `UIManager` rather than writing directly from the slider callback, so one render-step writer owns `Window:SetScale` and viewport fitting stays responsive on phones.
+MacLib's `Window:GlobalSetting` API is used for `UI Blur` and `Hide Private Info`. Blur defaults off; private user information is redacted by default. Window scaling is handled by `UIManager` rather than writing directly from the slider callback, so one render-step writer owns `Window:SetScale` and viewport fitting stays responsive on phones. The UI-size control uses Maclib's `LiteralPercent` and stepped-slider support, so `75%` means exactly `75` and drag coordinates remain stable while the window changes scale.

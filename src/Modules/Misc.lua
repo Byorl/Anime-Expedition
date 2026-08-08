@@ -10,7 +10,7 @@ return function()
 				return ctx.Runtime.Modules.Loaded.Misc ~= nil
 			end
 
-			local session = ctx.Tabs.Misc:Section({Side = "Right"})
+			local session = ctx.Tabs.MiscClaims:Section({Side = "Right"})
 			session:Header({Text = "Session"})
 			session:Toggle({
 				Name = "Auto Execute",

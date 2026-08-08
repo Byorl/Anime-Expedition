@@ -67,7 +67,7 @@ return function(Import)
 				Drops = drops,
 				SeenBounties = {},
 			}
-			local left = ctx.Tabs.Webhook:Section({Side = "Left"})
+			local left = ctx.Tabs.WebhookDelivery:Section({Side = "Left"})
 			left:Header({Text = "Discord Webhook"})
 			ctx.Registry:Toggle(left, {Name = "Send On Match End", Default = false, Callback = function(value) state.SendMatch = value == true end}, "webhook.send_match")
 			ctx.Registry:Toggle(left, {Name = "Send Bounty Webhook", Default = false, Callback = function(value) state.SendBounty = value == true end}, "webhook.send_bounty")
@@ -78,8 +78,7 @@ return function(Import)
 				if ok then ctx.Runtime:Notify("Webhook", "Test webhook sent.") else ctx.Runtime:Notify("Webhook", tostring(err)) end
 			end})
 
-			local right = ctx.Tabs.Webhook:Section({Side = "Right"})
-			right:Header({Text = "Pings"})
+			local right = ctx.Tabs.WebhookPings:Section({Side = "Left"})
 			ctx.Registry:Toggle(right, {Name = "Mention Everyone", Default = false, Callback = function(value) state.MentionEveryone = value == true end}, "webhook.mention_everyone")
 			right:Header({Text = "Discord User ID"})
 			ctx.Registry:Input(right, {Name = "Discord User ID", Placeholder = "938129321 or <@938129321>", Default = "", onChanged = function(value) state.DiscordUserId = tostring(value) end}, "webhook.discord_user_id")

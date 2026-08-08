@@ -128,7 +128,7 @@ return function(Import)
 				LightingConnection = nil,
 				Originals = setmetatable({}, {__mode = "k"}),
 			}
-			local section = ctx.Tabs.Misc:Section({Side = "Right"})
+			local section = ctx.Tabs.MiscPerformance:Section({Side = "Left"})
 			section:Header({Text = "Performance"})
 			ctx.Registry:Toggle(section, {
 				Name = "Delete Enemies",

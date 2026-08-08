@@ -144,7 +144,7 @@ return function(Import)
 				Units = Catalog.Units(ctx.Game:PlayerData(), information),
 				Traits = Catalog.Traits(information),
 			}
-			local section = ctx.Tabs.Misc:Section({Side = "Right"})
+			local section = ctx.Tabs.MiscUnits:Section({Side = "Right"})
 			section:Header({Text = "Auto Reroll Trait"})
 			section:Header({Text = "Unit"})
 			local unitOptions = #state.Units.Options > 0 and state.Units.Options or {"No units available"}

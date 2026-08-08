@@ -330,7 +330,7 @@ return function(Import)
 				InGroup = false,
 			}
 			state.CodeCachePath, state.CodeCache = readCodeCache(ctx)
-			local section = ctx.Tabs.Misc:Section({Side = "Left"})
+			local section = ctx.Tabs.MiscClaims:Section({Side = "Left"})
 			section:Header({Text = "Auto Claim"})
 			local controls = {
 				{"Auto Claim Quests", "Quests", "auto_claim.quests"},

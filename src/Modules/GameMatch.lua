@@ -86,8 +86,7 @@ return function()
 				ManagedSettings = {},
 				OriginalSettings = {},
 			}
-			local section = ctx.Tabs.Game:Section({Side = "Left"})
-			section:Header({Text = "Match"})
+			local section = ctx.Tabs.GameMatch:Section({Side = "Left"})
 			ctx.Registry:Toggle(section, {Name = "Auto Start", Default = false, Callback = function(value) state.AutoStart = value == true end}, "game.match.auto_start")
 			ctx.Registry:Toggle(section, {Name = "Auto Skip Waves", Default = false, Callback = function(value) state.AutoSkip = value == true end}, "game.match.auto_skip")
 			ctx.Registry:Slider(section, {Name = "Auto Start Delay (0=off)", Default = 0, Minimum = 0, Maximum = 10, Precision = 0, Step = 1, Callback = function(value) state.StartDelay = value end}, "game.match.start_delay")
