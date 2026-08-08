@@ -96,6 +96,18 @@ local snapshot = {
 	Path = path,
 	Paths = { path },
 }
+local unresolved = Smart.Decide({
+	GameState = snapshot.GameState,
+	Enemies = {},
+	Slots = slots,
+	Placed = { [1] = {}, [2] = {} },
+	Yen = 1000,
+	Paths = {},
+}, { Strategy = "Win" })
+assert(
+	unresolved.Kind == "Wait" and string.find(unresolved.Reason, "active act route", 1, true),
+	"Smart planner guessed when a multi-act route was unresolved"
+)
 local win = Smart.Decide(snapshot, {
 	Strategy = "Win",
 	AdaptivePlacement = true,

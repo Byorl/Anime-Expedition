@@ -286,17 +286,72 @@ return function()
 		return total
 	end
 
-	function Planner.ActivePaths(mapState)
+	local function nestedPathIndex(value, depth, seen)
+		if type(value) ~= "table" or depth <= 0 or seen[value] then
+			return nil
+		end
+		seen[value] = true
+		local direct = value.PathIndex or value.PathID or value.PathId
+		if direct ~= nil and type(direct) ~= "table" then
+			return direct
+		end
+		for _, key in ipairs({ "Data", "State", "EnemyData", "ReplicaData" }) do
+			local found = nestedPathIndex(value[key], depth - 1, seen)
+			if found ~= nil then
+				return found
+			end
+		end
+		return nil
+	end
+
+	local function normalizePathIndex(value)
+		if type(value) == "number" then
+			return tostring(math.abs(value)), value < 0
+		end
+		if type(value) ~= "string" then
+			return nil
+		end
+		local reverse = string.find(value, "REVERSE_", 1, true) == 1
+		local stripped = reverse and string.sub(value, 9) or value
+		local numeric = tonumber(stripped)
+		return numeric and tostring(math.abs(numeric)) or stripped, reverse or (numeric and numeric < 0) or false
+	end
+
+	function Planner.ActivePaths(mapState, enemies)
 		local output = {}
-		local paths = type(mapState) == "table" and mapState.Paths or nil
+		local requested = {}
+		local hasReference = false
+		for _, enemy in pairs(type(enemies) == "table" and enemies or {}) do
+			if type(enemy) == "table" and enemy.Finished ~= true then
+				local key, reverse = normalizePathIndex(nestedPathIndex(enemy, 4, {}))
+				if key then
+					hasReference = true
+					requested[(reverse and "R:" or "P:") .. key] = true
+				end
+			end
+		end
 		local disabled = type(mapState) == "table" and mapState.DisabledPaths or nil
-		for key, path in pairs(type(paths) == "table" and paths or {}) do
-			if
-				type(path) == "table"
-				and #path >= 2
-				and not (type(disabled) == "table" and (disabled[key] or disabled[tostring(key)]))
-			then
-				table.insert(output, path)
+		local candidates = {}
+		local function collect(paths, reverse)
+			for key, path in pairs(type(paths) == "table" and paths or {}) do
+				local normalized = normalizePathIndex(key)
+				local disabledPath = type(disabled) == "table" and (disabled[key] or disabled[tostring(key)])
+				if type(path) == "table" and #path >= 2 and not disabledPath then
+					table.insert(candidates, {
+						Path = path,
+						Token = (reverse and "R:" or "P:") .. tostring(normalized),
+					})
+				end
+			end
+		end
+		collect(type(mapState) == "table" and mapState.Paths or nil, false)
+		collect(type(mapState) == "table" and mapState.ReversePaths or nil, true)
+		if not hasReference and #candidates > 1 then
+			return output
+		end
+		for _, candidate in ipairs(candidates) do
+			if not hasReference or requested[candidate.Token] then
+				table.insert(output, candidate.Path)
 			end
 		end
 		table.sort(output, function(a, b)
@@ -305,8 +360,8 @@ return function()
 		return output
 	end
 
-	function Planner.SelectPath(mapState)
-		local paths = Planner.ActivePaths(mapState)
+	function Planner.SelectPath(mapState, enemies)
+		local paths = Planner.ActivePaths(mapState, enemies)
 		local selected = paths[1]
 		return selected, selected and pathLength(selected) or 0
 	end

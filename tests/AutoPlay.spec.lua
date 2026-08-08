@@ -133,6 +133,25 @@ assert(
 )
 
 local path = { Vector3.new(0, 0, 0), Vector3.new(0, 0, 100) }
+local actOnePath = { Vector3.new(1000, 0, 0), Vector3.new(1000, 0, 100) }
+local actTwoPath = { Vector3.new(2000, 0, 0), Vector3.new(2000, 0, 100) }
+local actThreePath = { Vector3.new(3000, 0, 0), Vector3.new(3000, 0, 100) }
+local multiActMap = { Paths = { [1] = actOnePath, [2] = actTwoPath, [3] = actThreePath } }
+assert(#Planner.ActivePaths(multiActMap, {}) == 0, "multi-act maps guessed a route before enemies spawned")
+local activeActPaths = Planner.ActivePaths(multiActMap, {
+	enemy = { Data = { PathIndex = 3 }, WaypointIndex = 2 },
+})
+assert(#activeActPaths == 1 and activeActPaths[1] == actThreePath, "live enemy PathIndex did not select Act 3")
+local mixedActPaths = Planner.ActivePaths(multiActMap, {
+	a = { PathIndex = 2 },
+	b = { Data = { PathIndex = 3 } },
+})
+assert(
+	#mixedActPaths == 2
+		and (mixedActPaths[1] == actTwoPath or mixedActPaths[2] == actTwoPath)
+		and (mixedActPaths[1] == actThreePath or mixedActPaths[2] == actThreePath),
+	"simultaneously active enemy routes were not retained"
+)
 local nearSpawn = Planner.SamplePath(path, 1)
 local nearBase = Planner.SamplePath(path, 99)
 assert(

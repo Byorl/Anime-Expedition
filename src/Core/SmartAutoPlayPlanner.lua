@@ -562,6 +562,19 @@ return function(Import)
 			context.Emergency = false
 			context.Boss = false
 		end
+		if type(snapshot.Paths) ~= "table" or #snapshot.Paths == 0 then
+			context.ReservePercent = 100
+			context.Yen = math.max(0, number(snapshot.Yen, 0))
+			context.Spendable = 0
+			return {
+				Kind = "Wait",
+				Cost = 0,
+				Score = 0,
+				Context = copy(context),
+				Strategy = strategy,
+				Reason = "waiting for a live enemy to identify the active act route",
+			}
+		end
 		local placements = placementChoices(snapshot, context, strategy, options)
 		local deployment = {}
 		local farmSeed = {}

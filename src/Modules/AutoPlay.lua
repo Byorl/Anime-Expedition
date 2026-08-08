@@ -329,9 +329,13 @@ return function(Import)
 		local placed = Planner.Placed(slots, gameUnits, Players.LocalPlayer)
 		local playerState, playerSource = ctx.Game:GamePlayerData()
 		local mapState = ctx.Game:StateDeep("MapState", 5)
-		local paths = Planner.ActivePaths(mapState)
+		local enemies = ctx.Game:StateDeep("GameEnemies", 4) or {}
+		local paths = Planner.ActivePaths(mapState, enemies)
 		local path = paths[1]
-		if not path then
+		local mapStateHasPaths = type(mapState) == "table"
+			and (next(type(mapState.Paths) == "table" and mapState.Paths or {}) ~= nil
+				or next(type(mapState.ReversePaths) == "table" and mapState.ReversePaths or {}) ~= nil)
+		if not path and not mapStateHasPaths then
 			path = fallbackPath()
 			if path then
 				paths = { path }
@@ -344,7 +348,7 @@ return function(Import)
 			Yen = math.max(0, tonumber(type(playerState) == "table" and playerState.Yen) or 0),
 			Path = path,
 			Paths = paths,
-			Enemies = ctx.Game:StateDeep("GameEnemies", 4) or {},
+			Enemies = enemies,
 			PlacementCounts = type(playerState) == "table" and playerState.PlacementCounts or {},
 			PlacementCap = tonumber(
 				type(playerState) == "table" and playerState.TotalUnitPlacementCap
@@ -681,7 +685,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 6,
+		Version = 7,
 		Priority = 9,
 		Dependencies = {},
 
