@@ -465,7 +465,14 @@ return function(Import)
 						Ordinal = ordinal + 1,
 						Score = score,
 						Role = role,
-						Reason = string.format("place %s at %d%% for path coverage", slot.Name, location.Percent),
+						Reason = current > 0
+							and string.format(
+								"place another %s (%d/%d) on a validated path-side surface",
+								slot.Name,
+								current + 1,
+								cap
+							)
+							or string.format("deploy %s on a validated path-side surface", slot.Name),
 					})
 				end
 			end
@@ -555,10 +562,22 @@ return function(Import)
 			context.Emergency = false
 			context.Boss = false
 		end
-		local choices = placementChoices(snapshot, context, strategy, options)
-		for _, choice in ipairs(upgradeChoices(snapshot, context, strategy)) do
-			if options.SmartEconomy ~= false or choice.Role ~= "Farm" then
-				table.insert(choices, choice)
+		local placements = placementChoices(snapshot, context, strategy, options)
+		local deployment = {}
+		if strategy ~= "Economy" then
+			for _, choice in ipairs(placements) do
+				if choice.Count == 0 and choice.Role ~= "Farm" then
+					table.insert(deployment, choice)
+				end
+			end
+		end
+		local choices = #deployment > 0 and deployment or placements
+		if #deployment == 0 then
+			for _, choice in ipairs(upgradeChoices(snapshot, context, strategy)) do
+				local suppressFarm = choice.Role == "Farm" and strategy == "Win" and context.Pressure >= 0.3
+				if not suppressFarm and (options.SmartEconomy ~= false or choice.Role ~= "Farm") then
+					table.insert(choices, choice)
+				end
 			end
 		end
 		table.sort(choices, compare)

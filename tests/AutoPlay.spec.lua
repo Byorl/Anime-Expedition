@@ -143,6 +143,12 @@ assert(
 	Planner.Candidate(path, 50, 6, 1, 0) ~= Planner.Candidate(path, 50, 6, 2, 0),
 	"placement spacing did not produce unique positions"
 )
+local bounded = Planner.Candidate(path, 50, 20, 1, 9999)
+local center = Planner.SamplePath(path, 50)
+assert(
+	Vector3.new(bounded.Position.X - center.X, 0, bounded.Position.Z - center.Z).Magnitude <= 23,
+	"placement retries can escape too far from the selected path"
+)
 
 local factories = {
 	AutoPlayPlanner = function()
@@ -237,5 +243,12 @@ assert(
 )
 assert(string.find(source, 'GamePlayerAction("PlaceGameUnit"', 1, true), "placement request is missing")
 assert(string.find(source, 'GamePlayerAction("UpgradeGameUnit"', 1, true), "upgrade request is missing")
+assert(
+	string.find(source, '"GroundPlacement"', 1, true)
+		and string.find(source, '"HillPlacement"', 1, true)
+		and string.find(source, "Enum.RaycastFilterType.Include", 1, true),
+	"placement is not restricted to the game's tagged placement surfaces"
+)
+assert(string.find(source, ").Magnitude <= 22", 1, true), "placement is not bounded around the selected path")
 
 print("Auto Play tests passed")

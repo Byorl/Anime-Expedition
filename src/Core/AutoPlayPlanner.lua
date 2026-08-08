@@ -338,14 +338,14 @@ return function()
 		if not point or not tangent or tangent.Magnitude <= 0 then
 			return nil
 		end
-		local distance = math.max(1, number(spacing, 6))
+		local distance = math.min(7, math.max(1, number(spacing, 6)))
 		local sequence = math.max(1, math.floor(number(ordinal, 1)))
-		local retry = math.max(0, math.floor(number(attempt, 0)))
+		local retry = math.max(0, math.floor(number(attempt, 0))) % 24
 		local forward = Vector3.new(tangent.X, 0, tangent.Z).Unit
 		local side = Vector3.new(-forward.Z, 0, forward.X)
 		local lane = ((sequence - 1) % 5) - 2
 		local row = math.floor((sequence - 1) / 5)
-		local retryRadius = math.ceil(retry / 8) * distance * 0.75
+		local retryRadius = math.min(8, math.ceil(retry / 8) * distance * 0.55)
 		local retryAngle = math.rad((retry % 8) * 45)
 		local offset = side * lane * distance + forward * row * distance
 		if retry > 0 then

@@ -74,29 +74,22 @@ return function(Import)
 		return longestPath(paths)
 	end
 
-	local function groundCFrame(state, candidate)
-		local position
-		if state.SharedUtils and type(state.SharedUtils.GetPositionOnGround) == "function" then
-			local ok, result = pcall(state.SharedUtils.GetPositionOnGround, state.SharedUtils, candidate.Position)
-			if ok and typeof(result) == "Vector3" then
-				position = result
-			end
+	local function groundCFrame(slot, candidate)
+		local placementType = type(slot.Info) == "table" and slot.Info.PlacementType or nil
+		local tag = placementType == "Ground" and "GroundPlacement" or "HillPlacement"
+		local surfaces = CollectionService:GetTagged(tag)
+		if #surfaces == 0 then
+			return nil
 		end
-		if not position then
-			local params = RaycastParams.new()
-			params.FilterType = Enum.RaycastFilterType.Exclude
-			local excluded = {}
-			for _, name in ipairs({ "Enemies", "Units", "UnitFollowers" }) do
-				local instance = Workspace:FindFirstChild(name)
-				if instance then
-					table.insert(excluded, instance)
-				end
-			end
-			params.FilterDescendantsInstances = excluded
-			local result =
-				Workspace:Raycast(candidate.Position + Vector3.new(0, 100, 0), Vector3.new(0, -500, 0), params)
-			position = result and result.Position or candidate.Position
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = surfaces
+		local result =
+			Workspace:Raycast(candidate.Position + Vector3.new(0, 100, 0), Vector3.new(0, -300, 0), params)
+		if not result then
+			return nil
 		end
+		local position = result.Position
 		local look = Vector3.new(candidate.LookVector.X, 0, candidate.LookVector.Z)
 		if look.Magnitude <= 0 then
 			look = Vector3.new(0, 0, -1)
@@ -106,7 +99,7 @@ return function(Import)
 
 	local function isAllowed(state, asset, cframe)
 		if not state.UnitUtils or type(state.UnitUtils.IsPlacementAllowed) ~= "function" then
-			return true
+			return false
 		end
 		local ok, result = pcall(state.UnitUtils.IsPlacementAllowed, state.UnitUtils, asset, cframe)
 		return ok and result == true
@@ -151,24 +144,38 @@ return function(Import)
 		end
 		local ordinal = placementOrdinal(snapshot, choice)
 		local start = state.PlaceRetries[choice.Slot.Index] or 0
-		for offset = 0, 15 do
+		local shifts = { 0, -5, 5, -10, 10, -15, 15 }
+		for offset = 0, 27 do
 			local attempt = start + offset
+			local percent = math.clamp(
+				(choice.Percent or state.PathPosition) + shifts[attempt % #shifts + 1],
+				8,
+				92
+			)
 			local candidate = Planner.Candidate(
 				path,
-				choice.Percent or state.PathPosition,
+				percent,
 				choice.Spacing or state.Spacing,
 				ordinal,
-				attempt
+				math.floor(attempt / #shifts)
 			)
 			if candidate then
-				candidate = groundCFrame(state, candidate)
-				if isAllowed(state, choice.Slot.Asset, candidate) then
+				local pathPoint = Planner.SamplePath(path, percent)
+				candidate = groundCFrame(choice.Slot, candidate)
+				local closeToPath = candidate
+					and pathPoint
+					and Vector3.new(
+						candidate.Position.X - pathPoint.X,
+						0,
+						candidate.Position.Z - pathPoint.Z
+					).Magnitude <= 22
+				if closeToPath and isAllowed(state, choice.Slot.Asset, candidate) then
 					state.PlaceRetries[choice.Slot.Index] = attempt
 					return candidate
 				end
 			end
 		end
-		state.PlaceRetries[choice.Slot.Index] = start + 16
+		state.PlaceRetries[choice.Slot.Index] = (start + 28) % (#shifts * 24)
 		return nil, "No valid placement point was found yet; another area will be tried."
 	end
 
@@ -248,14 +255,20 @@ return function(Import)
 				wanted[key] = true
 				local candidate = Planner.Candidate(snapshot.Path, state.PathPosition, state.Spacing, ordinal, 0)
 				if candidate then
-					candidate = groundCFrame(state, candidate)
-					local current = marker(state, key)
-					local color = index <= placed and Color3.fromRGB(75, 235, 130) or colors[slot.Index]
-					current.Part.Color = color
-					current.Part.Size =
-						Vector3.new(0.16, math.max(2.5, state.Spacing * 0.7), math.max(2.5, state.Spacing * 0.7))
-					current.Part.CFrame = candidate * CFrame.Angles(0, 0, math.pi / 2)
-					current.Label.Text = string.format("Slot %d | %s | %d/%d", slot.Index, slot.Name, index, cap)
+					candidate = groundCFrame(slot, candidate)
+					local current = candidate and marker(state, key) or nil
+					if current then
+						local color = index <= placed and Color3.fromRGB(75, 235, 130) or colors[slot.Index]
+						current.Part.Color = color
+						current.Part.Size = Vector3.new(
+							0.16,
+							math.max(2.5, state.Spacing * 0.7),
+							math.max(2.5, state.Spacing * 0.7)
+						)
+						current.Part.CFrame = candidate * CFrame.Angles(0, 0, math.pi / 2)
+						current.Label.Text =
+							string.format("Slot %d | %s | %d/%d", slot.Index, slot.Name, index, cap)
+					end
 				end
 			end
 		end
@@ -540,7 +553,11 @@ return function(Import)
 			destroyMarkers(state)
 			return
 		end
-		candidate = groundCFrame(state, candidate)
+		candidate = groundCFrame(visual.Slot, candidate)
+		if not candidate then
+			destroyMarkers(state)
+			return
+		end
 		local current = marker(state, "smart_next")
 		current.Part.Color = decision.Kind == "Place" and Color3.fromRGB(75, 235, 130) or Color3.fromRGB(255, 190, 70)
 		current.Part.Size = Vector3.new(0.16, math.max(3, visual.Spacing), math.max(3, visual.Spacing))
@@ -638,7 +655,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 4,
+		Version = 5,
 		Priority = 9,
 		Dependencies = {},
 
@@ -674,7 +691,6 @@ return function(Import)
 				MatchDetected = false,
 				Generation = ctx.Runtime.Generation,
 				UnitUtils = loadHelper("UnitUtils"),
-				SharedUtils = loadHelper("Utils"),
 			}
 			local automation = ctx.Tabs.AutoPlayNormal:Section({ Side = "Left" })
 			automation:Header({ Text = "Auto Play" })

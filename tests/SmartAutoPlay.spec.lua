@@ -106,6 +106,49 @@ assert(win.Kind == "Place" and win.Slot.Index == 2, "Win strategy did not priori
 assert(win.Path == path and win.Percent >= 1 and win.Percent <= 99, "adaptive placement did not return a map position")
 assert(win.Context.ReservePercent == 0, "automatic reserve did not release yen during an emergency")
 
+snapshot.Placed = {
+	[1] = {
+		{
+			GameUnitID = "farm-placed",
+			Upgrade = 0,
+			MaxUpgrade = 1,
+			NextCost = 200,
+			Farm = true,
+			Data = {},
+		},
+	},
+	[2] = {},
+}
+snapshot.PlacementCounts = { Farm = 1 }
+local deployBeforeFarmUpgrade = Smart.Decide(snapshot, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	deployBeforeFarmUpgrade.Kind == "Place" and deployBeforeFarmUpgrade.Slot.Index == 2,
+	"Win strategy upgraded a farm before deploying every combat slot"
+)
+information.Units.Damage.UpgradeInfo[0].Cost = 500
+snapshot.Yen = 250
+local saveForDeployment = Smart.Decide(snapshot, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	saveForDeployment.Kind == "Wait"
+		and saveForDeployment.Preview
+		and saveForDeployment.Preview.Slot.Index == 2,
+	"Win strategy spent deployment savings on an affordable farm upgrade"
+)
+information.Units.Damage.UpgradeInfo[0].Cost = 100
+snapshot.Placed = { [1] = {}, [2] = {} }
+snapshot.PlacementCounts = nil
+snapshot.Yen = 1000
+
 snapshot.GameState = {
 	Wave = 1,
 	MaxWave = 20,
