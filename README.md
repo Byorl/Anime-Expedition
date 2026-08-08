@@ -22,14 +22,18 @@ src/
     ConfigManager.lua
     ControlRegistry.lua
     FileSystem.lua
+    GameAdapter.lua
     Janitor.lua
     MacLibProvider.lua
     ModuleManager.lua
     SessionManager.lua
     UIManager.lua
     Util.lua
+    RewardScanner.lua
   Modules/
+    AutoClaim.lua
     Misc.lua
+    Performance.lua
     Settings.lua
 ```
 
@@ -61,6 +65,14 @@ runtime.Modules:Load("Misc")
 ```
 
 Re-execution shuts down the previous runtime, disconnects tracked events, disables MacLib's old global key listener, destroys the previous UI, and then creates the new runtime.
+
+## Misc automation
+
+- `AutoClaim` reads the same replicated state used by the game's calendar, quest, battlepass, index, milestone, expedition, event and tournament UIs before sending a claim.
+- Claim signatures and bounded retries stop an unchanged reward from being spammed while still recovering from a dropped event.
+- Codes are discovered from both static and live-synced game information, filtered by their active window, requested serially and cached per account.
+- `Performance` owns Delete Enemies, FPS Boost and Disable 3D Rendering. Enemy visuals are selected by the game's `Enemy` CollectionService tag; all listeners are disconnected on toggle-off, unload and re-execution.
+- FPS Boost keeps original properties in a weak-key table and restores surviving instances when disabled, avoiding strong references to destroyed map content.
 
 ## Responsive UI
 
