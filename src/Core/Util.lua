@@ -1,5 +1,6 @@
 return function()
 	local Util = {}
+	Util.Traceback = debug and debug.traceback or function(message) return tostring(message) end
 
 	function Util.Warn(message)
 		warn("[Anime Expeditions] " .. tostring(message))
@@ -9,7 +10,10 @@ return function()
 		if type(callback) ~= "function" then
 			return true
 		end
-		local results = table.pack(pcall(callback, ...))
+		local arguments = table.pack(...)
+		local results = table.pack(xpcall(function()
+			return callback(table.unpack(arguments, 1, arguments.n))
+		end, Util.Traceback))
 		if not results[1] then
 			Util.Warn(label .. ": " .. tostring(results[2]))
 		end

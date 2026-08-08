@@ -4,6 +4,10 @@ return function(Import)
 	local FileSystem = {}
 	FileSystem.__index = FileSystem
 
+	local function describe(path, operation, reason)
+		return string.format("%s failed for '%s': %s", operation, tostring(path), tostring(reason))
+	end
+
 	function FileSystem.new(root)
 		local self = setmetatable({Root = root}, FileSystem)
 		self.Available = type(isfile) == "function"
@@ -22,7 +26,9 @@ return function(Import)
 			current = current == "" and segment or (current .. "/" .. segment)
 			if not isfolder(current) then
 				local ok, err = pcall(makefolder, current)
-				if not ok and not isfolder(current) then return false, err end
+				if not ok and not isfolder(current) then
+					return false, describe(current, "create folder", err)
+				end
 			end
 		end
 		return true
@@ -31,29 +37,32 @@ return function(Import)
 	function FileSystem:Read(path)
 		if not self.Available or not isfile(path) then return nil end
 		local ok, data = pcall(readfile, path)
-		return ok and data or nil
+		if not ok then return nil, describe(path, "read", data) end
+		return data
 	end
 
-	function FileSystem:Write(path, data)
+	function FileSystem:_WriteRaw(path, data)
 		if not self.Available then return false, "executor filesystem APIs are unavailable" end
 		local folder = string.match(path, "^(.*)[/\\][^/\\]+$")
 		if folder then
-			local ok, err = self:EnsureFolder(folder)
-			if not ok then return false, err end
-		end
-		if isfile(path) then
-			local old = self:Read(path)
-			if old then pcall(writefile, path .. ".bak", old) end
+			local folderOk, folderError = self:EnsureFolder(folder)
+			if not folderOk then return false, folderError end
 		end
 		local ok, err = pcall(writefile, path, data)
-		return ok, err
+		if not ok then return false, describe(path, "write", err) end
+		return true
+	end
+
+	function FileSystem:Write(path, data)
+		return self:_WriteRaw(path, data)
 	end
 
 	function FileSystem:Delete(path)
 		if type(delfile) ~= "function" then return false, "delfile is unavailable" end
 		if not isfile(path) then return true end
 		local ok, err = pcall(delfile, path)
-		return ok, err
+		if not ok then return false, describe(path, "delete", err) end
+		return true
 	end
 
 	function FileSystem:List(path)
@@ -62,23 +71,89 @@ return function(Import)
 		return ok and files or {}
 	end
 
-	function FileSystem:ReadJson(path, fallback)
-		local raw = self:Read(path)
-		if not raw then return Util.Clone(fallback) end
-		local ok, decoded = pcall(HttpService.JSONDecode, HttpService, raw)
-		if ok and type(decoded) == "table" then return decoded end
-		local backup = self:Read(path .. ".bak")
-		if backup then
-			local backupOk, backupDecoded = pcall(HttpService.JSONDecode, HttpService, backup)
-			if backupOk and type(backupDecoded) == "table" then return backupDecoded end
+	function FileSystem:_DecodeJson(raw, path)
+		if type(raw) ~= "string" or raw == "" then
+			return nil, describe(path, "JSON decode", "file is empty")
 		end
-		return Util.Clone(fallback)
+		local ok, decoded = pcall(HttpService.JSONDecode, HttpService, raw)
+		if not ok or type(decoded) ~= "table" then
+			return nil, describe(path, "JSON decode", ok and "root value is not an object" or decoded)
+		end
+		return decoded
 	end
 
+	-- Reads the primary file first, then an interrupted transaction and finally
+	-- the last known-good backup. A recovered copy repairs the primary path so
+	-- queue-on-teleport code can continue reading it directly.
+	function FileSystem:ReadJsonDetailed(path)
+		local errors = {}
+		for _, candidate in ipairs({path, path .. ".tmp", path .. ".bak"}) do
+			local raw, readError = self:Read(candidate)
+			if raw then
+				local decoded, decodeError = self:_DecodeJson(raw, candidate)
+				if decoded then
+					if candidate ~= path then
+						local repaired, repairError = self:_WriteRaw(path, raw)
+						if not repaired then Util.Warn("config recovery succeeded but " .. tostring(repairError)) end
+					end
+					return decoded, candidate
+				end
+				table.insert(errors, decodeError)
+			elseif readError then
+				table.insert(errors, readError)
+			end
+		end
+		return nil, table.concat(errors, " | ")
+	end
+
+	function FileSystem:ReadJson(path, fallback)
+		local decoded = self:ReadJsonDetailed(path)
+		return decoded or Util.Clone(fallback)
+	end
+
+	-- Executor filesystems generally do not expose rename/replace. This uses the
+	-- safest available protocol: verified temp -> preserved backup -> primary ->
+	-- verified primary, with rollback if the final verification fails.
 	function FileSystem:WriteJson(path, value)
-		local ok, encoded = pcall(HttpService.JSONEncode, HttpService, value)
-		if not ok then return false, "JSON encode failed: " .. tostring(encoded) end
-		return self:Write(path, encoded)
+		local encodeOk, encoded = pcall(HttpService.JSONEncode, HttpService, value)
+		if not encodeOk then return false, describe(path, "JSON encode", encoded) end
+
+		local temporaryPath = path .. ".tmp"
+		local backupPath = path .. ".bak"
+		local tempOk, tempError = self:_WriteRaw(temporaryPath, encoded)
+		if not tempOk then return false, tempError end
+
+		local tempRaw, tempReadError = self:Read(temporaryPath)
+		local tempDecoded, tempDecodeError = self:_DecodeJson(tempRaw, temporaryPath)
+		if not tempRaw or tempRaw ~= encoded or not tempDecoded then
+			return false, tempReadError or tempDecodeError or describe(temporaryPath, "verify", "content mismatch")
+		end
+
+		local oldRaw = self:Read(path)
+		if oldRaw then
+			local oldDecoded = self:_DecodeJson(oldRaw, path)
+			if oldDecoded then
+				local backupOk, backupError = self:_WriteRaw(backupPath, oldRaw)
+				if not backupOk then return false, backupError end
+			end
+		end
+
+		local writeOk, writeError = self:_WriteRaw(path, encoded)
+		if not writeOk then
+			local backupRaw = self:Read(backupPath)
+			if backupRaw then self:_WriteRaw(path, backupRaw) end
+			return false, tostring(writeError) .. (backupRaw and "; backup restored" or "")
+		end
+		local finalRaw, finalReadError = self:Read(path)
+		local finalDecoded, finalDecodeError = self:_DecodeJson(finalRaw, path)
+		if not finalRaw or finalRaw ~= encoded or not finalDecoded then
+			local backupRaw = self:Read(backupPath)
+			if backupRaw then self:_WriteRaw(path, backupRaw) end
+			return false, finalReadError or finalDecodeError or describe(path, "verify", "content mismatch; backup restored")
+		end
+
+		if type(delfile) == "function" and isfile(temporaryPath) then pcall(delfile, temporaryPath) end
+		return true
 	end
 
 	return FileSystem

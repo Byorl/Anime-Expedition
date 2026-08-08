@@ -10,13 +10,21 @@ return function(Import)
 	SessionManager.__index = SessionManager
 
 	function SessionManager.new(runtime, config)
-		return setmetatable({
+		local self = setmetatable({
 			Runtime = runtime,
 			Config = config,
 			ReconnectJanitor = Janitor.new(),
+			Janitor = Janitor.new(),
 			ReconnectEnabled = false,
 			TeleportQueued = false,
 		}, SessionManager)
+		self.Janitor:AddConnection(LocalPlayer.OnTeleport:Connect(function(state)
+			if state == Enum.TeleportState.Started or state == Enum.TeleportState.InProgress then
+				local ok, err = config:Flush(true)
+				if not ok then runtime:Notify("Config flush failed", tostring(err)) end
+			end
+		end))
+		return self
 	end
 
 	function SessionManager:_QueueFunction()
@@ -89,6 +97,8 @@ end
 				for _ = 1, 5 do
 					if not self.ReconnectEnabled or not self.Runtime.Alive then break end
 					task.wait(delaySeconds)
+					local flushOk, flushError = self.Config:Flush(true)
+					if not flushOk then self.Runtime:Notify("Reconnect save failed", tostring(flushError)) end
 					local ok = pcall(TeleportService.Teleport, TeleportService, Build.PlaceId, LocalPlayer)
 					if ok then break end
 					delaySeconds = math.min(delaySeconds * 2, 12)
@@ -112,6 +122,7 @@ end
 	function SessionManager:Destroy()
 		self.ReconnectEnabled = false
 		self.ReconnectJanitor:Cleanup()
+		self.Janitor:Cleanup()
 	end
 
 	return SessionManager

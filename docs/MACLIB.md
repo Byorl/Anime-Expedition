@@ -1,6 +1,6 @@
 # MacLib implementation notes
 
-This project uses the official [MacLib repository](https://github.com/biggaboy212/Maclib), [documentation](https://brady-xyz.gitbook.io/maclib-ui-library), and latest-release source.
+This project uses the official [MacLib repository](https://github.com/biggaboy212/Maclib), [documentation](https://brady-xyz.gitbook.io/maclib-ui-library), and the pinned `9.Maclib` release source.
 
 MacLib's hierarchy is `Window -> TabGroup -> Tab -> Section -> Element`. Sections use `Side = "Left"` or `"Right"`.
 
@@ -21,3 +21,5 @@ The custom config layer avoids two problems observed in MacLib's built-in config
 2. Built-in option loads are individually spawned, so callback ordering is nondeterministic.
 
 This project instead applies every registered flag in sorted order and uses defaults for flags added after an older config was created.
+
+MacLib's `Window:GlobalSetting` API is used for `UI Blur` and `Hide Private Info`. Blur defaults off; private user information is redacted by default. Window scaling is handled by `UIManager` rather than writing directly from the slider callback, so one render-step writer owns `Window:SetScale` and viewport fitting stays responsive on phones.

@@ -7,6 +7,7 @@ return function(Import)
 	local ConfigManager = Import("ConfigManager")
 	local SessionManager = Import("SessionManager")
 	local ModuleManager = Import("ModuleManager")
+	local UIManager = Import("UIManager")
 	local MacLibProvider = Import("MacLibProvider")
 	local MiscModule = Import("Misc")
 	local SettingsModule = Import("Settings")
@@ -21,6 +22,8 @@ return function(Import)
 		pcall(function() previousRuntime:Shutdown("re-executed") end)
 		task.wait()
 	end
+	local generation = (tonumber(rawget(Environment, "__ANIME_EXPEDITIONS_GENERATION")) or 0) + 1
+	Environment.__ANIME_EXPEDITIONS_GENERATION = generation
 
 	local Runtime = {
 		Alive = true,
@@ -30,6 +33,7 @@ return function(Import)
 		MacLib = nil,
 		MacGui = nil,
 		Build = Build,
+		Generation = generation,
 	}
 	Environment.__ANIME_EXPEDITIONS_RUNTIME = Runtime
 
@@ -48,7 +52,13 @@ return function(Import)
 	function Runtime:Shutdown(reason, windowAlreadyUnloaded)
 		if self.ShuttingDown then return end
 		self.ShuttingDown = true
+		if self.Registry then self.Registry.OnChanged = nil end
+		if self.Config then
+			local flushOk, flushError = self.Config:Flush(true)
+			if not flushOk then Util.Warn("final config flush failed: " .. tostring(flushError)) end
+		end
 		self.Alive = false
+		if self.UIManager then self.UIManager:Destroy() end
 		if self.Modules then self.Modules:DestroyAll() end
 		if self.Session then self.Session:Destroy() end
 		if self.Config then self.Config:Destroy() end
@@ -84,6 +94,7 @@ return function(Import)
 
 	local FileStore = FileSystem.new(Build.DataRoot)
 	local Registry = ControlRegistry.new()
+	Runtime.Registry = Registry
 	local Config = ConfigManager.new(FileStore, Registry, LocalPlayer)
 	Runtime.Config = Config
 	local configOk, configError = Config:Initialize()
@@ -96,17 +107,40 @@ return function(Import)
 	local beforeGui = captureChildren(parent)
 	local MacLib = MacLibProvider.Load()
 	Runtime.MacLib = MacLib
+	local deviceClass = UIManager.DeviceClass()
+	local accountKey = Enum.KeyCode[tostring(Config.Account.UI.ToggleKey)] or Enum.KeyCode.RightShift
 	local Window = MacLib:Window({
 		Title = Build.Name,
 		Subtitle = "Remote Modules | v" .. Build.Version,
-		Size = UDim2.fromOffset(868, 650),
+		Size = UIManager.BaseSize(deviceClass),
 		DragStyle = 1,
 		DisabledWindowControls = {},
-		ShowUserInfo = true,
-		Keybind = Enum.KeyCode.RightShift,
-		AcrylicBlur = true,
+		ShowUserInfo = Config.Account.UI.HidePrivateInfo ~= true,
+		Keybind = accountKey,
+		AcrylicBlur = Config.Account.UI.UIBlur == true,
 	})
 	Runtime.Window = Window
+	local ResponsiveUI = UIManager.new(Window, Config.Account)
+	Runtime.UIManager = ResponsiveUI
+
+	-- These use MacLib's own global-settings menu. Privacy is expressed as a
+	-- positive "hide" toggle so its safe/default state is visually on.
+	Window:GlobalSetting({
+		Name = "UI Blur",
+		Default = Config.Account.UI.UIBlur == true,
+		Callback = function(enabled)
+			Window:SetAcrylicBlurState(enabled == true)
+			Config:UpdateAccount(function(account) account.UI.UIBlur = enabled == true end, false)
+		end,
+	})
+	Window:GlobalSetting({
+		Name = "Hide Private Info",
+		Default = Config.Account.UI.HidePrivateInfo ~= false,
+		Callback = function(hidden)
+			Window:SetUserInfoState(hidden ~= true)
+			Config:UpdateAccount(function(account) account.UI.HidePrivateInfo = hidden == true end, false)
+		end,
+	})
 
 	for _, child in ipairs(parent:GetChildren()) do
 		if not beforeGui[child] and child:IsA("ScreenGui") then
@@ -132,6 +166,7 @@ return function(Import)
 		FileSystem = FileStore,
 		Player = LocalPlayer,
 		Build = Build,
+		UIManager = ResponsiveUI,
 	}
 	local Session = SessionManager.new(Runtime, Config)
 	Context.Session = Session
@@ -160,7 +195,7 @@ return function(Import)
 		Registry:Apply({})
 	end
 
-	if Registry:Get("misc.hide_ui_on_execute") == true then Window:SetState(false) end
+	if Config.Account.UI.HiddenOnExecute == true then Window:SetState(false) end
 	Window.onUnloaded(function() Runtime:Shutdown("window unloaded", true) end)
 	Tabs.Misc:Select()
 	Runtime:Notify("Loaded", string.format(

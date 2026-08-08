@@ -1,59 +1,112 @@
 -- Public loader for https://github.com/Byorl/Anime-Expedition
--- Every code module is fetched from GitHub. Only persistent user configs use disk.
+-- Modules remain separate on GitHub, but their source is downloaded by a small
+-- worker pool before initialization to minimize startup time without creating a
+-- burst of unbounded executor HTTP requests.
 
 local REPOSITORY = "https://raw.githubusercontent.com/Byorl/Anime-Expedition/main/"
+local traceback = debug and debug.traceback or function(message) return tostring(message) end
 
 local function fetch(path, cacheBuster)
 	local url = REPOSITORY .. path
-	if cacheBuster then
-		url = url .. "?v=" .. tostring(cacheBuster)
+	if cacheBuster then url = url .. "?v=" .. tostring(cacheBuster) end
+	local ok, body = pcall(function() return game:HttpGet(url) end)
+	if not ok then error(string.format("HTTP fetch failed for '%s': %s", path, tostring(body)), 0) end
+	if type(body) ~= "string" or #body == 0 then
+		error(string.format("HTTP fetch returned an empty/non-text response for '%s' (%s)", path, url), 0)
 	end
-	local ok, body = pcall(function()
-		return game:HttpGet(url)
-	end)
-	assert(ok and type(body) == "string" and #body > 0, "Failed to fetch " .. url .. ": " .. tostring(body))
 	return body
 end
 
 local manifestSource = fetch("manifest.lua", os.time())
-local manifestChunk, manifestError = loadstring(manifestSource, "@Anime-Expedition/manifest.lua")
-assert(manifestChunk, manifestError)
-local manifest = manifestChunk()
-assert(type(manifest) == "table" and type(manifest.Modules) == "table", "Invalid Anime Expedition manifest")
+local manifestChunk, manifestCompileError = loadstring(manifestSource, "@Anime-Expedition/manifest.lua")
+assert(manifestChunk, "Manifest compile failed:\n" .. tostring(manifestCompileError))
+local manifestOk, manifest = xpcall(manifestChunk, traceback)
+assert(manifestOk, "Manifest execution failed:\n" .. tostring(manifest))
+assert(type(manifest) == "table", "Manifest must return a table")
+assert(type(manifest.Entry) == "string", "Manifest Entry must be a module name")
+assert(type(manifest.Modules) == "table", "Manifest Modules must be a table")
 
-local loaded = {}
-local loading = {}
+local jobs = {}
+for name, path in pairs(manifest.Modules) do
+	assert(type(name) == "string" and type(path) == "string", "Manifest module entries must map names to paths")
+	table.insert(jobs, {Name = name, Path = path})
+end
+table.sort(jobs, function(a, b) return a.Name < b.Name end)
 
-local function Import(name)
-	if loaded[name] ~= nil then
-		return loaded[name]
+local sourceByPath, fetchErrors = {}, {}
+local nextJob, completed = 1, 0
+local workerCount = math.min(6, #jobs)
+for _ = 1, workerCount do
+	task.spawn(function()
+		while true do
+			local index = nextJob
+			nextJob = nextJob + 1
+			local job = jobs[index]
+			if not job then return end
+			local ok, sourceOrError = pcall(fetch, job.Path, manifest.Version)
+			if ok then sourceByPath[job.Path] = sourceOrError
+			else fetchErrors[job.Name] = tostring(sourceOrError) end
+			completed = completed + 1
+		end
+	end)
+end
+
+local deadline = os.clock() + 25
+while completed < #jobs and os.clock() < deadline do task.wait() end
+if completed < #jobs then
+	local pending = {}
+	for _, job in ipairs(jobs) do
+		if not sourceByPath[job.Path] and not fetchErrors[job.Name] then table.insert(pending, job.Name) end
 	end
-	assert(not loading[name], "Circular module dependency while loading " .. tostring(name))
+	error("Module download timed out after 25 seconds. Pending: " .. table.concat(pending, ", "), 0)
+end
+if next(fetchErrors) then
+	local messages = {}
+	for _, job in ipairs(jobs) do
+		if fetchErrors[job.Name] then table.insert(messages, job.Name .. ": " .. fetchErrors[job.Name]) end
+	end
+	error("One or more modules failed to download:\n" .. table.concat(messages, "\n"), 0)
+end
+
+local loaded, loading, importStack = {}, {}, {}
+local function Import(name)
+	if loaded[name] ~= nil then return loaded[name] end
+	if loading[name] then
+		local chain = table.clone(importStack)
+		table.insert(chain, tostring(name))
+		error("Circular source import: " .. table.concat(chain, " -> "), 0)
+	end
 	local path = manifest.Modules[name]
-	assert(type(path) == "string", "Unknown Anime Expedition module: " .. tostring(name))
+	if type(path) ~= "string" then error("Unknown Anime Expedition source module: " .. tostring(name), 0) end
 
 	loading[name] = true
-	local source = fetch(path, manifest.Version)
+	table.insert(importStack, name)
+	local source = sourceByPath[path]
+	if not source then error("Prefetched source is missing for module '" .. name .. "' at " .. path, 0) end
 	local chunk, compileError = loadstring(source, "@Anime-Expedition/" .. path)
 	if not chunk then
 		loading[name] = nil
-		error(compileError)
+		table.remove(importStack)
+		error(string.format("Module '%s' compile failed (%s):\n%s", name, path, tostring(compileError)), 0)
 	end
-	local ok, factory = pcall(chunk)
-	if not ok then
+	local chunkOk, factory = xpcall(chunk, traceback)
+	if not chunkOk then
 		loading[name] = nil
-		error(factory)
+		table.remove(importStack)
+		error(string.format("Module '%s' chunk failed (%s):\n%s", name, path, tostring(factory)), 0)
 	end
 	local result = factory
 	if type(factory) == "function" then
-		local factoryOk, factoryResult = pcall(factory, Import)
+		local factoryOk, factoryResult = xpcall(function() return factory(Import) end, traceback)
 		if not factoryOk then
 			loading[name] = nil
-			error(factoryResult)
+			table.remove(importStack)
+			error(string.format("Module '%s' factory failed (%s):\n%s", name, path, tostring(factoryResult)), 0)
 		end
 		result = factoryResult
 	end
 	loading[name] = nil
+	table.remove(importStack)
 	loaded[name] = result
 	return result
 end

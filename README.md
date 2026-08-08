@@ -1,6 +1,6 @@
 # Anime Expedition
 
-GitHub-loaded MacLib framework for Anime Expeditions. Code is split into real remote modules; the loader downloads the manifest and every module from this repository at execution time.
+GitHub-loaded MacLib framework for Anime Expeditions. Code is split into real remote modules; the loader prefetches them with a bounded worker pool and initializes them from the repository manifest.
 
 ## Loadstring
 
@@ -26,6 +26,7 @@ src/
     MacLibProvider.lua
     ModuleManager.lua
     SessionManager.lua
+    UIManager.lua
     Util.lua
   Modules/
     Misc.lua
@@ -39,15 +40,19 @@ src/
 - Global configs: `AnimeExpeditionsHubData/configs/global`
 - Per-account state: `AnimeExpeditionsHubData/accounts/<UserId>/state.json`
 - All accounts can select globally created configs.
-- Config metadata records the creator and last-saving account.
+- Schema 3 separates per-account UI/session preferences from globally selectable feature profiles.
+- Config metadata records `Revision`, `SavedAt`, creator, last-saving account and optional lock ownership.
 - `main` is created automatically when no configs exist.
 - Deletion is blocked when only one config remains.
+- Configs can be duplicated, renamed and locked; names collide case-insensitively.
 - Auto Save covers every stateful element registered through `ControlRegistry`.
-- Config loads call MacLib setters and feature callbacks, restoring visual and live state together.
+- Config loads run as transactions, hold autosave callbacks until deferred MacLib setters settle, and roll back on failure.
+- Writes use verified `.tmp` and `.bak` files and repair the primary JSON automatically after corruption/interruption.
+- Dirty autosaves are flushed before re-execution and teleport, while Auto Save off still requires the Save button.
 
 ## Runtime modules
 
-Feature modules support `Init`, `Enable`, `Disable`, and `Unload`, plus dependency-aware loading. Normal unload deactivates a module and cleans its tracked resources without duplicating its UI when it is reloaded.
+Feature modules support `Init`, `Enable`, `Disable`, and `Unload`, plus dependency-aware loading. The manager validates the complete dependency graph, reports cycle paths and lifecycle tracebacks, rolls back failed starts, scopes registered controls to their owning module, and unloads in reverse dependency order.
 
 ```lua
 local runtime = getgenv().__ANIME_EXPEDITIONS_RUNTIME
@@ -56,6 +61,15 @@ runtime.Modules:Load("Misc")
 ```
 
 Re-execution shuts down the previous runtime, disconnects tracked events, disables MacLib's old global key listener, destroys the previous UI, and then creates the new runtime.
+
+## Responsive UI
+
+- Desktop starts at a smaller 800x600 base with a 90% default scale.
+- Mobile uses a compact 620x465 base with a separate 62% preference and an automatic viewport-fit cap, including orientation changes.
+- Scale writes are coalesced through one render-step writer with damped/capped changes to prevent slider feedback jitter.
+- Desktop and mobile scale preferences are stored independently per account.
+- MacLib global settings default to UI Blur off and Hide Private Info on.
+- The official MacLib source is pinned to the tested `9.Maclib` release instead of a mutable latest-release URL.
 
 ## Session behavior
 

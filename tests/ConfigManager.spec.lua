@@ -1,0 +1,91 @@
+task = task or {delay = function(_, callback) callback() end, wait = function() end}
+
+local files = {}
+local function clone(value)
+	if type(value) ~= "table" then return value end
+	local output = {}
+	for key, child in pairs(value) do output[clone(key)] = clone(child) end
+	return output
+end
+
+local store = {Available = true}
+function store:EnsureFolder() return true end
+function store:List(folder)
+	local output = {}
+	for path in pairs(files) do
+		if string.sub(path, 1, #folder + 1) == folder .. "/" then table.insert(output, path) end
+	end
+	return output
+end
+function store:ReadJson(path, fallback) return files[path] and clone(files[path]) or clone(fallback) end
+function store:ReadJsonDetailed(path) return files[path] and clone(files[path]) or nil, files[path] and path or "missing" end
+function store:WriteJson(path, value) files[path] = clone(value); return true end
+function store:Delete(path) files[path] = nil; return true end
+
+local currentValues = { ["misc.auto_reconnect"] = false }
+local registry = {OwnerVersions = {Misc = 1}}
+function registry:Snapshot() return clone(currentValues) end
+function registry:SnapshotModules() return {Misc = {Version = 1, Values = clone(currentValues)}} end
+function registry:ApplyAtomic(values) currentValues = clone(values); return true end
+
+local cache = {}
+local factories = {
+	Build = rbxmk.loadFile("src/Build.lua")(),
+	Util = rbxmk.loadFile("src/Core/Util.lua")(),
+	ConfigManager = rbxmk.loadFile("src/Core/ConfigManager.lua")(),
+}
+local function Import(name)
+	if cache[name] then return cache[name] end
+	cache[name] = factories[name](Import)
+	return cache[name]
+end
+
+local ConfigManager = Import("ConfigManager")
+local first = ConfigManager.new(store, registry, {UserId = 100, Name = "First"})
+local initOk, initError = first:Initialize()
+assert(initOk, initError)
+assert(first.Account.Schema == 3 and first.Account.SelectedConfig == "main", "schema 3/main initialization failed")
+assert(first:ResolveName("MAIN") == "main", "case-insensitive lookup failed")
+
+local createOk, createError = first:Create("Work")
+assert(createOk, createError)
+local collisionOk = first:Create("work")
+assert(not collisionOk, "case-insensitive collision was accepted")
+
+local duplicateOk, duplicateError = first:Duplicate("Work", "Work Copy")
+assert(duplicateOk, duplicateError)
+assert(first.Account.SelectedConfig == "Work Copy", "duplicate was not selected")
+
+local loadOk, loaded = first:Load("Work")
+assert(loadOk, loaded)
+local workPath = first:_ConfigPath("Work")
+files[workPath].Revision = files[workPath].Revision + 1
+local conflictOk, conflictError = first:Save("Work")
+assert(not conflictOk and string.find(conflictError, "changed on disk", 1, true), "revision conflict was not detected")
+
+loadOk, loaded = first:Load("Work")
+assert(loadOk, loaded)
+local lockOk, lockError = first:SetLocked("Work", true)
+assert(lockOk, lockError)
+
+local second = ConfigManager.new(store, registry, {UserId = 200, Name = "Second"})
+initOk, initError = second:Initialize()
+assert(initOk, initError)
+local deleteOk, deleteError = second:Delete("Work")
+assert(not deleteOk and string.find(deleteError, "locked by First", 1, true), "foreign lock did not protect config")
+
+files[first:_ConfigPath("Legacy")] = {
+	Schema = 2,
+	Name = "Legacy",
+	Revision = 1,
+	Values = {
+		["misc.auto_reconnect"] = true,
+		["settings.ui_scale"] = 140,
+	},
+}
+loadOk, loaded = first:Load("Legacy")
+assert(loadOk, loaded)
+assert(currentValues["misc.auto_reconnect"] == true, "schema 2 feature value was not migrated")
+assert(currentValues["settings.ui_scale"] == nil, "legacy global UI scale was not removed")
+
+print("ConfigManager tests passed")

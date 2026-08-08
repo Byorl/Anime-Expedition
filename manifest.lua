@@ -1,5 +1,5 @@
 return {
-	Version = "1.1.0",
+	Version = "1.2.0",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -10,6 +10,7 @@ return {
 		ConfigManager = "src/Core/ConfigManager.lua",
 		SessionManager = "src/Core/SessionManager.lua",
 		ModuleManager = "src/Core/ModuleManager.lua",
+		UIManager = "src/Core/UIManager.lua",
 		MacLibProvider = "src/Core/MacLibProvider.lua",
 		Misc = "src/Modules/Misc.lua",
 		Settings = "src/Modules/Settings.lua",
