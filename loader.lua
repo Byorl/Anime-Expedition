@@ -3,7 +3,7 @@
 -- worker pool before initialization to minimize startup time without creating a
 -- burst of unbounded executor HTTP requests.
 
-local REPOSITORY = "https://raw.githubusercontent.com/Byorl/Anime-Expedition/main/"
+local REPOSITORY = "https://jexvral.xyz/game/ap/"
 local traceback = debug and debug.traceback or function(message) return tostring(message) end
 
 local function fetch(path, cacheBuster)
