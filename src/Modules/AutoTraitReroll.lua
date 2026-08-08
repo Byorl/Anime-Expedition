@@ -113,7 +113,7 @@ return function(Import)
 		state.Generation = state.Generation + 1
 		local generation = state.Generation
 		state.Alive = true
-		task.spawn(function()
+		local worker = task.spawn(function()
 			while state.Alive and state.Generation == generation and ctx.Runtime.Alive do
 				if state.Enabled then
 					local ok, err = xpcall(function() self:_RerollOnce(ctx, state, generation) end, Util.Traceback)
@@ -123,6 +123,7 @@ return function(Import)
 				end
 			end
 		end)
+		if worker then ctx:RegisterCleanup(worker) end
 		ctx:RegisterCleanup(function()
 			state.Alive = false
 			state.Generation = state.Generation + 1

@@ -125,7 +125,7 @@ return function(Import)
 		if not candidate then return end
 		state.CodeBusy = true
 		local generation = state.Generation
-		task.spawn(function()
+		local worker = task.spawn(function()
 			local ok, response = ctx.Game:Request("CLAIM_CODE", 5, candidate)
 			if not state.Alive or state.Generation ~= generation then return end
 			local status, detail
@@ -142,6 +142,7 @@ return function(Import)
 			if not writeOk then self:_Report(ctx, state, "codes cache", writeError) end
 			state.CodeBusy = false
 		end)
+		if worker then ctx:RegisterCleanup(worker) end
 	end
 
 	function AutoClaim:_Scan(ctx, state)
@@ -301,13 +302,14 @@ return function(Import)
 		ctx:RegisterCleanup(function()
 			if state.Generation == generation then state.Alive = false end
 		end)
-		task.spawn(function()
+		local worker = task.spawn(function()
 			while state.Alive and state.Generation == generation and ctx.Runtime.Alive do
 				local ok, err = xpcall(function() self:_Scan(ctx, state) end, Util.Traceback)
 				if not ok then self:_Report(ctx, state, "scheduler", err) end
 				task.wait(TICK_INTERVAL)
 			end
 		end)
+		if worker then ctx:RegisterCleanup(worker) end
 	end
 
 	return {

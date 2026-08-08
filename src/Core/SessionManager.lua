@@ -92,7 +92,7 @@ end
 		local function reconnect()
 			if retrying or not self.ReconnectEnabled or not self.Runtime.Alive then return end
 			retrying = true
-			task.spawn(function()
+			local worker = task.spawn(function()
 				local delaySeconds = 1
 				for _ = 1, 5 do
 					if not self.ReconnectEnabled or not self.Runtime.Alive then break end
@@ -105,6 +105,7 @@ end
 				end
 				retrying = false
 			end)
+			if worker then self.ReconnectJanitor:Add(worker) end
 		end
 
 		local promptGui = CoreGui:FindFirstChild("RobloxPromptGui")

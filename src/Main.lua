@@ -58,15 +58,24 @@ return function(Import)
 		if self.ShuttingDown then return end
 		self.ShuttingDown = true
 		if self.Registry then self.Registry.OnChanged = nil end
+		self.Alive = false
+		if reason == "manual unload" and self.Config and self.Config.Account then
+			-- queue_on_teleport cannot be revoked by most executors. Its queued
+			-- payload reads this preference, so persisting false prevents a manual
+			-- unload from resurrecting itself on the next teleport.
+			self.Config.Account.Session.AutoExecute = false
+			self.Config.AccountDirty = true
+			local accountOk, accountError = self.Config:SaveAccount(true)
+			if not accountOk then Util.Warn("disable auto execute failed: " .. tostring(accountError)) end
+		end
+		if self.Modules then self.Modules:DestroyAll() end
+		if self.Session then self.Session:Destroy() end
+		if self.UIManager then self.UIManager:Destroy() end
 		if self.Config then
 			local flushOk, flushError = self.Config:Flush(true)
 			if not flushOk then Util.Warn("final config flush failed: " .. tostring(flushError)) end
+			self.Config:Destroy()
 		end
-		self.Alive = false
-		if self.UIManager then self.UIManager:Destroy() end
-		if self.Modules then self.Modules:DestroyAll() end
-		if self.Session then self.Session:Destroy() end
-		if self.Config then self.Config:Destroy() end
 		self.Janitor:Cleanup()
 		if self.Window and not windowAlreadyUnloaded then
 			-- The inspected MacLib release leaves its global window key listener alive.

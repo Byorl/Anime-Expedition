@@ -34,6 +34,9 @@ return function(Import)
 					Util.SafeCall("cleanup method", method, item)
 				elseif type(method) == "string" and type(item[method]) == "function" then
 					Util.SafeCall("cleanup " .. method, item[method], item)
+				elseif typeof(item) == "thread" and type(task.cancel) == "function" then
+					local statusOk, status = pcall(coroutine.status, item)
+					if not statusOk or status ~= "dead" then Util.SafeCall("cancel task", task.cancel, item) end
 				elseif typeof(item) == "RBXScriptConnection" then
 					Util.SafeCall("disconnect", item.Disconnect, item)
 				elseif typeof(item) == "Instance" then

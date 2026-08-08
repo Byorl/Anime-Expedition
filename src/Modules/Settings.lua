@@ -1,7 +1,7 @@
 return function()
 	return {
 		Name = "Settings",
-		Version = 3,
+		Version = 4,
 		Priority = 20,
 		Dependencies = {},
 
@@ -141,6 +141,15 @@ return function()
 			})
 
 			right:Header({Text = "Appearance"})
+			right:Button({
+				Name = "Unload",
+				Callback = function()
+					if not isActive() or ctx.Runtime.ShuttingDown then return end
+					-- Return from MacLib's click callback before destroying the control
+					-- tree that dispatched it.
+					task.defer(function() ctx.Runtime:Shutdown("manual unload") end)
+				end,
+			})
 			local keyName = tostring(ctx.Config.Account.UI.ToggleKey or "RightShift")
 			local defaultKey = Enum.KeyCode[keyName] or Enum.KeyCode.RightShift
 			right:Keybind({

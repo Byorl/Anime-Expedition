@@ -40,6 +40,7 @@ return function(Import)
 		self.ConfigDirty = false
 		self.AccountDirty = false
 		self.Alive = true
+		self.DelayedTasks = {}
 		return self
 	end
 
@@ -353,12 +354,15 @@ return function(Import)
 		if not self.Account.AutoSave or not self.Alive then return end
 		self.SaveNonce = self.SaveNonce + 1
 		local nonce = self.SaveNonce
-		task.delay(0.35, function()
+		local delayed
+		delayed = task.delay(0.35, function()
+			if delayed then self.DelayedTasks[delayed] = nil end
 			if self.Alive and self.Account.AutoSave and nonce == self.SaveNonce then
 				local ok, err = self:Flush(true)
 				if not ok then Util.Warn("auto-save flush failed: " .. tostring(err)) end
 			end
 		end)
+		if delayed then self.DelayedTasks[delayed] = true end
 	end
 
 	function ConfigManager:ScheduleAccountSave()
@@ -366,12 +370,15 @@ return function(Import)
 		if not self.Account.AutoSave or not self.Alive then return end
 		self.SaveNonce = self.SaveNonce + 1
 		local nonce = self.SaveNonce
-		task.delay(0.35, function()
+		local delayed
+		delayed = task.delay(0.35, function()
+			if delayed then self.DelayedTasks[delayed] = nil end
 			if self.Alive and self.Account.AutoSave and nonce == self.SaveNonce then
 				local ok, err = self:Flush(true)
 				if not ok then Util.Warn("account auto-save flush failed: " .. tostring(err)) end
 			end
 		end)
+		if delayed then self.DelayedTasks[delayed] = true end
 	end
 
 	function ConfigManager:Flush(respectAutoSave)
@@ -403,6 +410,10 @@ return function(Import)
 		local ok, err = self:Flush(true)
 		self.Alive = false
 		self.SaveNonce = self.SaveNonce + 1
+		if type(task.cancel) == "function" then
+			for delayed in pairs(self.DelayedTasks) do pcall(task.cancel, delayed) end
+		end
+		table.clear(self.DelayedTasks)
 		return ok, err
 	end
 
