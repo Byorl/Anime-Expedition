@@ -89,6 +89,34 @@ return function(Import)
 		return longestPath(paths)
 	end
 
+	local function routeReferencePositions()
+		local positions = {}
+		for _, enemy in ipairs(CollectionService:GetTagged("Enemy")) do
+			if #positions >= 12 then
+				break
+			end
+			local ok, position = pcall(function()
+				if enemy:IsA("BasePart") then
+					return enemy.Position
+				end
+				if enemy:IsA("Model") then
+					return enemy:GetPivot().Position
+				end
+			end)
+			if ok and typeof(position) == "Vector3" then
+				table.insert(positions, position)
+			end
+		end
+		if #positions == 0 then
+			local character = Players.LocalPlayer and Players.LocalPlayer.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if root then
+				table.insert(positions, root.Position)
+			end
+		end
+		return positions
+	end
+
 	local function groundCFrame(slot, candidate)
 		local map = Workspace:FindFirstChild("Map")
 		if not map then
@@ -330,7 +358,7 @@ return function(Import)
 		local playerState, playerSource = ctx.Game:GamePlayerData()
 		local mapState = ctx.Game:StateDeep("MapState", 5)
 		local enemies = ctx.Game:StateDeep("GameEnemies", 4) or {}
-		local paths = Planner.ActivePaths(mapState, enemies)
+		local paths = Planner.ActivePaths(mapState, enemies, routeReferencePositions())
 		local path = paths[1]
 		local mapStateHasPaths = type(mapState) == "table"
 			and (next(type(mapState.Paths) == "table" and mapState.Paths or {}) ~= nil
@@ -685,7 +713,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 7,
+		Version = 8,
 		Priority = 9,
 		Dependencies = {},
 

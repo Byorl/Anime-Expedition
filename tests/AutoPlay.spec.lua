@@ -138,6 +138,19 @@ local actTwoPath = { Vector3.new(2000, 0, 0), Vector3.new(2000, 0, 100) }
 local actThreePath = { Vector3.new(3000, 0, 0), Vector3.new(3000, 0, 100) }
 local multiActMap = { Paths = { [1] = actOnePath, [2] = actTwoPath, [3] = actThreePath } }
 assert(#Planner.ActivePaths(multiActMap, {}) == 0, "multi-act maps guessed a route before enemies spawned")
+local playerSelectedPaths = Planner.ActivePaths(multiActMap, {}, { Vector3.new(2990, 0, 50) })
+assert(
+	#playerSelectedPaths == 1 and playerSelectedPaths[1] == actThreePath,
+	"player proximity did not immediately identify Act 3"
+)
+local enemySelectedPaths = Planner.ActivePaths(multiActMap, {}, {
+	Vector3.new(2010, 0, 20),
+	Vector3.new(1995, 0, 70),
+})
+assert(
+	#enemySelectedPaths == 1 and enemySelectedPaths[1] == actTwoPath,
+	"rendered enemy positions did not identify their active route"
+)
 local activeActPaths = Planner.ActivePaths(multiActMap, {
 	enemy = { Data = { PathIndex = 3 }, WaypointIndex = 2 },
 })

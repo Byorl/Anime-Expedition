@@ -295,10 +295,12 @@ return function()
 		if direct ~= nil and type(direct) ~= "table" then
 			return direct
 		end
-		for _, key in ipairs({ "Data", "State", "EnemyData", "ReplicaData" }) do
-			local found = nestedPathIndex(value[key], depth - 1, seen)
-			if found ~= nil then
-				return found
+		for _, child in pairs(value) do
+			if type(child) == "table" then
+				local found = nestedPathIndex(child, depth - 1, seen)
+				if found ~= nil then
+					return found
+				end
 			end
 		end
 		return nil
@@ -317,7 +319,31 @@ return function()
 		return numeric and tostring(math.abs(numeric)) or stripped, reverse or (numeric and numeric < 0) or false
 	end
 
-	function Planner.ActivePaths(mapState, enemies)
+	local function pointSegmentDistance(point, first, second)
+		local origin = Vector3.new(first.X, 0, first.Z)
+		local direction = Vector3.new(second.X - first.X, 0, second.Z - first.Z)
+		local target = Vector3.new(point.X, 0, point.Z)
+		local lengthSquared = direction:Dot(direction)
+		if lengthSquared <= 0 then
+			return (target - origin).Magnitude
+		end
+		local alpha = math.clamp((target - origin):Dot(direction) / lengthSquared, 0, 1)
+		return (target - (origin + direction * alpha)).Magnitude
+	end
+
+	local function pathReferenceDistance(path, references)
+		local total = 0
+		for _, reference in ipairs(references) do
+			local nearest = math.huge
+			for index = 2, #path do
+				nearest = math.min(nearest, pointSegmentDistance(reference, path[index - 1], path[index]))
+			end
+			total = total + nearest
+		end
+		return total / math.max(1, #references)
+	end
+
+	function Planner.ActivePaths(mapState, enemies, referencePositions)
 		local output = {}
 		local requested = {}
 		local hasReference = false
@@ -347,7 +373,25 @@ return function()
 		collect(type(mapState) == "table" and mapState.Paths or nil, false)
 		collect(type(mapState) == "table" and mapState.ReversePaths or nil, true)
 		if not hasReference and #candidates > 1 then
-			return output
+			local references = {}
+			for _, position in ipairs(type(referencePositions) == "table" and referencePositions or {}) do
+				if typeof(position) == "Vector3" then
+					table.insert(references, position)
+				end
+			end
+			if #references == 0 then
+				return output
+			end
+			for _, candidate in ipairs(candidates) do
+				candidate.Distance = pathReferenceDistance(candidate.Path, references)
+			end
+			table.sort(candidates, function(a, b)
+				if a.Distance ~= b.Distance then
+					return a.Distance < b.Distance
+				end
+				return pathLength(a.Path) > pathLength(b.Path)
+			end)
+			return { candidates[1].Path }
 		end
 		for _, candidate in ipairs(candidates) do
 			if not hasReference or requested[candidate.Token] then
@@ -360,8 +404,8 @@ return function()
 		return output
 	end
 
-	function Planner.SelectPath(mapState, enemies)
-		local paths = Planner.ActivePaths(mapState, enemies)
+	function Planner.SelectPath(mapState, enemies, referencePositions)
+		local paths = Planner.ActivePaths(mapState, enemies, referencePositions)
 		local selected = paths[1]
 		return selected, selected and pathLength(selected) or 0
 	end
