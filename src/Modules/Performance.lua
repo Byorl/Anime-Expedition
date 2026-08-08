@@ -13,8 +13,6 @@ return function(Import)
 
 	local function destroyEnemy(instance)
 		if typeof(instance) ~= "Instance" or not instance.Parent then return end
-		-- The extracted EnemyUtils tags the visual model itself. Destroying that
-		-- client replica leaves server enemy state and targeting data untouched.
 		pcall(function() instance:Destroy() end)
 	end
 

@@ -66,8 +66,6 @@ return function(Import)
 				end
 				return
 			end
-			-- One render-step writer and a damped, capped delta prevent MacLib's
-			-- slider geometry from fighting a window scale change while dragging.
 			local alpha = 1 - math.exp(-math.min(deltaTime, 0.05) * 18)
 			local step = math.clamp(difference * alpha, -0.018, 0.018)
 			self.CurrentScale = self.CurrentScale + step

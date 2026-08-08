@@ -145,8 +145,6 @@ return function()
 				Name = "Unload",
 				Callback = function()
 					if not isActive() or ctx.Runtime.ShuttingDown then return end
-					-- Return from MacLib's click callback before destroying the control
-					-- tree that dispatched it.
 					task.defer(function() ctx.Runtime:Shutdown("manual unload") end)
 				end,
 			})

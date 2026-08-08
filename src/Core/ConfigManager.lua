@@ -116,9 +116,6 @@ return function(Import)
 
 	function ConfigManager:_MigrateAccount(account)
 		account = mergeDefaults(type(account) == "table" and account or {}, self:_DefaultAccount())
-		-- Schema 2 stored appearance values inside global configs. Schema 3 keeps
-		-- account/device UI preferences separate so a desktop profile stays usable
-		-- on a phone and vice versa.
 		account.Schema = ACCOUNT_SCHEMA
 		account.UserId = self.Player.UserId
 		account.UserName = self.Player.Name
@@ -136,7 +133,6 @@ return function(Import)
 		if tonumber(data.Schema) == 2 and type(data.Values) == "table" then
 			local modules = {}
 			for flag, value in pairs(data.Values) do
-				-- UI appearance moved to per-account storage in schema 3.
 				if flag ~= "settings.ui_scale" and flag ~= "settings.ui_keybind" then
 					local owner = ownerFromFlag(flag)
 					modules[owner] = modules[owner] or {Version = 1, Values = {}}

@@ -25,7 +25,6 @@ return function()
 	local function questIsClaimable(questData, category, quest, entry, questInformation)
 		if not isTable(entry) or entry.Completed ~= true or entry.Claimed == true then return false end
 		local info = questInfoFor(questInformation, category, quest)
-		-- When a live catalog is available, an unknown quest is not safe to submit.
 		if isTable(questInformation) and isTable(questInformation.Quests) and not isTable(info) then return false end
 		if not isTable(info) then return true end
 		if info.ClaimAllowed == false then return false end
@@ -56,8 +55,6 @@ return function()
 						table.insert(claims, {Category = category, Quest = quest})
 					end
 				end
-				-- Category claims are a separate reward type. A completed category without
-				-- configured rewards produces the game's "doesn't have rewards" warning.
 				if achievements == true and categoryData.Completed == true and categoryData.Claimed ~= true
 					and categoryHasRewards(questInformation, category) then
 					table.insert(categoryClaims, category)
@@ -86,7 +83,6 @@ return function()
 		local calendars = isTable(playerData) and playerData.CalendarData or nil
 		for calendar, calendarData in pairs(isTable(calendars) and calendars or {}) do
 			for day, claimed in pairs(isTable(calendarData) and isTable(calendarData.Rewards) and calendarData.Rewards or {}) do
-				-- The extracted calendar processor uses false for unlocked/unclaimed and nil for locked.
 				if claimed == false then table.insert(claims, {Calendar = calendar, Day = tonumber(day) or day}) end
 			end
 		end

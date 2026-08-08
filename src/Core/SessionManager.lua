@@ -45,8 +45,6 @@ return function(Import)
 			return false
 		end
 
-		-- The queued code reads only the per-account state from disk. The executable
-		-- itself is always fetched fresh from GitHub after teleporting.
 		local payload = string.format([[
 task.wait(1)
 local env = (getgenv and getgenv()) or _G

@@ -60,9 +60,6 @@ return function(Import)
 		if self.Registry then self.Registry.OnChanged = nil end
 		self.Alive = false
 		if reason == "manual unload" and self.Config and self.Config.Account then
-			-- queue_on_teleport cannot be revoked by most executors. Its queued
-			-- payload reads this preference, so persisting false prevents a manual
-			-- unload from resurrecting itself on the next teleport.
 			self.Config.Account.Session.AutoExecute = false
 			self.Config.AccountDirty = true
 			local accountOk, accountError = self.Config:SaveAccount(true)
@@ -78,8 +75,6 @@ return function(Import)
 		end
 		self.Janitor:Cleanup()
 		if self.Window and not windowAlreadyUnloaded then
-			-- The inspected MacLib release leaves its global window key listener alive.
-			-- Making it Unknown prevents an old generation from reacting after re-execution.
 			Util.SafeCall("disable old UI keybind", self.Window.SetKeybind, self.Window, Enum.KeyCode.Unknown)
 			Util.SafeCall("unload old window", self.Window.Unload, self.Window)
 		end
@@ -137,8 +132,6 @@ return function(Import)
 	local ResponsiveUI = UIManager.new(Window, Config.Account)
 	Runtime.UIManager = ResponsiveUI
 
-	-- These use MacLib's own global-settings menu. Privacy is expressed as a
-	-- positive "hide" toggle so its safe/default state is visually on.
 	Window:GlobalSetting({
 		Name = "UI Blur",
 		Default = Config.Account.UI.UIBlur == true,
@@ -203,7 +196,6 @@ return function(Import)
 		error(modulesError)
 	end
 
-	-- Applying through setters restores both the visual control and feature callback.
 	if Config.Account.AutoLoadSelected then
 		local ok, err = Config:Load(Config.Account.SelectedConfig)
 		if not ok then

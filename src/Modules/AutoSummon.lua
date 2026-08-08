@@ -63,9 +63,6 @@ return function(Import)
 		local currency = tostring(info.Currency or "Gem")
 		local price = math.max(0, tonumber(info.Cost) or 0)
 		local beforeCurrency = Catalog.OwnedAmount(playerData, information, currency)
-		-- The game can discount BannerInfo.Cost through a live session boost. A
-		-- positive balance is allowed through to the server so this client does
-		-- not incorrectly block a discounted summon.
 		if price > 0 and beforeCurrency <= 0 then
 			self:_Status(state, string.format("Waiting for %s.", currency))
 			task.wait(1)
@@ -102,10 +99,6 @@ return function(Import)
 					currencyChangedAt = currencyChangedAt or os.clock()
 				end
 				if currencyChangedAt and os.clock() - currencyChangedAt >= 1 then
-					-- Auto-sell can remove a result before UnitData replicates it. The
-					-- currency change still proves the server accepted this one summon.
-					-- A grace period first prevents currency replication winning a race
-					-- against the unit result and hiding its rarity stop condition.
 					self:_Status(state, "Summoned; result was auto-sold or unavailable.")
 					return
 				end

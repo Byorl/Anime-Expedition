@@ -285,7 +285,6 @@ return function(Import)
 				state.InGroup = false
 				if groupId then pcall(function() state.InGroup = ctx.Player:IsInGroup(groupId) end) end
 			end
-			-- Unknown state is not permission to fire. Only an explicit unclaimed flag is safe.
 			if claimed == false and state.InGroup then
 				state.GroupAttempted = true
 				self:_Fire(ctx, state, "group rewards", "GROUP_REWARDS_CLAIM")

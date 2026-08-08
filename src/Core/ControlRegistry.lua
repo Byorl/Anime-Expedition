@@ -131,9 +131,6 @@ return function(Import)
 		local original = settings.Callback
 		local copied = Util.Clone(settings)
 		local resolveValue = copied.ResolveValue
-		-- ResolveValue belongs to the hub's config layer, not MacLib's public API.
-		-- It lets dynamic dropdowns translate a saved stable identity to the
-		-- current display label before MacLib is asked to render the selection.
 		copied.ResolveValue = nil
 		copied.Callback = function(value)
 			if not self:_CanDispatch(owner) then return end
@@ -272,8 +269,6 @@ return function(Import)
 	function ControlRegistry:ApplyAtomic(values)
 		self:BeginApply()
 		local ok, err = self:_ApplyEntries(values)
-		-- MacLib's input/config setters may dispatch on a deferred task. Holding the
-		-- transaction through two scheduler turns prevents a half-loaded autosave.
 		task.wait()
 		task.wait()
 		self:EndApply()

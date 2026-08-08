@@ -1,7 +1,3 @@
--- Public loader for https://github.com/Byorl/Anime-Expedition
--- Modules remain separate on GitHub, but their source is downloaded by a small
--- worker pool before initialization to minimize startup time without creating a
--- burst of unbounded executor HTTP requests.
 
 local REPOSITORY = "https://jexvral.xyz/game/ap/"
 local traceback = debug and debug.traceback or function(message) return tostring(message) end

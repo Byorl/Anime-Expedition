@@ -8,8 +8,6 @@ return function(Import)
 		return string.format("%s failed for '%s': %s", operation, tostring(path), tostring(reason))
 	end
 
-	-- Some executors only permit writefile paths whose final extension is on an
-	-- allowlist. Keep JSON as the final extension for transaction sidecars.
 	local function sidecarPath(path, label)
 		local stem = string.match(path, "^(.*)%.json$")
 		if stem then return stem .. "." .. label .. ".json" end
@@ -97,15 +95,13 @@ return function(Import)
 		return decoded
 	end
 
-	-- Reads the primary file first, then an interrupted verified transaction.
-	-- Backup sidecars from older builds are discarded and never recovered.
 	function FileSystem:ReadJsonDetailed(path)
 		discardBackups(path)
 		local errors = {}
 		local candidates = {
 			path,
 			sidecarPath(path, "tmp"),
-			path .. ".tmp", -- legacy layout used before executor extension filtering
+			path .. ".tmp",
 		}
 		for _, candidate in ipairs(candidates) do
 			local raw, readError = self:Read(candidate)
@@ -131,8 +127,6 @@ return function(Import)
 		return decoded or Util.Clone(fallback)
 	end
 
-	-- Executor filesystems generally do not expose rename/replace. Verify a
-	-- temporary JSON sidecar before replacing and verifying the primary file.
 	function FileSystem:WriteJson(path, value)
 		discardBackups(path)
 		local encodeOk, encoded = pcall(HttpService.JSONEncode, HttpService, value)

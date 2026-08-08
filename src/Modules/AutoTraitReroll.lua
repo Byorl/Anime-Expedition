@@ -77,9 +77,6 @@ return function(Import)
 		local beforeRolls = tonumber(unit.TraitRollAmount) or 0
 		local beforeTrait = currentTrait
 		self:_Status(state, "Rerolling " .. Catalog.UnitName(information, unit) .. "...")
-		-- true confirms replacing any game-filtered trait. The module checks its
-		-- own stop list immediately before every request, so a selected trait is
-		-- never intentionally rolled away.
 		local fired, fireError = ctx.Game:Fire("ROLL_UNIT_TRAIT", state.SelectedUnitId, true)
 		if not fired then self:_Status(state, "Trait reroll failed: " .. tostring(fireError)) task.wait(1) return end
 
