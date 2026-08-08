@@ -13,7 +13,8 @@ return function()
 	end
 
 	local function choose(ctx, state, result, runs)
-		if state.LeaveMatches > 0 and runs >= state.LeaveMatches then
+		local leaveMatches = tonumber(state.LeaveMatches) or 0
+		if leaveMatches > 0 and runs >= leaveMatches then
 			return "Lobby"
 		end
 		if state.LobbyLoss and result.Victory ~= true then
@@ -44,9 +45,10 @@ return function()
 
 	return {
 		Name = "GameEnd",
-		Version = 1,
+		Version = 2,
 		Priority = 8,
 		Dependencies = {},
+		Choose = choose,
 
 		Init = function(self, ctx)
 			local state = {
@@ -62,6 +64,10 @@ return function()
 				ReturnAfter = false,
 				Hours = 1,
 				TimeReturned = false,
+				EndRevision = 0,
+				EndAction = nil,
+				EndAttempts = 0,
+				NextEndActionAt = 0,
 			}
 			local actions = ctx.Tabs.Game:Section({ Side = "Right" })
 			actions:Header({ Text = "Match Actions" })
@@ -151,25 +157,34 @@ return function()
 				end,
 			}, "game.end.hours")
 
-			ctx:RegisterCleanup(ctx.Results:Subscribe("GameEnd", function(result, runs)
-				local action = choose(ctx, state, result, runs)
-				if not action then
-					return
-				end
-				local worker = task.delay(1, function()
-					if not state.Alive or not ctx.Runtime.Alive then
-						return
-					end
-					local ok, err = ctx.Game:GameAction(action)
-					if not ok then
-						ctx.Runtime:Notify("End of Match", tostring(action) .. " failed: " .. tostring(err))
-					end
-				end)
-				ctx:RegisterCleanup(worker)
-			end))
 			local timer = task.spawn(function()
 				while state.Alive and ctx.Runtime.Alive do
-					local gameState = ctx.Game:State("GameState")
+					local result, runs, revision, resultReady = ctx.Results:Snapshot()
+					local action = resultReady and choose(ctx, state, result, runs) or nil
+					if not action then
+						state.EndRevision = revision or 0
+						state.EndAction = nil
+						state.EndAttempts = 0
+					elseif state.EndRevision ~= revision or state.EndAction ~= action then
+						state.EndRevision = revision
+						state.EndAction = action
+						state.EndAttempts = 0
+						state.NextEndActionAt = os.clock()
+					end
+					if action and os.clock() >= state.NextEndActionAt then
+						state.EndAttempts = state.EndAttempts + 1
+						local ok, err = ctx.Game:GameAction(action)
+						state.NextEndActionAt = os.clock() + (state.EndAttempts < 8 and 0.85 or 4)
+						if not ok then
+							ctx.Runtime:Notify("End of Match", tostring(action) .. " failed: " .. tostring(err))
+						elseif state.EndAttempts == 8 then
+							ctx.Runtime:Notify(
+								"End of Match",
+								tostring(action) .. " was sent repeatedly; waiting for the game to accept it."
+							)
+						end
+					end
+					local gameState = ctx.Game:GameData()
 					local inGame = type(gameState) == "table" and type(gameState.Parameters) == "table"
 					if not inGame then
 						state.LeftAtWave = false

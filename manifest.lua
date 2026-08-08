@@ -1,5 +1,5 @@
 return {
-	Version = "1.9.6",
+	Version = "1.9.7",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",

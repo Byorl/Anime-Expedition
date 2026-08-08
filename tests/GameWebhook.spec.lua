@@ -49,16 +49,15 @@ local function Import(name)
 	return cache[name]
 end
 
-local resultCallback
-local disconnected = false
+local nodeCallbacks = {}
+local disconnects = 0
 local ResultsHub = Import("ResultsHub")
 local hub = ResultsHub.new({
 	Connect = function(_, name, callback)
-		assert(name == "SET_END_PARAMETERS", "results hub used the wrong event")
-		resultCallback = callback
+		nodeCallbacks[name] = callback
 		return {
 			Disconnect = function()
-				disconnected = true
+				disconnects = disconnects + 1
 			end,
 		}
 	end,
@@ -67,13 +66,20 @@ local receivedRuns
 local unsubscribe = hub:Subscribe("test", function(_, runs)
 	receivedRuns = runs
 end)
-resultCallback({ Victory = true })
+nodeCallbacks.SET_END_PARAMETERS({ Victory = true })
 assert(receivedRuns == 1 and hub.Runs == 1, "results hub did not count or dispatch the match")
+local current, runs, revision, visible = hub:Snapshot()
+assert(current.Victory == true and runs == 1 and revision == 1 and not visible, "result snapshot is incorrect")
+nodeCallbacks.SHOW_END_SCREEN()
+current, runs, revision, visible = hub:Snapshot()
+assert(current.Victory == true and visible, "visible result screen was not tracked")
 unsubscribe()
-resultCallback({ Victory = true })
+nodeCallbacks.SET_END_PARAMETERS({ Victory = true })
 assert(receivedRuns == 1 and hub.Runs == 2, "results hub unsubscribe failed")
+nodeCallbacks.HIDE_END_SCREEN()
+assert(hub:Snapshot() == nil, "hidden result screen was not cleared")
 hub:Destroy()
-assert(disconnected == true, "results hub did not disconnect")
+assert(disconnects == 3, "results hub did not disconnect every result event")
 
 local information = {
 	OrderedRarities = { "Rare", "Epic", "Legendary", "Mythic", "Exclusive", "Secret" },
@@ -227,6 +233,18 @@ for _, name in ipairs({ "GameMatch", "GameEnd", "Webhook" }) do
 	local ok, err = pcall(module.Init, module, context)
 	assert(ok, name .. " failed to initialize: " .. tostring(err))
 end
+local GameEnd = Import("GameEnd")
+assert(GameEnd.Choose(context, { AutoReplay = true }, result, 1) == "Restart", "Auto Replay action is wrong")
+assert(GameEnd.Choose(context, { AutoLeave = true }, result, 1) == "Lobby", "Auto Leave action is wrong")
+assert(GameEnd.Choose(context, { AutoNext = true }, result, 1) == "Next", "Auto Next action is wrong")
+assert(
+	GameEnd.Choose(context, { Smart = true }, { Victory = false, RestartDisabled = false }, 1) == "Restart",
+	"smart end action did not fall back to replay"
+)
+assert(
+	GameEnd.Choose(context, { Smart = true }, { Victory = false, RestartDisabled = true }, 1) == "Lobby",
+	"smart end action did not fall back to leave"
+)
 assert(
 	controls["game.match.start_delay"].Settings.Minimum == 0
 		and controls["game.match.start_delay"].Settings.Maximum == 10,
@@ -243,5 +261,12 @@ assert(
 	"webhook drop selection is not searchable multi-select"
 )
 assert(controls["webhook.equipment_rarity"].Settings.Search == true, "webhook rarity selection is not searchable")
+
+local gameEndSource = fs.read("src/Modules/GameEnd.lua", "bin")
+assert(string.find(gameEndSource, "ctx.Results:Snapshot()", 1, true), "end actions do not poll the live result screen")
+assert(
+	string.find(gameEndSource, "state.EndAttempts = state.EndAttempts + 1", 1, true),
+	"end actions are not retried until accepted"
+)
 
 print("Game and webhook tests passed")
