@@ -131,7 +131,7 @@ return function(Import)
 					state.Delay = value
 				end,
 			}, "join.raid.delay")
-			ctx:RegisterCleanup(ctx.Join:Register("Raid", 200, function()
+			ctx:RegisterCleanup(ctx.Join:Register("Raid", 500, function()
 				if not state.Enabled or not state.Map or not state.Act or not state.Difficulty then
 					return nil
 				end

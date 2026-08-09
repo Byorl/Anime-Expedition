@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.18.0", "interface release version is wrong")
+assert(Build.Version == "1.19.0", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/0ae3ef7a81a8c71b95147212efa1103673b273ce/src/maclib.lua",
@@ -10,7 +10,11 @@ local mainSource = fs.read("src/Main.lua", "bin")
 local joinPosition = assert(string.find(mainSource, "Join = TabGroup:Tab", 1, true), "Join tab is missing")
 local autoPlayPosition = assert(string.find(mainSource, "AutoPlay = TabGroup:Tab", 1, true), "Auto Play tab is missing")
 local gamePosition = assert(string.find(mainSource, "Game = TabGroup:Tab", 1, true), "Game tab is missing")
+local miscPosition = assert(string.find(mainSource, "Misc = TabGroup:Tab", 1, true), "Misc tab is missing")
+local priorityPosition = assert(string.find(mainSource, "Priority = TabGroup:Tab", 1, true), "Priority tab is missing")
+local settingsPosition = assert(string.find(mainSource, "Settings = TabGroup:Tab", 1, true), "Settings tab is missing")
 assert(joinPosition < autoPlayPosition and autoPlayPosition < gamePosition, "Auto Play is not between Join and Game")
+assert(miscPosition < priorityPosition and priorityPosition < settingsPosition, "Priority is not between Misc and Settings")
 for _, name in ipairs({ "MiscClaims", "MiscUnits", "MiscPerformance" }) do
 	assert(string.find(mainSource, "Tabs." .. name, 1, true), "missing subtab " .. name)
 end

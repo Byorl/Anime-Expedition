@@ -26,6 +26,7 @@ return function(Import)
 	local AutoSummonModule = Import("AutoSummon")
 	local PerformanceModule = Import("Performance")
 	local AutoTraitRerollModule = Import("AutoTraitReroll")
+	local JoinPriorityModule = Import("JoinPriority")
 	local SettingsModule = Import("Settings")
 
 	local Players = game:GetService("Players")
@@ -209,6 +210,7 @@ return function(Import)
 		Game = TabGroup:Tab({ Name = "Game", Image = "rbxassetid://10734950309" }),
 		Webhook = TabGroup:Tab({ Name = "Webhook", Image = "rbxassetid://10734950020" }),
 		Misc = TabGroup:Tab({ Name = "Misc", Image = "rbxassetid://10734950309" }),
+		Priority = TabGroup:Tab({ Name = "Priority", Image = "rbxassetid://10734950020" }),
 		Settings = TabGroup:Tab({ Name = "Settings", Image = "rbxassetid://10734950020" }),
 	}
 
@@ -261,6 +263,7 @@ return function(Import)
 	Modules:Register(AutoSummonModule)
 	Modules:Register(PerformanceModule)
 	Modules:Register(AutoTraitRerollModule)
+	Modules:Register(JoinPriorityModule)
 	Modules:Register(SettingsModule)
 
 	local modulesOk, modulesError = Modules:LoadAll()

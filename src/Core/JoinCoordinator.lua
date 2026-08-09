@@ -23,9 +23,34 @@ return function(Import)
 			LastError = nil,
 			LastErrorAt = 0,
 			LastStatus = nil,
+			PriorityEnabled = false,
+			Priorities = {},
 		}, JoinCoordinator)
 		self.Worker = task.spawn(function() self:_Run() end)
 		return self
+	end
+
+	function JoinCoordinator:SetPriorityEnabled(enabled)
+		self.PriorityEnabled = enabled == true
+		self.PendingKey = nil
+	end
+
+	function JoinCoordinator:SetPriority(name, priority)
+		if type(name) ~= "string" or name == "" then return false end
+		self.Priorities[name] = math.clamp(math.floor((tonumber(priority) or 1) + 0.5), 1, 6)
+		self.PendingKey = nil
+		return true
+	end
+
+	function JoinCoordinator:Modes()
+		local modes = {}
+		for name in pairs(self.Providers) do table.insert(modes, name) end
+		table.sort(modes, function(a, b)
+			local left = self.Providers[a] and self.Providers[a].Priority or 0
+			local right = self.Providers[b] and self.Providers[b].Priority or 0
+			return left == right and a < b or left > right
+		end)
+		return modes
 	end
 
 	function JoinCoordinator:Register(name, priority, provider)
@@ -59,12 +84,16 @@ return function(Import)
 			if not ok then self:_NotifyError(provider.Name .. " catalog failed: " .. tostring(candidate))
 			elseif type(candidate) == "table" and type(candidate.Queue) == "table" then
 				candidate.Provider = provider.Name
-				candidate.Priority = tonumber(candidate.Priority) or provider.Priority
+				candidate.FallbackPriority = tonumber(candidate.Priority) or provider.Priority
+				candidate.Priority = self.PriorityEnabled
+					and (tonumber(self.Priorities[provider.Name]) or 1)
+					or candidate.FallbackPriority
 				table.insert(candidates, candidate)
 			end
 		end
 		table.sort(candidates, function(a, b)
 			if a.Priority ~= b.Priority then return a.Priority > b.Priority end
+			if a.FallbackPriority ~= b.FallbackPriority then return a.FallbackPriority > b.FallbackPriority end
 			return a.Provider < b.Provider
 		end)
 		return candidates[1]

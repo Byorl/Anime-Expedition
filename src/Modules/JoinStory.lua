@@ -137,7 +137,7 @@ return function(Import)
 				end,
 			}, "join.story.delay")
 
-			ctx:RegisterCleanup(ctx.Join:Register("Story", 100, function()
+			ctx:RegisterCleanup(ctx.Join:Register("Story", 600, function()
 				if not state.Enabled or not state.Map or not state.Stage or not state.Difficulty then
 					return nil
 				end

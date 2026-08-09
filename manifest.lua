@@ -1,5 +1,5 @@
 return {
-	Version = "1.18.0",
+	Version = "1.19.0",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -34,6 +34,7 @@ return {
 		AutoSummon = "src/Modules/AutoSummon.lua",
 		Performance = "src/Modules/Performance.lua",
 		AutoTraitReroll = "src/Modules/AutoTraitReroll.lua",
+		JoinPriority = "src/Modules/JoinPriority.lua",
 		Settings = "src/Modules/Settings.lua",
 		Main = "src/Main.lua",
 	},

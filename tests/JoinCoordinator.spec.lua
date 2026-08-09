@@ -44,4 +44,21 @@ end
 assert(run(false) == 1, "lobby candidate never reached the join adapter")
 assert(run(true) == 0, "join adapter ran while an active game was present")
 
+local available = true
+local rankingRuntime = {Alive = false, Notify = function() end}
+local ranking = Coordinator.new(rankingRuntime, {})
+ranking:Register("Story", 600, function()
+	return {Queue = {Gamemode = "Story"}}
+end)
+ranking:Register("Challenge", 400, function()
+	return available and {Queue = {Gamemode = "Challenge"}} or nil
+end)
+assert(ranking:_Candidate().Provider == "Story", "fallback order did not prefer Story")
+ranking:SetPriority("Story", 1)
+ranking:SetPriority("Challenge", 6)
+ranking:SetPriorityEnabled(true)
+assert(ranking:_Candidate().Provider == "Challenge", "custom priority did not prefer Challenge")
+available = false
+assert(ranking:_Candidate().Provider == "Story", "unavailable high-priority mode blocked a fallback candidate")
+
 print("Join coordinator tests passed")
