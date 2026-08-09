@@ -67,9 +67,9 @@ local context = {
 	Runtime = {Alive = false, Notify = function() end},
 	Game = {
 		Information = function() return information end,
-		State = function(_, name) if name == "QuestData" then return questData elseif name == "BannerData" then return bannerData elseif name == "ChallengeData" then return {} end end,
+		State = function(_, name) if name == "QuestData" then return {BountyBoard = {Quests = {}}} elseif name == "BannerData" then return bannerData elseif name == "ChallengeData" then return {} end end,
 		GameData = function() return nil end,
-		PlayerData = function() return {ItemData = {Gold = 10000, Gem = 10000}} end,
+		PlayerData = function() return {ItemData = {Gold = 10000, Gem = 10000}, QuestData = questData} end,
 		IsInGame = function() return false end,
 		IsMatchEnded = function() return false end,
 	},
@@ -80,6 +80,8 @@ local context = {
 local module = Import("Bounty")
 local ok, state = pcall(module.Init, module, context)
 assert(ok, "Bounty failed to initialize: " .. tostring(state))
+assert(#state.Entries == 1 and state.Entries[1].Key == "WaveBounty", "Bounty did not prefer populated player quest data")
+assert(string.find(state.BoardLabel.Value, "1 bounty(s)", 1, true), "Bounty board did not render populated player quest data")
 for _, flag in ipairs({"bounty.keep_rarities", "bounty.keep_types", "bounty.avoid_types", "bounty.banners"}) do
 	assert(controls[flag].Settings.Search == true and controls[flag].Settings.Multi == true, flag .. " is not a searchable multi-select")
 end

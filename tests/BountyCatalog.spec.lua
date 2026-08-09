@@ -79,6 +79,11 @@ local questData = {BountyBoard = {
 local entries = Catalog.Entries(information, questData)
 assert(#entries == 3 and entries[1].Key == "BountyA", "board order was not preserved")
 assert(entries[1].Objectives[1].Completed == true or entries[1].Objectives[2].Completed == true, "objective progress was not read")
+local resolved = Catalog.ResolveQuestData(
+	{BountyBoard = {ClaimedAmount = 0, QuestOrder = {}, Quests = {}}},
+	{Data = {QuestData = questData}}
+)
+assert(resolved == questData, "populated player replica quest data was not preferred over an empty state")
 
 local rarities, types = Catalog.Options(entries)
 assert(rarities[1] == "Mythic", "bounty rarities are not ordered rarest first")

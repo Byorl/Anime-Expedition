@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.25.1", "interface release version is wrong")
+assert(Build.Version == "1.25.2", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/f056b47ad3c18bed1d6cc18ecb85f5df64065c78/src/maclib.lua",

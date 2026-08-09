@@ -50,6 +50,42 @@ return function(Import)
 		return output
 	end
 
+	local function questDataCandidate(source)
+		if type(source) ~= "table" then return nil end
+		if type(source.BountyBoard) == "table" then return source end
+		if type(source.QuestData) == "table" and type(source.QuestData.BountyBoard) == "table" then return source.QuestData end
+		if type(source.Data) == "table" then
+			if type(source.Data.BountyBoard) == "table" then return source.Data end
+			if type(source.Data.QuestData) == "table" and type(source.Data.QuestData.BountyBoard) == "table" then
+				return source.Data.QuestData
+			end
+		end
+		return nil
+	end
+
+	local function questDataScore(source)
+		local candidate = questDataCandidate(source)
+		if not candidate then return nil, -1 end
+		local category = candidate.BountyBoard
+		local score = 1
+		for _ in pairs(type(category.Quests) == "table" and category.Quests or {}) do score = score + 100 end
+		for _ in ipairs(type(category.QuestOrder) == "table" and category.QuestOrder or {}) do score = score + 10 end
+		if category.ClaimedAmount ~= nil then score = score + 1 end
+		return candidate, score
+	end
+
+	function BountyCatalog.ResolveQuestData(...)
+		local best, bestScore = nil, -1
+		for index = 1, select("#", ...) do
+			local candidate, score = questDataScore(select(index, ...))
+			if candidate and score > bestScore then
+				best = candidate
+				bestScore = score
+			end
+		end
+		return best
+	end
+
 	local function conditionValues(objective)
 		local output = {}
 		for _, condition in pairs(type(objective) == "table" and type(objective.Conditions) == "table" and objective.Conditions or {}) do
@@ -124,7 +160,12 @@ return function(Import)
 	end
 
 	function BountyCatalog.Category(questData)
-		return type(questData) == "table" and type(questData.BountyBoard) == "table" and questData.BountyBoard or {}
+		local resolved = BountyCatalog.ResolveQuestData(questData)
+		return resolved and resolved.BountyBoard or {}
+	end
+
+	function BountyCatalog.HasCategory(questData)
+		return BountyCatalog.ResolveQuestData(questData) ~= nil
 	end
 
 	function BountyCatalog.Definitions(information)
@@ -369,6 +410,7 @@ return function(Import)
 	end
 
 	function BountyCatalog.BoardText(information, questData, gameData)
+		local hasCategory = BountyCatalog.HasCategory(questData)
 		local category = BountyCatalog.Category(questData)
 		local entries = BountyCatalog.Entries(information, questData)
 		local queue = BountyCatalog.CurrentQueue(gameData)
@@ -385,7 +427,12 @@ return function(Import)
 			end
 			if not found then thisMap = thisMap .. "\nNo bounty objective on this map." end
 		end
-		local lines = {string.format("Claims used today: %d/10", math.max(0, math.floor(tonumber(category.ClaimedAmount) or 0)))}
+		local lines = {}
+		if hasCategory then
+			table.insert(lines, string.format("Claims used today: %d/10", math.max(0, math.floor(tonumber(category.ClaimedAmount) or 0))))
+		else
+			table.insert(lines, "Bounty data is still syncing...")
+		end
 		local stack = BountyCatalog.StackTarget(entries)
 		if stack then
 			table.insert(lines, string.format("Stacked on %s / %s - %d bounty(s)", stack.Target.Gamemode, JoinCatalog.MapDisplayName(information, stack.Target.MapName), stack.Count))

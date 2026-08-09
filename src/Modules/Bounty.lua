@@ -50,9 +50,28 @@ return function(Import)
 		if state.StatusLabel then Util.SafeCall("bounty status", state.StatusLabel.UpdateName, state.StatusLabel, message) end
 	end
 
+	function Bounty:_QuestData(ctx)
+		local deepState
+		if type(ctx.Game.StateDeep) == "function" then
+			local ok, result = pcall(ctx.Game.StateDeep, ctx.Game, "QuestData", 6)
+			if ok then deepState = result end
+		end
+		local shallowState = ctx.Game:State("QuestData")
+		local playerData = ctx.Game:PlayerData()
+		local current = BountyCatalog.ResolveQuestData(deepState, shallowState, playerData)
+		local category = BountyCatalog.Category(current)
+		if next(type(category.Quests) == "table" and category.Quests or {}) ~= nil then return current end
+		local replica
+		if type(ctx.Game.InvokeSelf) == "function" then
+			local ok, result = ctx.Game:InvokeSelf("GET_PLAYER_REPLICA")
+			if ok then replica = result end
+		end
+		return BountyCatalog.ResolveQuestData(current, replica)
+	end
+
 	function Bounty:_Read(ctx, state)
 		local information = ctx.Game:Information() or {}
-		local questData = ctx.Game:State("QuestData")
+		local questData = self:_QuestData(ctx)
 		local gameData = ctx.Game:GameData()
 		local thisMap, boardText, entries = BountyCatalog.BoardText(information, questData, gameData)
 		state.Entries = entries
@@ -237,7 +256,7 @@ return function(Import)
 
 	return {
 		Name = "Bounty",
-		Version = 1,
+		Version = 2,
 		Priority = 18,
 		Dependencies = {},
 
@@ -339,7 +358,7 @@ return function(Import)
 				local information = ctx.Game:Information() or {}
 				local playerData = ctx.Game:PlayerData()
 				if type(playerData) ~= "table" then return nil end
-				local entries = BountyCatalog.Entries(information, ctx.Game:State("QuestData"))
+				local entries = BountyCatalog.Entries(information, Bounty:_QuestData(ctx))
 				if state.AutoClaim and claimCandidate(entries) then return nil end
 				if state.AutoReroll then
 					local currentEntries = state.Entries
