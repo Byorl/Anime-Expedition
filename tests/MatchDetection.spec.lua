@@ -76,6 +76,14 @@ end
 local deep = nestedAdapter:DeepPeek({ Unit = { State = true, Value = { UnitID = "u1", Upgrade = 2 } } }, 4)
 assert(deep.Unit.UnitID == "u1" and deep.Unit.Upgrade == 2, "nested replicated unit state was not unwrapped")
 
+local localFireValue
+local localAdapter = setmetatable({
+	Ready = true,
+	Nodes = {PROMPT_CLOSE = {Fire = function(_, value) localFireValue = value end}},
+}, Adapter)
+assert(localAdapter:FireLocal("PROMPT_CLOSE", "SummonAnimation"), "local node dispatch failed")
+assert(localFireValue == "SummonAnimation", "local node dispatch lost its arguments")
+
 local liveState = { Value = {} }
 local lobbyAdapter = setmetatable({ Ready = true, Dependencies = { GameState = liveState } }, Adapter)
 function lobbyAdapter:Peek(value)

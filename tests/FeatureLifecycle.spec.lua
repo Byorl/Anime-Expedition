@@ -2,6 +2,7 @@ task = task or {}
 task.wait = task.wait or function() end
 task.spawn = task.spawn or function(callback) callback() end
 task.defer = task.defer or function(callback) callback() end
+task.delay = task.delay or function(_, callback) callback() end
 
 local function signal()
 	return {Connect = function(_, callback)
@@ -33,6 +34,7 @@ local factories = {
 	AutoClaim = rbxmk.loadFile("src/Modules/AutoClaim.lua")(),
 	AutoSummon = rbxmk.loadFile("src/Modules/AutoSummon.lua")(),
 	Performance = rbxmk.loadFile("src/Modules/Performance.lua")(),
+	Misc = rbxmk.loadFile("src/Modules/Misc.lua")(),
 	AutoTraitReroll = rbxmk.loadFile("src/Modules/AutoTraitReroll.lua")(),
 }
 local function Import(name)
@@ -55,10 +57,12 @@ assert(autoState.Generation == 1 and type(cleanup) == "function", "AutoClaim sch
 cleanup()
 
 local callbacks, controls = {}, {}
-local section = {Header = function() end}
+local section = {Header = function() end, Paragraph = function() end}
+function section:Toggle(settings) return {Settings = settings} end
 function section:Label(settings) return {UpdateName = function() end, Settings = settings} end
 function section:Button(settings) return {Settings = settings} end
 local registry = {}
+function registry:Get() return false end
 function registry:Toggle(_, settings, flag)
 	callbacks[flag] = settings.Callback
 	local control = {UpdateState = function(_, value) settings.Callback(value) end}
@@ -94,6 +98,63 @@ callbacks["performance.fps_boost"](true)
 callbacks["performance.fps_boost"](false)
 local disableOk, disableError = pcall(performance.Disable, performance, performanceContext, performanceState)
 assert(disableOk, "Performance Disable lifecycle binding failed: " .. tostring(disableError))
+
+local promptCallbacks, settingCalls, localPromptCloses, serverPromptCloses, disconnected = {}, {}, {}, {}, 0
+local miscContext = {
+	Tabs = performanceContext.Tabs,
+	Registry = registry,
+	Runtime = {Modules = {Loaded = {Misc = true}}, Notify = function() end},
+	Config = {Account = {Session = {AutoExecute = false}, UI = {HiddenOnExecute = false}}},
+	Session = {SetAutoExecute = function() end, SetAutoReconnect = function() end},
+	Game = {
+		InvokeSelf = function(_, name, key)
+			assert(name == "GET_SETTING_VALUE" and key == "FastSummon", "wrong Fast Summon setting lookup")
+			return true, false
+		end,
+		ChangeSetting = function(_, name, value)
+			table.insert(settingCalls, {name, value})
+			return true
+		end,
+		Connect = function(_, name, callback)
+			promptCallbacks[name] = callback
+			return {Disconnect = function() disconnected = disconnected + 1 end}
+		end,
+		FireLocal = function(_, name, id)
+			table.insert(localPromptCloses, {name, id})
+			return true
+		end,
+		Fire = function(_, name, id)
+			table.insert(serverPromptCloses, {name, id})
+			return true
+		end,
+	},
+}
+local misc = Import("Misc")
+local miscState = misc.Init(misc, miscContext)
+misc.Enable(misc, miscContext, miscState)
+callbacks["misc.fast_summon"](true)
+promptCallbacks.PROMPT_OBTAINED_REWARDS({}, true, "SummonAnimation")
+callbacks["misc.disable_reward_popups"](true)
+promptCallbacks.PROMPT_OBTAINED_REWARD_SLOTS({}, true, "DailyReward")
+assert(settingCalls[#settingCalls][2] == true, "Fast Summon did not enable the native game setting")
+local closedSummon, closedDaily, acknowledgedDaily = false, false, false
+for _, entry in ipairs(localPromptCloses) do
+	if entry[1] == "PROMPT_CLOSE" and entry[2] == "SummonAnimation" then closedSummon = true end
+	if entry[1] == "PROMPT_CLOSE" and entry[2] == "DailyReward" then closedDaily = true end
+end
+for _, entry in ipairs(serverPromptCloses) do
+	if entry[1] == "PROMPT_CLOSED" and entry[2] == "DailyReward" then acknowledgedDaily = true end
+end
+assert(
+	closedSummon and closedDaily,
+	"summon or generic obtained reward prompts were not dismissed"
+)
+assert(
+	acknowledgedDaily,
+	"dismissed reward prompts were not acknowledged to the game"
+)
+misc.Disable(misc, miscContext, miscState)
+assert(disconnected == 2 and settingCalls[#settingCalls][2] == false, "Misc unload did not restore prompt state")
 
 local featureInformation = {
 	BannerInfo = {Styling = {Standard = {Name = "Standard"}}},

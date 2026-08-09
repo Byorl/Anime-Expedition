@@ -1,13 +1,57 @@
 return function()
+	local function disconnectAll(state)
+		for _, connection in ipairs(state.Connections) do
+			if connection and type(connection.Disconnect) == "function" then
+				pcall(connection.Disconnect, connection)
+			end
+		end
+		table.clear(state.Connections)
+	end
+
+	local function closeRewardPrompt(ctx, state, promptId)
+		promptId = promptId ~= nil and tostring(promptId) or nil
+		if not promptId or promptId == "" then return end
+		if not state.DisableRewardPopups and not (state.FastSummon and promptId == "SummonAnimation") then return end
+		if state.ClosingPrompts[promptId] then return end
+		state.ClosingPrompts[promptId] = true
+		task.defer(function()
+			if
+				state.Alive
+				and (state.DisableRewardPopups or state.FastSummon and promptId == "SummonAnimation")
+			then
+				ctx.Game:FireLocal("PROMPT_CLOSE", promptId)
+				ctx.Game:Fire("PROMPT_CLOSED", promptId)
+			end
+			task.delay(0.15, function()
+				state.ClosingPrompts[promptId] = nil
+			end)
+		end)
+	end
+
 	return {
 		Name = "Misc",
-		Version = 1,
+		Version = 2,
 		Priority = 10,
 		Dependencies = {},
 
 		Init = function(self, ctx)
+			local state = {
+				Alive = false,
+				FastSummon = false,
+				DisableRewardPopups = false,
+				OriginalFastSummon = false,
+				Connections = {},
+				ClosingPrompts = {},
+			}
 			local function isActive()
 				return ctx.Runtime.Modules.Loaded.Misc ~= nil
+			end
+			local function applyFastSummon()
+				if not isActive() then return end
+				local wanted = state.FastSummon and true or state.OriginalFastSummon == true
+				local ok, err = ctx.Game:ChangeSetting("FastSummon", wanted)
+				if not ok then ctx.Runtime:Notify("Fast Summon", tostring(err)) end
+				if state.FastSummon then closeRewardPrompt(ctx, state, "SummonAnimation") end
 			end
 
 			local session = ctx.Tabs.MiscClaims:Section({Side = "Right"})
@@ -39,15 +83,60 @@ return function()
 					ctx.Session:SetAutoReconnect(value)
 				end,
 			}, "misc.auto_reconnect")
+
+			local summoning = ctx.Tabs.MiscUnits:Section({Side = "Left"})
+			summoning:Header({Text = "Summoning"})
+			ctx.Registry:Toggle(summoning, {
+				Name = "Fast Summon",
+				Default = false,
+				Callback = function(value)
+					state.FastSummon = value == true
+					applyFastSummon()
+				end,
+			}, "misc.fast_summon")
+			ctx.Registry:Toggle(summoning, {
+				Name = "Disable Obtained Rewards Popups",
+				Default = false,
+				Callback = function(value)
+					state.DisableRewardPopups = value == true
+				end,
+			}, "misc.disable_reward_popups")
+			summoning:Paragraph({
+				Header = "Fast Summon",
+				Body = "Keeps the summon menu usable by immediately dismissing summon results. Reward popup suppression also covers other Obtained Rewards screens.",
+			})
+			return state
 		end,
 
-		Enable = function(self, ctx)
+		Enable = function(self, ctx, state)
+			state.Alive = true
+			local settingOk, original = ctx.Game:InvokeSelf("GET_SETTING_VALUE", "FastSummon")
+			state.OriginalFastSummon = settingOk and original == true or false
+			for _, nodeName in ipairs({"PROMPT_OBTAINED_REWARDS", "PROMPT_OBTAINED_REWARD_SLOTS"}) do
+				local connection, err = ctx.Game:Connect(nodeName, function(_, _, promptId)
+					closeRewardPrompt(ctx, state, promptId)
+				end)
+				if connection then
+					table.insert(state.Connections, connection)
+				else
+					ctx.Runtime:Notify("Reward Popups", tostring(err))
+				end
+			end
 			ctx.Session:SetAutoExecute(ctx.Config.Account.Session.AutoExecute == true)
 			ctx.Session:SetAutoReconnect(ctx.Registry:Get("misc.auto_reconnect") == true)
+			local ok, err = ctx.Game:ChangeSetting(
+				"FastSummon",
+				state.FastSummon and true or state.OriginalFastSummon
+			)
+			if not ok then ctx.Runtime:Notify("Fast Summon", tostring(err)) end
 		end,
 
-		Disable = function(self, ctx)
+		Disable = function(self, ctx, state)
+			state.Alive = false
+			disconnectAll(state)
+			table.clear(state.ClosingPrompts)
 			ctx.Session:SetAutoReconnect(false)
+			ctx.Game:ChangeSetting("FastSummon", state.OriginalFastSummon == true)
 		end,
 	}
 end

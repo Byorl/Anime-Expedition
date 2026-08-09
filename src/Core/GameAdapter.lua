@@ -228,6 +228,25 @@ return function(Import)
 		return true
 	end
 
+	function GameAdapter:FireLocal(nodeName, ...)
+		if not self.Ready then
+			return false, self.Error
+		end
+		local node = self.Nodes[nodeName]
+		local method = type(node) == "table" and (node.FireSelf or node.Fire) or nil
+		if type(method) ~= "function" then
+			return false, "local node '" .. tostring(nodeName) .. "' is unavailable or cannot be fired"
+		end
+		local arguments = table.pack(...)
+		local ok, err = xpcall(function()
+			method(node, table.unpack(arguments, 1, arguments.n))
+		end, Util.Traceback)
+		if not ok then
+			return false, tostring(err)
+		end
+		return true
+	end
+
 	function GameAdapter:Request(nodeName, timeout, ...)
 		if not self.Ready then
 			return false, self.Error
