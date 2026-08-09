@@ -150,6 +150,8 @@ return function()
 			MaxUpgrade = math.max(0, math.floor(actualMax)),
 			NextCost = number(nextStats.Cost, number(nextInfo.Cost, math.huge)),
 			Farm = slot.Farm or (type(data.CurrentStats) == "table" and number(data.CurrentStats.Farm, 0) > 0),
+			Unupgradeable = data.Unupgradeable == true or data.IsUnupgradeable == true,
+			BoundingSize = slot.BoundingSize,
 			CFrame = data.CFrame or data.UnitCFrame or data.Pivot or data.Position,
 			Data = data,
 		}
@@ -215,30 +217,42 @@ return function()
 		return cap
 	end
 
-	function Planner.NextPlacement(slots, placed, caps, placementCounts)
+	function Planner.NextPlacement(slots, placed, caps, placementCounts, totalCap, blockedSlots, now)
+		if tonumber(totalCap) and Planner.TotalPlacementCount(slots, placed, placementCounts) >= tonumber(totalCap) then
+			return nil, false
+		end
 		local choices = {}
+		local missing = false
+		now = tonumber(now) or 0
 		for _, slot in ipairs(slots) do
 			local cap = Planner.PlaceCap(slot, caps[slot.Index])
 			local current = Planner.PlacementCount(slot, placed, placementCounts)
 			if current < cap then
-				table.insert(choices, { Slot = slot, Cost = slot.PlacementCost, Count = current, Cap = cap })
+				missing = true
+				local blockedUntil = type(blockedSlots) == "table" and tonumber(blockedSlots[slot.Index]) or nil
+				if not blockedUntil or blockedUntil <= now then
+					table.insert(choices, { Slot = slot, Cost = slot.PlacementCost, Count = current, Cap = cap })
+				end
 			end
 		end
 		table.sort(choices, function(a, b)
 			return a.Cost == b.Cost and a.Slot.Index < b.Slot.Index or a.Cost < b.Cost
 		end)
-		return choices[1], #choices > 0
+		return choices[1], missing
 	end
 
-	function Planner.NextUpgrade(slots, placed, caps, priorities, usePriority, farmFirst, yen)
+	function Planner.NextUpgrade(slots, placed, caps, priorities, usePriority, farmFirst, yen, blockedUpgrades, now)
 		local choices = {}
+		now = tonumber(now) or 0
 		for _, slot in ipairs(slots) do
 			local priority = math.max(0, math.floor(number(priorities[slot.Index], 0)))
 			if not usePriority or priority > 0 then
 				for _, unit in ipairs(placed[slot.Index] or {}) do
 					local configured = math.max(0, math.floor(number(caps[slot.Index], 0)))
 					local maximum = math.min(configured, unit.MaxUpgrade)
-					if unit.Upgrade < maximum then
+					local key = tostring(unit.GameUnitID)
+					local blockedUntil = type(blockedUpgrades) == "table" and tonumber(blockedUpgrades[key]) or nil
+					if unit.Upgrade < maximum and not unit.Unupgradeable and (not blockedUntil or blockedUntil <= now) then
 						table.insert(
 							choices,
 							{ Slot = slot, Unit = unit, Cost = unit.NextCost, Priority = priority, Farm = unit.Farm }

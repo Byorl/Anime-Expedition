@@ -111,6 +111,31 @@ assert(
 	Planner.TotalPlacementCount(slots, placed, { Farm = 2, Damage = 1 }) == 3,
 	"authoritative total placement count is wrong"
 )
+local globalCapped, globalMissing = Planner.NextPlacement(slots, placed, { 20, 20 }, nil, 2)
+assert(globalCapped == nil and globalMissing == false, "match-wide placement cap was ignored")
+local blockedPlacement, blockedMissing = Planner.NextPlacement(
+	slots,
+	{ [1] = {}, [2] = {} },
+	{ 1, 1 },
+	nil,
+	nil,
+	{ [1] = 100 },
+	50
+)
+assert(
+	blockedMissing == true and blockedPlacement and blockedPlacement.Slot.Index == 2,
+	"an obstructed cheap slot starved later normal placement slots"
+)
+local expiredPlacement = Planner.NextPlacement(
+	slots,
+	{ [1] = {}, [2] = {} },
+	{ 1, 1 },
+	nil,
+	nil,
+	{ [1] = 49 },
+	50
+)
+assert(expiredPlacement and expiredPlacement.Slot.Index == 1, "expired placement backoff did not recover")
 local farmUpgrade = Planner.NextUpgrade(slots, placed, { 20, 20 }, { 1, 10 }, true, true, 1000)
 assert(farmUpgrade and farmUpgrade.Slot.Index == 1, "farm-first upgrade selection failed")
 local priorityUpgrade = Planner.NextUpgrade(slots, placed, { 20, 20 }, { 1, 10 }, true, false, 1000)
@@ -119,6 +144,22 @@ local lowestCost = Planner.NextUpgrade(slots, placed, { 20, 20 }, { 0, 0 }, fals
 assert(lowestCost and lowestCost.Slot.Index == 2, "lowest-cost upgrade selection failed")
 local capped = Planner.NextUpgrade(slots, placed, { 1, 0 }, { 10, 10 }, true, false, 1000)
 assert(capped == nil, "configured or intrinsic upgrade caps were ignored")
+units.a.Unupgradeable = true
+local upgradeablePlaced = Planner.Placed(slots, units, localPlayer)
+local upgradeable = Planner.NextUpgrade(slots, upgradeablePlaced, { 20, 20 }, { 1, 1 }, false, false, 1000)
+assert(upgradeable and upgradeable.Slot.Index == 2, "server-unupgradeable units were retried")
+local backedOffUpgrade = Planner.NextUpgrade(
+	slots,
+	placed,
+	{ 20, 20 },
+	{ 1, 1 },
+	false,
+	false,
+	1000,
+	{ g2 = 100 },
+	50
+)
+assert(backedOffUpgrade and backedOffUpgrade.Slot.Index == 1, "rejected upgrades starved other normal units")
 assert(
 	Planner.RoundReset({ Wave = 20, Time = 300, Total = 6 }, { Wave = 1, Time = 2, Total = 0 }),
 	"seamless replay was not detected"
@@ -278,12 +319,26 @@ assert(
 	string.find(source, "PlaceRetries", 1, true) and string.find(source, "pendingComplete", 1, true),
 	"placement confirmation and retry tracking are missing"
 )
+assert(
+	string.find(source, "current.PlacementCap", 1, true)
+		and string.find(source, "state.BlockedUpgrades", 1, true),
+	"normal Auto Play does not enforce the global cap or back off rejected upgrades"
+)
 assert(string.find(source, 'GamePlayerAction("PlaceGameUnit"', 1, true), "placement request is missing")
 assert(string.find(source, 'GamePlayerAction("UpgradeGameUnit"', 1, true), "upgrade request is missing")
 assert(
 	string.find(source, "updateSmartVisualization(state, decision, resolved)", 1, true)
 		and string.find(source, "place(ctx, state, current, decision, resolved)", 1, true),
 	"Smart preview and placement do not share the exact validated CFrame"
+)
+assert(
+	string.find(source, "candidate = findPlacement(state, snapshot", 1, true)
+		and string.find(source, "RecordRetry = false", 1, true),
+	"normal placement preview does not use the validated placement search"
+)
+assert(
+	string.find(source, "tonumber(choice.Spacing) or state.Spacing", 1, true),
+	"normal placement spacing is not enforced by the real placement search"
 )
 assert(
 	string.find(source, 'CollectionService:GetTagged(tag)', 1, true)

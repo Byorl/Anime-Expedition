@@ -357,7 +357,7 @@ return function(Import)
 		return ordinal
 	end
 
-	local function pathSideCandidate(path, percent, ordinal, attempt)
+	local function pathSideCandidate(path, percent, ordinal, attempt, spacing)
 		local point, tangent = Planner.SamplePath(path, percent)
 		if not point or not tangent or tangent.Magnitude <= 0 then
 			return nil
@@ -370,12 +370,30 @@ return function(Import)
 		local side = Vector3.new(-forward.Z, 0, forward.X)
 		local distances = { -4, 4, -6, 6, -8, 8, -10, 10, -12, 12, -15, 15, -18, 18, -21, 21 }
 		local lateral = distances[attempt % #distances + 1]
-		local forwardOffset = ((math.max(1, ordinal) - 1) % 3 - 1) * 2
+		local forwardOffset = ((math.max(1, ordinal) - 1) % 3 - 1) * math.max(2, tonumber(spacing) or 2)
 		local position = point + side * lateral + forward * forwardOffset
 		return CFrame.lookAt(position, position + forward)
 	end
 
-	local function taggedPlacementCFrame(state, slot, pathPoint, tangent)
+	local function overlapsReservation(slot, cframe, reservations, spacing)
+		for _, reservation in ipairs(type(reservations) == "table" and reservations or {}) do
+			local other = reservation.CFrame
+			if typeof(other) == "CFrame" then
+				local delta = cframe.Position - other.Position
+				local horizontal = Vector3.new(delta.X, 0, delta.Z).Magnitude
+				local clearance = math.max(
+					((tonumber(slot.BoundingSize) or 6) + (tonumber(reservation.Size) or 6)) / 2 + 0.5,
+					tonumber(spacing) or 0
+				)
+				if horizontal < clearance then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	local function taggedPlacementCFrame(state, slot, pathPoint, tangent, reservations, spacing)
 		local placementType = type(slot.Info) == "table" and slot.Info.PlacementType or nil
 		local tag = placementType == "Ground" and "GroundPlacement" or "HillPlacement"
 		local map = Workspace:FindFirstChild("Map")
@@ -416,7 +434,10 @@ return function(Import)
 					if not isOverPath(surface) then
 						local position = surface + Vector3.new(0, (slot.BoundingHeight or 4) / 2, 0)
 						local cframe = CFrame.lookAt(position, position + look)
-						if isAllowed(state, slot.Asset, cframe) then
+						if
+							not overlapsReservation(slot, cframe, reservations, spacing)
+							and isAllowed(state, slot.Asset, cframe)
+						then
 							return cframe
 						end
 					end
@@ -426,19 +447,38 @@ return function(Import)
 		return nil
 	end
 
-	local function findPlacement(state, snapshot, choice)
+	local function findPlacement(state, snapshot, choice, options)
+		options = type(options) == "table" and options or {}
 		local path = choice.Path or snapshot.Path
 		if not path then
 			return nil, "No active map path was found."
 		end
 		local ordinal = placementOrdinal(snapshot, choice)
-		local start = state.PlaceRetries[choice.Slot.Index] or 0
+		local start = tonumber(options.Start)
+		if start == nil then
+			start = state.PlaceRetries[choice.Slot.Index] or 0
+		end
+		local recordRetry = options.RecordRetry ~= false
+		local spacing = tonumber(choice.Spacing) or state.Spacing
+		local reservations = options.Reserved
+		if reservations == nil then
+			reservations = {}
+			for _, entries in pairs(snapshot.Placed) do
+				for _, unit in ipairs(entries) do
+					if typeof(unit.CFrame) == "CFrame" then
+						table.insert(reservations, { CFrame = unit.CFrame, Size = unit.BoundingSize })
+					end
+				end
+			end
+		end
 		local shifts = { 0, -10, 10, -20, 20, -30, 30 }
 		local distances = 16
 		for _, shift in ipairs(shifts) do
 			local percent = math.clamp((choice.Percent or state.PathPosition) + shift, 8, 92)
 			local pathPoint, tangent = Planner.SamplePath(path, percent)
-			local candidate = pathPoint and tangent and taggedPlacementCFrame(state, choice.Slot, pathPoint, tangent)
+			local candidate = pathPoint
+				and tangent
+				and taggedPlacementCFrame(state, choice.Slot, pathPoint, tangent, reservations, spacing)
 			if candidate then
 				return candidate
 			end
@@ -451,7 +491,7 @@ return function(Import)
 				8,
 				92
 			)
-			local candidate = pathSideCandidate(path, percent, ordinal, attempt)
+			local candidate = pathSideCandidate(path, percent, ordinal, attempt, spacing)
 			if candidate then
 				local pathPoint = Planner.SamplePath(path, percent)
 				candidate = groundCFrame(choice.Slot, candidate)
@@ -462,13 +502,21 @@ return function(Import)
 						0,
 						candidate.Position.Z - pathPoint.Z
 					).Magnitude <= 22
-				if closeToPath and isAllowed(state, choice.Slot.Asset, candidate) then
-					state.PlaceRetries[choice.Slot.Index] = attempt
+				if
+					closeToPath
+					and not overlapsReservation(choice.Slot, candidate, reservations, spacing)
+					and isAllowed(state, choice.Slot.Asset, candidate)
+				then
+					if recordRetry then
+						state.PlaceRetries[choice.Slot.Index] = attempt
+					end
 					return candidate
 				end
 			end
 		end
-		state.PlaceRetries[choice.Slot.Index] = (start + 48) % (#shifts * distances)
+		if recordRetry then
+			state.PlaceRetries[choice.Slot.Index] = (start + 48) % (#shifts * distances)
+		end
 		return nil, "No valid placement point was found yet; another area will be tried."
 	end
 
@@ -538,6 +586,14 @@ return function(Import)
 			return
 		end
 		local wanted = {}
+		local reservations = {}
+		for _, entries in pairs(snapshot.Placed) do
+			for _, unit in ipairs(entries) do
+				if typeof(unit.CFrame) == "CFrame" then
+					table.insert(reservations, { CFrame = unit.CFrame, Size = unit.BoundingSize })
+				end
+			end
+		end
 		local ordinal = 0
 		for _, slot in ipairs(snapshot.Slots) do
 			local cap = Planner.PlaceCap(slot, snapshot.MaxPlace[slot.Index])
@@ -545,11 +601,29 @@ return function(Import)
 			for index = 1, cap do
 				ordinal = ordinal + 1
 				local key = tostring(slot.Index) .. "_" .. tostring(index)
-				wanted[key] = true
-				local candidate = Planner.Candidate(snapshot.Path, state.PathPosition, state.Spacing, ordinal, 0)
+				local observed = snapshot.Placed[slot.Index] or {}
+				local candidate = index <= #observed and typeof(observed[index].CFrame) == "CFrame"
+					and observed[index].CFrame
+					or nil
+				if not candidate and index > placed then
+					candidate = findPlacement(state, snapshot, {
+						Slot = slot,
+						Count = placed,
+						Cap = cap,
+						Ordinal = ordinal,
+						Percent = state.PathPosition,
+					}, {
+						RecordRetry = false,
+						Start = (state.PlaceRetries[slot.Index] or 0) + math.max(0, index - placed - 1) * 8,
+						Reserved = reservations,
+					})
+					if candidate then
+						table.insert(reservations, { CFrame = candidate, Size = slot.BoundingSize })
+					end
+				end
 				if candidate then
-					candidate = groundCFrame(slot, candidate)
-					local current = candidate and marker(state, key) or nil
+					wanted[key] = true
+					local current = marker(state, key)
 					if current then
 						local color = index <= placed and Color3.fromRGB(75, 235, 130) or colors[slot.Index]
 						current.Part.Color = color
@@ -628,6 +702,7 @@ return function(Import)
 				type(playerState) == "table" and playerState.TotalUnitPlacementCap
 					or gameState.GlobalUnitPlacementCap
 					or gameState.TotalPlacementCap
+					or (type(information) == "table" and information.DefaultTotalPlacementCap)
 			),
 			MaxPlace = state.MaxPlace,
 			MaxUpgrade = state.MaxUpgrade,
@@ -640,6 +715,7 @@ return function(Import)
 		state.Pending = nil
 		state.PlaceRetries = {}
 		state.BlockedSlots = {}
+		state.BlockedUpgrades = {}
 		state.SmartHistory = {}
 		state.RouteSignature = nil
 		state.RouteVote = 0
@@ -690,6 +766,7 @@ return function(Import)
 			end
 			if slot and Planner.PlacementCount(slot, current.Placed, current.PlacementCounts) > pending.Before then
 				state.PlaceRetries[pending.Slot] = 0
+				state.BlockedSlots[pending.Slot] = nil
 				state.Pending = nil
 				state.VisualDirty = true
 				return true
@@ -698,6 +775,7 @@ return function(Import)
 			local unit = findUnit(current, pending.GameUnitID)
 			if unit and unit.Upgrade > pending.Before then
 				state.UpgradeRetries[tostring(pending.GameUnitID)] = 0
+				state.BlockedUpgrades[tostring(pending.GameUnitID)] = nil
 				state.Pending = nil
 				return true
 			end
@@ -707,9 +785,11 @@ return function(Import)
 		end
 		if pending.Kind == "Place" then
 			state.PlaceRetries[pending.Slot] = (state.PlaceRetries[pending.Slot] or 0) + 1
+			state.BlockedSlots[pending.Slot] = os.clock() + 1.25
 		else
 			local key = tostring(pending.GameUnitID)
 			state.UpgradeRetries[key] = (state.UpgradeRetries[key] or 0) + 1
+			state.BlockedUpgrades[key] = os.clock() + 1.5
 		end
 		state.Pending = nil
 		state.NextActionAt = os.clock() + 0.65
@@ -723,12 +803,15 @@ return function(Import)
 		end
 		if not cframe then
 			notify(ctx, state, "placement", err)
-			return
+			state.BlockedSlots[choice.Slot.Index] = os.clock() + 1.25
+			state.NextActionAt = os.clock() + 0.15
+			return false
 		end
 		local ok, fireError = ctx.Game:GamePlayerAction("PlaceGameUnit", choice.Slot.Index, cframe)
 		if not ok then
 			notify(ctx, state, "place_fire", fireError)
-			return
+			state.BlockedSlots[choice.Slot.Index] = os.clock() + 1.25
+			return false
 		end
 		state.Pending = {
 			Kind = "Place",
@@ -739,17 +822,19 @@ return function(Import)
 		}
 		state.BlockedSlots[choice.Slot.Index] = nil
 		state.NextActionAt = os.clock() + 0.35
+		return true
 	end
 
 	local function upgrade(ctx, state, choice)
 		if choice.Unit.GameUnitID == nil then
 			notify(ctx, state, "upgrade_id", "A placed unit did not expose its game unit ID.")
-			return
+			return false
 		end
 		local ok, err = ctx.Game:GamePlayerAction("UpgradeGameUnit", choice.Unit.GameUnitID)
 		if not ok then
 			notify(ctx, state, "upgrade_fire", err)
-			return
+			state.BlockedUpgrades[tostring(choice.Unit.GameUnitID)] = os.clock() + 1.5
+			return false
 		end
 		state.Pending = {
 			Kind = "Upgrade",
@@ -758,14 +843,23 @@ return function(Import)
 			Started = os.clock(),
 		}
 		state.NextActionAt = os.clock() + 0.3
+		return true
 	end
 
 	local function act(ctx, state, current)
 		if not state.Enabled or os.clock() < state.NextActionAt or not pendingComplete(state, current) then
 			return
 		end
-		local placement, missing =
-			Planner.NextPlacement(current.Slots, current.Placed, state.MaxPlace, current.PlacementCounts)
+		local now = os.clock()
+		local placement, missing = Planner.NextPlacement(
+			current.Slots,
+			current.Placed,
+			state.MaxPlace,
+			current.PlacementCounts,
+			current.PlacementCap,
+			state.BlockedSlots,
+			now
+		)
 		local upgradeChoice = Planner.NextUpgrade(
 			current.Slots,
 			current.Placed,
@@ -773,7 +867,9 @@ return function(Import)
 			state.Priority,
 			state.UsePriority,
 			state.FarmFirst,
-			current.Yen
+			current.Yen,
+			state.BlockedUpgrades,
+			now
 		)
 		local placementAffordable = placement and placement.Cost <= current.Yen
 		if state.PlaceFirst and missing then
@@ -1044,7 +1140,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 15,
+		Version = 16,
 		Priority = 9,
 		Dependencies = {},
 
@@ -1071,6 +1167,7 @@ return function(Import)
 				Pending = nil,
 				PlaceRetries = {},
 				BlockedSlots = {},
+				BlockedUpgrades = {},
 				UpgradeRetries = {},
 				Markers = {},
 				BoundingSizes = {},
