@@ -5,12 +5,14 @@ local traceback = debug and debug.traceback or function(message) return tostring
 local function fetch(path, cacheBuster)
 	local url = REPOSITORY .. path
 	if cacheBuster then url = url .. "?v=" .. tostring(cacheBuster) end
-	local ok, body = pcall(function() return game:HttpGet(url) end)
-	if not ok then error(string.format("HTTP fetch failed for '%s': %s", path, tostring(body)), 0) end
-	if type(body) ~= "string" or #body == 0 then
-		error(string.format("HTTP fetch returned an empty/non-text response for '%s' (%s)", path, url), 0)
+	local lastError
+	for attempt = 1, 4 do
+		local ok, body = pcall(function() return game:HttpGet(url) end)
+		if ok and type(body) == "string" and #body > 0 then return body end
+		lastError = ok and "empty/non-text response" or tostring(body)
+		if attempt < 4 then task.wait(0.2 * attempt) end
 	end
-	return body
+	error(string.format("HTTP fetch failed for '%s' after 4 attempts: %s", path, tostring(lastError)), 0)
 end
 
 local manifestSource = fetch("manifest.lua", os.time())
