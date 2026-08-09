@@ -204,22 +204,25 @@ return function(Import)
 				backlineEnemies = backlineEnemies + (progress >= 0.72 and 1 or 0)
 			end
 		end
-		local healthPressure = totalMaxHealth > 0 and totalHealth / totalMaxHealth or 0
-		local countPressure = clamp(enemyCount / 20, 0, 1)
+		local countPressure = clamp(enemyCount / 100, 0, 1)
 		local progressPressure = maxProgress ^ 1.7
+		local averageProgress = progressTotal / math.max(
+			1,
+			type(liveProgress) == "table" and #liveProgress > 0 and #liveProgress or enemyCount
+		)
 		local basePressure = 1 - clamp(healthRatio, 0, 1)
 		local scenarioFactor = difficultyFactor(difficulty)
 		local actNumber = tonumber(string.match(tostring(act), "%d+") or "") or 1
 		scenarioFactor = scenarioFactor * (1 + math.max(0, actNumber - 1) * 0.04)
 		local pressure = (
-			progressPressure * 0.42
-			+ countPressure * 0.16
-			+ healthPressure * 0.12
-			+ clamp(speedPressure / math.max(1, enemyCount), 0, 1) * 0.08
-			+ clamp(shieldPressure / math.max(1, enemyCount * 5), 0, 1) * 0.07
-			+ clamp(specialPressure, 0, 0.3)
-			+ basePressure * 0.3
-			+ (boss and 0.18 or 0)
+			progressPressure * 0.5
+			+ averageProgress ^ 1.35 * 0.12
+			+ countPressure * 0.1
+			+ clamp(speedPressure / math.max(1, enemyCount), 0, 1) * 0.06
+			+ clamp(shieldPressure / math.max(1, enemyCount * 5), 0, 1) * 0.05
+			+ clamp(specialPressure, 0, 0.22)
+			+ basePressure * 0.45
+			+ (boss and 0.15 or 0)
 		) * scenarioFactor
 		return {
 			Difficulty = tostring(difficulty),
@@ -232,7 +235,7 @@ return function(Import)
 			EnemyCount = enemyCount,
 			TotalHealth = totalHealth,
 			MaxProgress = maxProgress,
-			AverageProgress = progressTotal / math.max(1, type(liveProgress) == "table" and #liveProgress > 0 and #liveProgress or enemyCount),
+			AverageProgress = averageProgress,
 			BacklineEnemies = backlineEnemies,
 			RouteConfident = routeReady,
 			BaseHealth = baseHealth,
@@ -240,7 +243,7 @@ return function(Import)
 			HealthRatio = healthRatio,
 			Boss = boss,
 			Pressure = clamp(pressure, 0, 1.5),
-			Emergency = pressure >= 0.72 or healthRatio <= 0.4,
+			Emergency = pressure >= 0.78 or healthRatio <= 0.4,
 			Scenario = string.format("%s | %s | %s | %s", mode, map, act, difficulty),
 		}
 	end
@@ -311,8 +314,16 @@ return function(Import)
 		return applyTrait(statSet(info), slot.TraitInfo)
 	end
 
+	local function upgradeStats(slot, index)
+		local calculated = indexed(slot.CalculatedUpgradeInfo, index)
+		if type(calculated) == "table" and next(calculated) then
+			return statSet(calculated)
+		end
+		return slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, index))
+	end
+
 	function Smart.Role(slot, stats)
-		stats = stats or slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0))
+		stats = stats or upgradeStats(slot, 0)
 		if slot.Farm or stats.Farm > 0 then
 			return "Farm"
 		end
@@ -388,7 +399,7 @@ return function(Import)
 		local info = indexed(upgrades, unit.Upgrade) or indexed(upgrades, 0) or {}
 		local data = type(unit.Data) == "table" and unit.Data or {}
 		return type(data.CurrentStats) == "table" and next(data.CurrentStats) and statSet(data.CurrentStats, info)
-			or slotStats(slot, info)
+			or upgradeStats(slot, unit.Upgrade)
 	end
 
 	local function pointCovered(snapshot, path, point)
@@ -504,7 +515,7 @@ return function(Import)
 	end
 
 	local function bestPlacement(slot, snapshot, ordinal, context, strategy, spacing)
-		local base = slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0))
+		local base = upgradeStats(slot, 0)
 		local role = Smart.Role(slot, base)
 		local target = tacticalTarget(role, ordinal, context)
 		local best
@@ -562,7 +573,7 @@ return function(Import)
 			return choices
 		end
 		for _, slot in ipairs(snapshot.Slots) do
-			local base = slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0))
+			local base = upgradeStats(slot, 0)
 			local role = Smart.Role(slot, base)
 			local current = Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
 			local cap = smartCap(slot, role, strategy, context, base)
@@ -651,9 +662,9 @@ return function(Import)
 		local current = type(data.CurrentStats) == "table"
 				and next(data.CurrentStats)
 				and statSet(data.CurrentStats, currentInfo)
-			or slotStats(slot, currentInfo)
+			or upgradeStats(slot, unit.Upgrade)
 		local nextStats = type(data.NextStats) == "table" and next(data.NextStats) and statSet(data.NextStats, nextInfo)
-			or slotStats(slot, nextInfo)
+			or upgradeStats(slot, unit.Upgrade + 1)
 		if nextStats.Cost == math.huge then
 			nextStats.Cost = number(unit.NextCost, math.huge)
 		end
@@ -725,6 +736,7 @@ return function(Import)
 							Cost = cost,
 							Score = score,
 							Role = role,
+							PaybackWaves = paybackWaves,
 							Reason = role == "Farm"
 								and string.format("upgrade %s with %.1f waves to repay the cost", slot.Name, paybackWaves)
 								or string.format(
@@ -788,7 +800,7 @@ return function(Import)
 		context.RouteCoverage = routeCoverage
 		if strategy ~= "Economy" then
 			for _, slot in ipairs(snapshot.Slots) do
-				local role = Smart.Role(slot, slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, 0)))
+				local role = Smart.Role(slot, upgradeStats(slot, 0))
 				if role ~= "Farm" then
 					combatPlaced = combatPlaced
 						+ Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
@@ -823,7 +835,13 @@ return function(Import)
 		local worthwhileDeployment = not upgrades[1]
 			or not deployment[1]
 			or deployment[1].Score >= upgrades[1].Score * 0.35
-		local forceDeployment = #deployment > 0 and needsDefense and (combatPlaced == 0 or worthwhileDeployment)
+		local coverageCrisis = (context.BacklineEnemies > 0 or context.RecentLeak)
+			and routeCoverage < coverageGoal
+		local baselineShort = combatPlaced == 0
+			or context.EnemyCount > 0 and combatPlaced < math.min(requiredCombat, 2)
+		local forceDeployment = #deployment > 0
+			and needsDefense
+			and (coverageCrisis or baselineShort or combatPlaced == 0 or worthwhileDeployment)
 		local earlyFarm = context.Wave <= 2
 			and context.HealthRatio >= 0.99
 			and context.MaxProgress < 0.5

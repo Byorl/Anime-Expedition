@@ -62,9 +62,44 @@ return function(Import)
 		return "https://www.roblox.com/asset-thumbnail/image?assetId=" .. assetId .. "&width=768&height=432&format=png"
 	end
 
-	local function rewardLines(information, playerData, rewards)
+	local function firstPopulated(...)
+		local values = table.pack(...)
+		for index = 1, values.n do
+			local candidate = values[index]
+			if type(candidate) == "table" and next(candidate) then
+				return candidate
+			end
+		end
+		return {}
+	end
+
+	local function rewardEntries(result)
+		result = type(result) == "table" and result or {}
+		local source = firstPopulated(result.Rewards, result.GainedRewards, result.RewardData, result.Drops)
+		local output = {}
+		for key, reward in pairs(type(source) == "table" and source or {}) do
+			if type(reward) == "table" then
+				local asset = reward.Asset or reward.Item or reward.ID or reward.Id
+				if asset == nil and type(key) ~= "number" then
+					asset = key
+				end
+				if asset ~= nil then
+					table.insert(output, {
+						Asset = asset,
+						Amount = tonumber(reward.Amount or reward.Quantity or reward.Count or reward.Value) or 1,
+						Data = reward.Data or reward,
+					})
+				end
+			elseif type(key) ~= "number" and tonumber(reward) then
+				table.insert(output, { Asset = key, Amount = tonumber(reward) })
+			end
+		end
+		return output
+	end
+
+	local function rewardLines(information, playerData, result)
 		local totals, order = {}, {}
-		for _, reward in ipairs(type(rewards) == "table" and rewards or {}) do
+		for _, reward in ipairs(rewardEntries(result)) do
 			if type(reward) == "table" and reward.Asset then
 				local asset = tostring(reward.Asset)
 				if not totals[asset] then totals[asset] = 0 table.insert(order, asset) end
@@ -81,21 +116,40 @@ return function(Import)
 		return #output > 0 and table.concat(output, "\n") or "No rewards"
 	end
 
-	local function unitLines(information, playerData, result)
+	local function unitLines(information, playerData, result, hotbar)
+		local equipped = firstPopulated(
+			result.GainedUnitExp,
+			result.EquippedUnits,
+			type(hotbar) == "table" and hotbar.Slots or nil,
+			hotbar
+		)
 		local slots = {}
-		for slot in pairs(type(result.EquippedUnits) == "table" and result.EquippedUnits or {}) do table.insert(slots, slot) end
+		for slot in pairs(equipped) do table.insert(slots, slot) end
 		table.sort(slots, function(a, b) return (tonumber(a) or math.huge) < (tonumber(b) or math.huge) end)
-		local units = type(playerData) == "table" and playerData.UnitData or nil
+		local units = type(playerData) == "table" and (playerData.UnitData or playerData.Units) or nil
 		local output = {}
+		local seen = {}
 		for _, slot in ipairs(slots) do
-			local equipped = result.EquippedUnits[slot]
-			local id = type(equipped) == "table" and equipped.UnitID or equipped
+			local entry = equipped[slot]
+			local id = type(entry) == "table"
+				and (entry.UnitID or entry.ProfileUnitID or entry.ID or entry.Id)
+				or entry
 			local unit = type(units) == "table" and (units[id] or units[tostring(id)]) or nil
+			if type(unit) ~= "table" and type(entry) == "table" then
+				unit = entry.UnitData or entry.Profile or entry.Unit
+			end
+			if type(unit) ~= "table" and type(entry) == "table" and entry.Asset then
+				unit = entry
+			end
 			if type(unit) == "table" then
 				local name = Catalog.UnitName(information, unit)
 				local trait = Catalog.TraitName(information, unit.Trait)
 				local suffix = trait ~= "None" and " (" .. trait .. ")" or ""
-				table.insert(output, string.format("[%d] - %s%s", math.max(1, math.floor(tonumber(unit.Level) or 1)), name, suffix))
+				local signature = tostring(id or unit.Asset or name)
+				if not seen[signature] then
+					seen[signature] = true
+					table.insert(output, string.format("[%d] - %s%s", math.max(1, math.floor(tonumber(unit.Level) or 1)), name, suffix))
+				end
 			end
 		end
 		return #output > 0 and table.concat(output, "\n") or "No equipped unit data"
@@ -138,7 +192,7 @@ return function(Import)
 	function WebhookReporter:Mentions(state, result, information)
 		local filtered = next(state.PingDrops) ~= nil or state.EquipmentRarity ~= "None"
 		local matched = not filtered
-		for _, reward in ipairs(type(result.Rewards) == "table" and result.Rewards or {}) do
+		for _, reward in ipairs(rewardEntries(result)) do
 			if type(reward) == "table" and state.PingDrops[tostring(reward.Asset)] then matched = true end
 			if type(reward) == "table" and state.EquipmentRarity ~= "None"
 				and Catalog.AssetType(information, reward.Asset) == "Equipment"
@@ -155,27 +209,38 @@ return function(Import)
 	function WebhookReporter:MatchPayload(state, result, runs)
 		local information = self.Game:Information() or {}
 		local playerData = self.Game:PlayerData() or {}
+		local hotbar = type(self.Game.HotbarData) == "function" and self.Game:HotbarData() or {}
 		local mentions, allowed = self:Mentions(state, result, information)
 		local map = mapName(information, result)
-		local mapLine = string.format("%s - %s - %s\nDifficulty: %s\nResult: %s\nTime: %s\nRuns: %d",
+		local mapLine = string.format("%s - %s - %s\n**Difficulty:** %s\n**Result:** %s\n**Time:** %s\n**Runs:** %d",
 			map, tostring(result.ActName or "Unknown Act"), tostring(result.Gamemode or "Unknown"),
 			tostring(result.Difficulty or "Unknown"), result.Victory == true and "Victory" or "Defeat",
 			formatTime(result.TotalTime), tonumber(runs) or 1)
+		local description = table.concat({
+			"**User:** ||" .. tostring(self.Player.Name) .. "||",
+			"**Level:** " .. formatNumber(playerData.Level),
+			"",
+			"**Player Stats**",
+			playerStats(information, playerData),
+			"",
+			"**Units**",
+			unitLines(information, playerData, result, hotbar),
+			"",
+			"**Rewards**",
+			rewardLines(information, playerData, result),
+			"",
+			"**Map**",
+			mapLine,
+		}, "\n")
 		local embed = {
 			title = "Anime Expedition",
-			description = "User: ||" .. tostring(self.Player.Name) .. "||\n\nLevel: " .. formatNumber(playerData.Level),
+			description = truncate(description, 4096),
 			color = result.Victory == true and 5763719 or 15548997,
-			fields = {
-				{name = "Player Stats", value = truncate(playerStats(information, playerData), 1024), inline = true},
-				{name = "Units", value = truncate(unitLines(information, playerData, result), 1024), inline = false},
-				{name = "Rewards", value = truncate(rewardLines(information, playerData, result.Rewards), 1024), inline = false},
-				{name = "Map", value = truncate(mapLine, 1024), inline = false},
-			},
 			footer = {text = "discord.gg/V3WcdHpd3J"},
 			timestamp = DateTime.now():ToIsoDate(),
 		}
 		local image = imageUrl(information, result)
-		if image then embed.image = {url = image} end
+		if image then embed.thumbnail = {url = image} end
 		return {username = "Anime Expedition", content = mentions, allowed_mentions = allowed, embeds = {embed}}
 	end
 

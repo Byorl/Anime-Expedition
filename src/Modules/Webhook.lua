@@ -59,7 +59,7 @@ return function(Import)
 
 	return {
 		Name = "Webhook",
-		Version = 1,
+		Version = 2,
 		Priority = 9,
 		Dependencies = {},
 
@@ -173,16 +173,13 @@ return function(Import)
 				if not state.SendMatch or state.Url == "" then
 					return
 				end
-				local worker = task.delay(0.5, function()
-					if not state.Alive or not ctx.Runtime.Alive then
-						return
-					end
-					local ok, err = ctx.Webhook:Post(state.Url, ctx.Webhook:MatchPayload(state, result, runs))
+				local payload = ctx.Webhook:MatchPayload(state, result, runs)
+				task.spawn(function()
+					local ok, err = ctx.Webhook:Post(state.Url, payload)
 					if not ok then
 						ctx.Runtime:Notify("Webhook", tostring(err))
 					end
 				end)
-				ctx:RegisterCleanup(worker)
 			end))
 
 			for key, entry in pairs(bountyEntries(ctx)) do

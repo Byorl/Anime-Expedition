@@ -71,6 +71,24 @@ assert(
 	calibratingRoute.BacklineEnemies == 0 and calibratingRoute.MaxProgress == 0,
 	"unoriented path data created a false backline emergency"
 )
+local earlyCrowd = {}
+for index = 1, 100 do
+	earlyCrowd[index] = {
+		Health = 1000,
+		MaxHealth = 1000,
+		Progress = 0.1,
+		Speed = 1,
+		DefaultSpeed = 1,
+	}
+end
+local measuredCrowd = Smart.Context({
+	Wave = 4,
+	MaxWave = 15,
+	BaseHealth = 3,
+	BaseMaxHealth = 3,
+	Parameters = { Difficulty = "Hard", ActName = "Act 3" },
+}, earlyCrowd, path)
+assert(not measuredCrowd.Emergency, "healthy enemies near spawn created a permanent false emergency")
 
 local information = {
 	Units = {
@@ -351,6 +369,7 @@ assert(string.find(plannerSource, "BacklineEnemies", 1, true), "Smart mode does 
 assert(string.find(plannerSource, "paybackWaves", 1, true), "farm upgrades ignore their remaining-wave payback")
 assert(string.find(source, "RouteVote", 1, true), "active route direction is not learned from live enemy movement")
 assert(string.find(source, "RouteConfident", 1, true), "unoriented routes can still trigger false leak pressure")
+assert(string.find(source, "enrichSlotStats", 1, true), "profile-adjusted unit stats are not loaded")
 assert(string.find(plannerSource, "defenseCoverage", 1, true), "placed-unit route coverage is not re-evaluated")
 assert(string.find(plannerSource, "MarginalCoverage", 1, true), "new placements ignore already covered path sections")
 

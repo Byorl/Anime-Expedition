@@ -317,6 +317,31 @@ return function(Import)
 		end
 	end
 
+	local function enrichSlotStats(state, slots, gameModifiers)
+		if not state.UnitUtils or type(state.UnitUtils.GetCalculatedStats) ~= "function" then
+			return
+		end
+		for _, slot in ipairs(slots) do
+			local profile = type(slot.Profile) == "table" and slot.Profile or {}
+			local parameters = {
+				Level = profile.Level,
+				Trait = type(gameModifiers) == "table" and gameModifiers.Traitless and nil or profile.Trait,
+				Ascension = profile.Ascension,
+				StatPotential = profile.StatPotential,
+				Equipment = type(profile.EquipmentData) == "table" and profile.EquipmentData or {},
+				GameModifiers = gameModifiers,
+			}
+			local calculated = {}
+			for index, raw in pairs(type(slot.Info and slot.Info.UpgradeInfo) == "table" and slot.Info.UpgradeInfo or {}) do
+				local ok, stats = pcall(state.UnitUtils.GetCalculatedStats, state.UnitUtils, raw, parameters)
+				if ok and type(stats) == "table" then
+					calculated[index] = stats
+				end
+			end
+			slot.CalculatedUpgradeInfo = calculated
+		end
+	end
+
 	local function placementOrdinal(snapshot, choice)
 		if choice.Ordinal then
 			return choice.Ordinal
@@ -565,6 +590,7 @@ return function(Import)
 		local gameModifiers = ctx.Game:StateDeep("GameModifiers", 3) or {}
 		local slots = Planner.Slots(hotbar, playerData, information, 6, gameModifiers)
 		enrichSlotFootprints(state, slots)
+		enrichSlotStats(state, slots, gameModifiers)
 		local gameUnits = ctx.Game:StateDeep("GameUnits", 4)
 		local placed = Planner.Placed(slots, gameUnits, Players.LocalPlayer)
 		enrichPlacedCFrames(placed)
@@ -961,7 +987,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 13,
+		Version = 14,
 		Priority = 9,
 		Dependencies = {},
 

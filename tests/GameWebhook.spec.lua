@@ -122,6 +122,9 @@ local adapter = {
 	PlayerData = function()
 		return playerData
 	end,
+	HotbarData = function()
+		return { Slots = { [1] = { ID = "unit1" } } }
+	end,
 	State = function(_, name)
 		if name == "ChallengeData" then
 			return { Regular = { {} } }
@@ -156,12 +159,27 @@ local payload = reporter:MatchPayload(
 )
 assert(payload.content == "@everyone <@938129321>", "webhook mentions were not generated")
 assert(payload.embeds[1].footer.text == "discord.gg/V3WcdHpd3J", "webhook footer is wrong")
-assert(
-	string.find(payload.embeds[1].fields[4].value, "Spirit City - Act 3 - Raid", 1, true),
-	"webhook map data is missing"
+assert(string.find(payload.embeds[1].description, "Spirit City - Act 3 - Raid", 1, true), "webhook map data is missing")
+assert(string.find(payload.embeds[1].description, "**Time:** 06:10", 1, true), "webhook time is missing")
+assert(string.find(payload.embeds[1].description, "[50] - Ban (Unbound)", 1, true), "webhook unit data is missing")
+assert(payload.embeds[1].thumbnail.url, "webhook map thumbnail is missing")
+local liveResult = {
+	Victory = true,
+	Rewards = { Gem = { Amount = 125 } },
+	GainedUnitExp = { [1] = { UnitID = "unit1" } },
+	MapName = "SpiritCity",
+	ActName = "Act 3",
+	Gamemode = "Raid",
+	Difficulty = "Hard",
+	TotalTime = 370,
+}
+local livePayload = reporter:MatchPayload(
+	{ PingDrops = {}, EquipmentRarity = "None", MentionEveryone = false, DiscordUserId = "" },
+	liveResult,
+	1
 )
-assert(string.find(payload.embeds[1].fields[4].value, "Time: 06:10", 1, true), "webhook time is missing")
-assert(string.find(payload.embeds[1].fields[2].value, "[50] - Ban (Unbound)", 1, true), "webhook unit data is missing")
+assert(string.find(livePayload.embeds[1].description, "[50] - Ban (Unbound)", 1, true), "live result units were not resolved")
+assert(string.find(livePayload.embeds[1].description, "+[125] Gem", 1, true), "dictionary rewards were not resolved")
 local noEquipment = { Rewards = { { Asset = "Gem", Amount = 1 } } }
 local mentions = reporter:Mentions(
 	{ PingDrops = {}, EquipmentRarity = "Mythic", MentionEveryone = true, DiscordUserId = "938129321" },
@@ -261,6 +279,12 @@ assert(
 	"webhook drop selection is not searchable multi-select"
 )
 assert(controls["webhook.equipment_rarity"].Settings.Search == true, "webhook rarity selection is not searchable")
+local webhookSource = fs.read("src/Modules/Webhook.lua", "bin")
+assert(not string.find(webhookSource, "task.delay(0.5", 1, true), "match webhooks still have an artificial delivery delay")
+assert(
+	string.find(webhookSource, "local payload = ctx.Webhook:MatchPayload", 1, true),
+	"match data is not captured before asynchronous delivery"
+)
 
 local gameEndSource = fs.read("src/Modules/GameEnd.lua", "bin")
 assert(string.find(gameEndSource, "ctx.Results:Snapshot()", 1, true), "end actions do not poll the live result screen")
