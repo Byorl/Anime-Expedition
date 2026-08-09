@@ -158,8 +158,10 @@ return function(Import)
 		local original = settings.Callback
 		local copied = Util.Clone(settings)
 		local resolveValue = copied.ResolveValue
+		local programmatic = false
 		copied.ResolveValue = nil
 		copied.Callback = function(value)
+			if programmatic then return end
 			if not self:_CanDispatch(owner) then return end
 			local stored = value
 			if copied.Multi and type(value) == "table" then
@@ -194,7 +196,17 @@ return function(Import)
 					if ok and current ~= nil then resolved = current end
 				end
 			end
-			control:UpdateSelection(resolved)
+			programmatic = true
+			local ok, err = xpcall(function() control:UpdateSelection(resolved) end, Util.Traceback)
+			programmatic = false
+			if not ok then error(err, 0) end
+			self.Values[flag] = Util.Clone(resolved)
+			local callbackValue = resolved
+			if copied.Multi and type(resolved) == "table" then
+				callbackValue = {}
+				for _, item in ipairs(resolved) do callbackValue[item] = true end
+			end
+			Util.SafeCall(flag .. " applied", original, Util.Clone(callbackValue))
 		end, owner)
 	end
 
@@ -297,6 +309,7 @@ return function(Import)
 
 	function ControlRegistry:VerifyApplied(owner)
 		local errors = {}
+		local warnings = {}
 		for _, flag in ipairs(Util.SortedKeys(self.Entries)) do
 			local entry = self.Entries[flag]
 			if owner == nil or entry.Owner == owner then
@@ -325,7 +338,8 @@ return function(Import)
 					if not ok then
 						table.insert(errors, string.format("%s (%s) could not be read: %s", flag, entry.Kind, tostring(actual)))
 					elseif not valuesEqual(actual, expected) then
-						table.insert(errors, string.format(
+						local target = entry.Kind == "Dropdown" and warnings or errors
+						table.insert(target, string.format(
 							"%s (%s) expected %s but UI reports %s",
 							flag,
 							entry.Kind,
@@ -336,7 +350,7 @@ return function(Import)
 				end
 			end
 		end
-		return #errors == 0, table.concat(errors, "\n")
+		return #errors == 0, table.concat(errors, "\n"), table.concat(warnings, "\n")
 	end
 
 	function ControlRegistry:ApplyAtomic(values)

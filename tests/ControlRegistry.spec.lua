@@ -52,7 +52,7 @@ end
 local toggle = scope:Toggle(section, {Default = true, Callback = function() callbacks = callbacks + 1 end}, "test.toggle")
 local slider = scope:Slider(section, {Default = 50, Minimum = 0, Maximum = 100, Step = 1, Callback = function() callbacks = callbacks + 1 end}, "test.slider")
 scope:Input(section, {Default = "abc", onChanged = function() callbacks = callbacks + 1 end}, "test.input")
-scope:Dropdown(section, {
+local dropdown = scope:Dropdown(section, {
 	Options = {"Current [unit-1]"},
 	Default = 1,
 	ResolveValue = function(value)
@@ -77,6 +77,10 @@ assert(registry:Get("test.dropdown") == "Current [unit-1]", "dynamic dropdown id
 assert(callbacks == 4, "atomic apply did not restore live feature callbacks")
 local verifyOk, verifyError = registry:VerifyApplied()
 assert(verifyOk, verifyError)
+dropdown.GetOptions = function() return {} end
+local pendingOk, pendingError, pendingWarning = registry:VerifyApplied()
+assert(pendingOk and pendingError == "" and string.find(pendingWarning, "test.dropdown", 1, true),
+	"temporarily unavailable dropdown caused a full config rejection")
 
 toggle:UpdateState(true)
 assert(registry:Get("test.toggle") == true and changes == 1, "user change was not recorded")

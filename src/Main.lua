@@ -300,7 +300,9 @@ return function(Import)
 		Runtime:Shutdown("window unloaded", true)
 	end)
 	Tabs.Join:Select()
-	Runtime:Notify("Loaded", string.format("Account %s | Config %s", LocalPlayer.Name, Config.Account.SelectedConfig))
+	if profileReady then
+		Runtime:Notify("Loaded", string.format("Account %s | Config %s", LocalPlayer.Name, Config.Account.SelectedConfig))
+	end
 
 	return Runtime
 end

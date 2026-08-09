@@ -339,11 +339,16 @@ return function(Import)
 		local values = self:_FlattenModules(data.Modules)
 		local applyOk, applyError = self.Registry:ApplyAtomic(values)
 		if applyOk and type(self.Registry.VerifyApplied) == "function" then
-			local verifyOk, verifyError = self.Registry:VerifyApplied()
+			local verifyOk, verifyError, verifyWarning = self.Registry:VerifyApplied()
+			if verifyWarning and verifyWarning ~= "" then Util.Warn("config dropdown synchronization pending:\n" .. verifyWarning) end
 			if not verifyOk then
 				local retryOk, retryError = self.Registry:ApplyAtomic(values)
 				local retryVerifyOk, retryVerifyError = false, "retry was not applied"
-				if retryOk then retryVerifyOk, retryVerifyError = self.Registry:VerifyApplied() end
+				if retryOk then
+					local retryWarning
+					retryVerifyOk, retryVerifyError, retryWarning = self.Registry:VerifyApplied()
+					if retryWarning and retryWarning ~= "" then Util.Warn("config dropdown synchronization pending after retry:\n" .. retryWarning) end
+				end
 				if not retryOk or not retryVerifyOk then
 					applyOk = false
 					applyError = "post-load verification failed:\n" .. tostring(verifyError)
