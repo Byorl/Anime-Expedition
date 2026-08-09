@@ -30,10 +30,18 @@ return function(Import)
 		if not control then return end
 		local signature = table.concat(options, "\0")
 		if state[signatureKey] == signature then return end
-		state[signatureKey] = signature
-		control:ClearOptions()
-		control:InsertOptions(#options > 0 and options or {"Unavailable"})
-		if selection and #selection > 0 then control:UpdateSelection(selection) end
+		local restoreIdentity = Util.ElevateIdentity()
+		local ok, err = xpcall(function()
+			control:ClearOptions()
+			control:InsertOptions(#options > 0 and options or {"Unavailable"})
+			if selection and #selection > 0 then control:UpdateSelection(selection) end
+		end, Util.Traceback)
+		restoreIdentity()
+		if ok then
+			state[signatureKey] = signature
+		else
+			Util.Warn("bounty dropdown refresh: " .. tostring(err))
+		end
 	end
 
 	local function updateLabel(label, text, name)
@@ -61,18 +69,22 @@ return function(Import)
 		local current = BountyCatalog.ResolveQuestData(deepState, shallowState, playerData)
 		local category = BountyCatalog.Category(current)
 		if next(type(category.Quests) == "table" and category.Quests or {}) ~= nil then return current end
-		local replica
-		if type(ctx.Game.InvokeSelf) == "function" then
-			local ok, result = ctx.Game:InvokeSelf("GET_PLAYER_REPLICA")
-			if ok then replica = result end
+		local deepPlayer
+		if type(ctx.Game.StateDeep) == "function" then
+			local ok, result = pcall(ctx.Game.StateDeep, ctx.Game, "PlayerData", 8)
+			if ok then deepPlayer = result end
 		end
-		return BountyCatalog.ResolveQuestData(current, replica)
+		return BountyCatalog.ResolveQuestData(current, deepPlayer)
 	end
 
 	function Bounty:_Read(ctx, state)
 		local information = ctx.Game:Information() or {}
 		local questData = self:_QuestData(ctx)
-		local gameData = ctx.Game:GameData()
+		local gameData
+		if type(ctx.Game.StateDeep) == "function" then
+			local ok, result = pcall(ctx.Game.StateDeep, ctx.Game, "GameState", 6)
+			if ok then gameData = result end
+		end
 		local thisMap, boardText, entries = BountyCatalog.BoardText(information, questData, gameData)
 		state.Entries = entries
 		state.Information = information
@@ -336,7 +348,13 @@ return function(Import)
 					end)
 				end,
 			}, "bounty.banners")
-			summon:Button({Name = "Refresh Banners", Callback = function() state.LastRefreshAt = -math.huge Bounty:_Read(ctx, state) end})
+			summon:Button({Name = "Refresh Banners", Callback = function()
+				state.LastRefreshAt = -math.huge
+				task.defer(function()
+					local ok, err = xpcall(function() Bounty:_Read(ctx, state) end, Util.Traceback)
+					if not ok then Bounty:_Status(state, "Bounty refresh failed: " .. tostring(err)) end
+				end)
+			end})
 
 			travel:Header({Text = "Bounty Travel"})
 			ctx.Registry:Toggle(travel, {Name = "Auto Join Bounty Map", Default = false, Callback = function(value) state.JoinEnabled = value == true end}, "bounty.auto_join")
@@ -352,7 +370,6 @@ return function(Import)
 			board:Divider()
 			board:Header({Text = "Board"})
 			state.BoardLabel = board:Label({Text = "Claims used today: 0/10\n0 bounty(s)"})
-			Bounty:_Read(ctx, state)
 			ctx:RegisterCleanup(ctx.Join:Register("Bounty", 100, function()
 				if not state.JoinEnabled then return nil end
 				local information = ctx.Game:Information() or {}
@@ -377,7 +394,7 @@ return function(Import)
 				if not candidate then return nil end
 				return {Queue = candidate.Queue, Matchmaking = state.Matchmaking, Delay = state.Delay}
 			end))
-			local worker = task.spawn(function()
+			local worker = task.defer(function()
 				while state.Alive and ctx.Runtime.Alive do
 					local ok, err = xpcall(function() Bounty:_Tick(ctx, state) end, Util.Traceback)
 					if not ok then Bounty:_Status(state, "Bounty error: " .. tostring(err)) task.wait(1) end

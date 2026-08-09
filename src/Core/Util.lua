@@ -13,9 +13,11 @@ return function()
 			return true
 		end
 		local arguments = table.pack(...)
+		local restoreIdentity = type(Util.ElevateIdentity) == "function" and Util.ElevateIdentity() or function() end
 		local results = table.pack(xpcall(function()
 			return callback(table.unpack(arguments, 1, arguments.n))
 		end, Util.Traceback))
+		restoreIdentity()
 		if not results[1] then
 			Util.Warn(label .. ": " .. tostring(results[2]))
 		end

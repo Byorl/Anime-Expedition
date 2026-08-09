@@ -1,6 +1,8 @@
 task = task or {}
 task.wait = task.wait or function() end
 task.spawn = task.spawn or function(callback) callback() return nil end
+local deferred = {}
+task.defer = function(callback) table.insert(deferred, callback) return callback end
 
 local factories = {
 	Util = rbxmk.loadFile("src/Core/Util.lua")(),
@@ -34,7 +36,7 @@ local questData = {BountyBoard = {ClaimedAmount = 2, QuestOrder = {"WaveBounty"}
 }}}
 local bannerData = {Standard = {BannerInfo = {Currency = "Gem", Cost = 50}}}
 
-local controls, callbacks, providers = {}, {}, {}
+local controls, callbacks, providers, buttons = {}, {}, {}, {}
 local function control(settings)
 	return {
 		Settings = settings,
@@ -51,7 +53,11 @@ function section:Divider() end
 function section:Label(settings)
 	return {Settings = settings, UpdateName = function(self, value) self.Value = value end}
 end
-function section:Button(settings) return control(settings) end
+function section:Button(settings)
+	local created = control(settings)
+	buttons[settings.Name] = created
+	return created
+end
 local registry = {}
 for _, kind in ipairs({"Dropdown", "Toggle", "Slider"}) do
 	registry[kind] = function(_, _, settings, flag)
@@ -80,6 +86,9 @@ local context = {
 local module = Import("Bounty")
 local ok, state = pcall(module.Init, module, context)
 assert(ok, "Bounty failed to initialize: " .. tostring(state))
+assert(#state.Entries == 0, "Bounty performed live data reads before module initialization completed")
+buttons["Refresh Banners"].Settings.Callback()
+deferred[#deferred]()
 assert(#state.Entries == 1 and state.Entries[1].Key == "WaveBounty", "Bounty did not prefer populated player quest data")
 assert(string.find(state.BoardLabel.Value, "1 bounty(s)", 1, true), "Bounty board did not render populated player quest data")
 for _, flag in ipairs({"bounty.keep_rarities", "bounty.keep_types", "bounty.avoid_types", "bounty.banners"}) do

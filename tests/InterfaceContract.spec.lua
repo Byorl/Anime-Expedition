@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.25.4", "interface release version is wrong")
+assert(Build.Version == "1.25.5", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/f232a4cfdc7069fad80188d2e92a8b6a3af8a596/src/maclib.lua",
@@ -17,6 +17,9 @@ assert(string.find(uiManagerSource, "account.UI.MobileLauncher", 1, true), "mobi
 assert(string.find(configManagerSource, "MobileLauncher", 1, true), "mobile launcher account default is missing")
 assert(string.find(mainSource, "local profileReady = true", 1, true), "failed config loads are not save-locked")
 assert(string.find(configManagerSource, "post-load verification failed", 1, true), "config load verification is missing")
+local bountySource = fs.read("src/Modules/Bounty.lua", "bin")
+assert(not string.find(bountySource, 'InvokeSelf("GET_PLAYER_REPLICA")', 1, true), "Bounty startup still uses a blocking replica lookup")
+assert(string.find(bountySource, "local worker = task.defer", 1, true), "Bounty live reads are not deferred until after module startup")
 local joinPosition = assert(string.find(mainSource, "Join = TabGroup:Tab", 1, true), "Join tab is missing")
 local autoPlayPosition = assert(string.find(mainSource, "AutoPlay = TabGroup:Tab", 1, true), "Auto Play tab is missing")
 local gamePosition = assert(string.find(mainSource, "Game = TabGroup:Tab", 1, true), "Game tab is missing")
