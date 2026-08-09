@@ -1,8 +1,33 @@
 return function()
 	local GameMatch = {}
+	local UserInputService = game:GetService("UserInputService")
+	local VirtualInputManager = game:GetService("VirtualInputManager")
+	local VirtualUser = game:GetService("VirtualUser")
+	local Workspace = game:GetService("Workspace")
+
+	local function keepActive()
+		local ok = pcall(function()
+			local position = UserInputService:GetMouseLocation()
+			VirtualInputManager:SendMouseMoveEvent(position.X + 1, position.Y, game)
+			VirtualInputManager:SendMouseMoveEvent(position.X, position.Y, game)
+		end)
+		if ok then return true end
+		return pcall(function()
+			local camera = Workspace.CurrentCamera
+			VirtualUser:CaptureController()
+			VirtualUser:ClickButton2(Vector2.new(0, 0), camera and camera.CFrame or CFrame.new())
+		end)
+	end
 
 	local function run(ctx, state)
 		while state.Alive and ctx.Runtime.Alive do
+			if state.PreventAFK and os.clock() - state.LastKeepAlive >= 60 then
+				state.LastKeepAlive = os.clock()
+				if not keepActive() and not state.KeepAliveWarning then
+					state.KeepAliveWarning = true
+					ctx.Runtime:Notify("AFK Chamber", "Your executor does not expose virtual input; use Auto Leave AFK Chamber as a fallback.")
+				end
+			end
 			local startReady = state.AutoStart
 				and state.AutoStartEnabledAt
 				and os.clock() - state.AutoStartEnabledAt >= state.StartDelay
@@ -15,7 +40,7 @@ return function()
 
 			local session = ctx.Game:State("SessionData")
 			if
-				state.LeaveAFK
+				(state.LeaveAFK or state.PreventAFK)
 				and type(session) == "table"
 				and session.AFKChamber ~= nil
 				and os.clock() - state.LastAFKAttempt >= 3
@@ -32,7 +57,7 @@ return function()
 
 	return {
 		Name = "GameMatch",
-		Version = 3,
+		Version = 4,
 		Priority = 7,
 		Dependencies = {},
 
@@ -44,6 +69,9 @@ return function()
 				AutoStartEnabledAt = nil,
 				StartDelay = 0,
 				LeaveAFK = false,
+				PreventAFK = false,
+				LastKeepAlive = -math.huge,
+				KeepAliveWarning = false,
 				LastAFKAttempt = 0,
 			}
 			local automation = ctx.Tabs.Game:Section({ Side = "Left" })
@@ -76,6 +104,15 @@ return function()
 			}, "game.match.start_delay")
 			local afk = ctx.Tabs.Game:Section({ Side = "Left" })
 			afk:Header({ Text = "AFK Chamber" })
+			ctx.Registry:Toggle(afk, {
+				Name = "Prevent AFK Chamber",
+				Default = false,
+				Callback = function(value)
+					state.PreventAFK = value == true
+					state.LastKeepAlive = -math.huge
+					state.KeepAliveWarning = false
+				end,
+			}, "game.match.prevent_afk")
 			ctx.Registry:Toggle(afk, {
 				Name = "Auto Leave AFK Chamber",
 				Default = false,

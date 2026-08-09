@@ -65,7 +65,7 @@ local information = {
 	Maps = maps,
 	ChallengeInfo = {
 		Info = {
-			Regular = { Amount = 1, RefreshTime = 1800 },
+			Regular = { Amount = 3, RefreshTime = 1800 },
 			Daily = { Amount = 1, RefreshTime = 86400 },
 			Weekly = { Amount = 1, RefreshTime = 604800 },
 		},
@@ -83,7 +83,11 @@ local information = {
 local playerData =
 	{ CompletedMaps = {}, ChallengeData = { ClearHistory = {}, DailyClearHistory = {} }, ItemData = { CrowRelic = 0 } }
 local challengeData = {
-	Regular = { { MapName = "KingsTomb", ActName = "Act 1", Difficulty = "Hard" } },
+	Regular = {
+		{ MapName = "KingsTomb", ActName = "Act 1", Difficulty = "Hard" },
+		{ MapName = "KingsTomb", ActName = "Act 2", Difficulty = "Hard" },
+		{ MapName = "KingsTomb", ActName = "Act 1", Difficulty = "Easy" },
+	},
 	Daily = { { MapName = "KingsTomb", ActName = "Act 1", Difficulty = "Hard" } },
 	Weekly = { { MapName = "KingsTomb", ActName = "Act 1", Difficulty = "Hard" } },
 }
@@ -179,6 +183,11 @@ for flag, current in pairs(controls) do
 	end
 end
 assert(controls["join.challenge.types"].Settings.Multi == true, "challenge types are not multi-select")
+assert(
+	controls["join.challenge.index"].Settings.Multi == true
+		and controls["join.challenge.index"].Settings.Required == false,
+	"regular challenge numbers are not optional multi-select"
+)
 assert(controls["join.challenge.drop"].Settings.Multi == true, "challenge drops are not multi-select")
 assert(controls["join.event.crow_relics"].Settings.Maximum == 200, "Crow relic limit is not 200")
 for _, flag in ipairs({ "join.story.delay", "join.challenge.delay", "join.event.delay", "join.raid.delay" }) do
@@ -203,6 +212,9 @@ assert(
 )
 assert(providers.Event().Queue.Gamemode == "VillainInvasion", "event provider produced invalid queue data")
 assert(providers.Raid().Queue.Gamemode == "Raid", "raid provider produced invalid queue data")
+callbacks["join.challenge.types"]({Regular = true})
+callbacks["join.challenge.index"]({["2"] = true, ["3"] = true})
+assert(providers.Challenge().Queue.ChallengeIndex == 2, "regular challenge multi-selection was ignored")
 
 local challengeSource = fs.read("src/Modules/JoinChallenge.lua", "bin")
 assert(string.find(challengeSource, "LastLobbyAttemptAt", 1, true), "challenge lobby retries are missing")

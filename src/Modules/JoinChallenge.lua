@@ -27,6 +27,16 @@ return function(Import)
 		return output
 	end
 
+	local function selectedIndexes(value)
+		local output = {}
+		for key, selected in pairs(type(value) == "table" and value or {}) do
+			local raw = type(key) == "number" and selected or selected == true and key or nil
+			local index = tonumber(raw)
+			if index and index >= 1 then output[tostring(math.floor(index))] = true end
+		end
+		return output
+	end
+
 	local function replace(state, key, control, options, selected)
 		if not control then
 			return
@@ -68,14 +78,16 @@ return function(Import)
 		for value in pairs(state.SelectedTypes) do
 			amount = math.max(amount, Catalog.ChallengeAmount(information, value))
 		end
-		state.IndexOptions = { "All" }
+		state.IndexOptions = {}
 		for index = 1, amount do
 			table.insert(state.IndexOptions, tostring(index))
 		end
-		if state.Index ~= "All" and not table.find(state.IndexOptions, state.Index) then
-			state.Index = "All"
+		local validIndexes = {}
+		for _, index in ipairs(state.IndexOptions) do validIndexes[index] = true end
+		for index in pairs(state.SelectedIndexes) do
+			if not validIndexes[index] then state.SelectedIndexes[index] = nil end
 		end
-		replace(state, "IndexSignature", state.IndexControl, state.IndexOptions, state.Index)
+		replace(state, "IndexSignature", state.IndexControl, state.IndexOptions, selectedList(state.SelectedIndexes))
 
 		local challengeData = ctx.Game:State("ChallengeData")
 		state.Drops = Catalog.ChallengeDrops(information, challengeData)
@@ -113,7 +125,8 @@ return function(Import)
 				local amount = Catalog.ChallengeAmount(information, challengeType)
 				for index = 1, amount do
 					if
-						(state.Index == "All" or challengeType ~= "Regular" or tonumber(state.Index) == index)
+						(challengeType ~= "Regular" or not next(state.SelectedIndexes)
+							or state.SelectedIndexes[tostring(index)] == true)
 						and Catalog.ChallengeAvailable(information, playerData, challengeType, index)
 						and Catalog.ChallengeHasSelectedDrop(information, challengeType, index, state.SelectedDrops)
 					then
@@ -130,7 +143,7 @@ return function(Import)
 
 	return {
 		Name = "JoinChallenge",
-		Version = 1,
+		Version = 2,
 		Priority = 4,
 		Dependencies = {},
 
@@ -145,13 +158,13 @@ return function(Import)
 				BackToLobby = false,
 				Types = types,
 				SelectedTypes = types[1] and { [types[1]] = true } or {},
-				Index = "All",
+				SelectedIndexes = {},
 				SelectedDrops = {},
 				LastLobbyKey = nil,
 				LastLobbyAttemptAt = 0,
 			}
 			local amount = types[1] and Catalog.ChallengeAmount(information, types[1]) or 0
-			state.IndexOptions = { "All" }
+			state.IndexOptions = {}
 			for index = 1, amount do
 				table.insert(state.IndexOptions, tostring(index))
 			end
@@ -174,12 +187,12 @@ return function(Import)
 			state.IndexControl = ctx.Registry:Dropdown(section, {
 				Name = "Regular Challenge # (blank = all)",
 				Search = true,
-				Multi = false,
-				Required = true,
-				Options = state.IndexOptions,
-				Default = 1,
+				Multi = true,
+				Required = false,
+				Options = #state.IndexOptions > 0 and state.IndexOptions or { "Unavailable" },
+				Default = {},
 				Callback = function(value)
-					state.Index = tostring(value or "All")
+					state.SelectedIndexes = selectedIndexes(value)
 				end,
 			}, "join.challenge.index")
 			state.DropControl = ctx.Registry:Dropdown(section, {

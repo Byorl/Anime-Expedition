@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.19.0", "interface release version is wrong")
+assert(Build.Version == "1.20.0", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/0ae3ef7a81a8c71b95147212efa1103673b273ce/src/maclib.lua",
@@ -37,6 +37,8 @@ assert(not string.find(gameMatchSource, "Leave at Wave (0=off)", 1, true), "Leav
 assert(string.find(gameEndSource, "Leave at Wave (0=off)", 1, true), "Leave at Wave is missing from End of Match")
 assert(string.find(gameMatchSource, 'RespondToVote("start game")', 1, true), "Auto Start does not accept start votes")
 assert(string.find(gameMatchSource, 'RespondToVote("skip")', 1, true), "Auto Skip does not accept skip votes")
+assert(string.find(gameMatchSource, "Prevent AFK Chamber", 1, true), "AFK prevention control is missing")
+assert(string.find(gameMatchSource, "SendMouseMoveEvent", 1, true), "AFK prevention does not refresh input activity")
 assert(
 	string.find(gameAdapterSource, 'FireServer("Response", true)', 1, true),
 	"vote prompts are not accepted directly"
