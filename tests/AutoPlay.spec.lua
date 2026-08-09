@@ -183,10 +183,12 @@ assert(
 )
 
 local factories = {
+	AutomationCatalog = rbxmk.loadFile("src/Core/AutomationCatalog.lua")(),
 	AutoPlayPlanner = function()
 		return Planner
 	end,
 	SmartAutoPlayPlanner = rbxmk.loadFile("src/Core/SmartAutoPlayPlanner.lua")(),
+	JoinCatalog = rbxmk.loadFile("src/Core/JoinCatalog.lua")(),
 	AutoPlay = rbxmk.loadFile("src/Modules/AutoPlay.lua")(),
 }
 local function Import(name)
@@ -265,6 +267,9 @@ assert(not controls["auto_play.smart.reserve"], "Smart yen reserve should not re
 assert(not controls["auto_play.smart.spacing"], "Smart placement spacing should not require manual tuning")
 
 local source = fs.read("src/Modules/AutoPlay.lua", "bin")
+assert(string.find(source, "Planning: Match complete", 1, true), "Smart planner does not stop its status at match completion")
+assert(string.find(source, "Planning: Saving for deployment", 1, true), "Smart planner saving status is missing")
+assert(string.find(source, "MapDisplayName", 1, true), "Smart planner does not resolve friendly map names")
 assert(
 	string.find(source, "GameTime", 1, true) and string.find(source, "LastTotal", 1, true),
 	"seamless replay reset detection is missing"

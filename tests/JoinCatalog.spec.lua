@@ -19,7 +19,7 @@ local mapData = {
 	Raid = {SpiritCity = {ProgressionIndex = 1, ActProgression = {"Act 1", "Act 2"}, Difficulties = {"Easy", "Hard", "Nightmare"}}},
 	VillainInvasion = {VillainInvasion = {ActProgression = {"Act 1", "Act 2", "Act 3", "Crow"}, Difficulties = {"Hard"}, OrderedFactions = {"Death", "Tartaros", "Sword", "Dawn"}}},
 }
-local maps = {MapData = mapData, PreviewInfo = {KingsTomb = {DisplayName = "King's Tomb"}}}
+local maps = {MapData = mapData, PreviewInfo = {KingsTomb = {DisplayName = "King's Tomb"}, Dressrosa = {DisplayName = "Rose Kingdom"}}}
 function maps:GetOrderedMaps(mode)
 	local output = {}
 	for key in pairs(self.MapData[mode] or {}) do table.insert(output, key) end
@@ -47,6 +47,7 @@ local information = {
 
 local mapOptions = catalog.MapOptions(information, "Story")
 assert(mapOptions.ByKey.KingsTomb == "King's Tomb [KingsTomb]", "story map labels did not preserve their live keys")
+assert(catalog.MapDisplayName(information, "Dressrosa") == "Rose Kingdom", "friendly map names were not resolved")
 local stages = catalog.Stages(information, "KingsTomb")
 assert(table.find(stages, "Act 2") and table.find(stages, "Infinite") and table.find(stages, "Mastery"), "story stages did not merge live acts and modes")
 local storyQueue = catalog.StoryQueue(information, "KingsTomb", "Infinite", "Hard")
@@ -54,6 +55,7 @@ assert(storyQueue.Gamemode == "Infinite" and storyQueue.ActName == nil, "infinit
 assert(catalog.ChallengeAmount(information, "Regular") == 3, "challenge count was not read from live information")
 
 local challengeData = {Regular = {{MapName = "KingsTomb", ActName = "Act 1", Difficulty = "Hard"}}}
+assert(type(catalog.ChallengeQueue(challengeData, "Regular", 1).ChallengeIndex) == "number", "challenge index is not a server-compatible number")
 local drops = catalog.ChallengeDrops(information, challengeData)
 assert(drops.ByKey.Gem and drops.ByKey.Ban, "challenge reward catalog omitted live drops")
 assert(catalog.ChallengeHasDrop(information, "Regular", 1, "Ban"), "challenge reward filter rejected a present drop")

@@ -76,4 +76,13 @@ end
 local deep = nestedAdapter:DeepPeek({ Unit = { State = true, Value = { UnitID = "u1", Upgrade = 2 } } }, 4)
 assert(deep.Unit.UnitID == "u1" and deep.Unit.Upgrade == 2, "nested replicated unit state was not unwrapped")
 
+local liveState = { Value = {} }
+local lobbyAdapter = setmetatable({ Ready = true, Dependencies = { GameState = liveState } }, Adapter)
+function lobbyAdapter:Peek(value)
+	return value.Value
+end
+assert(not lobbyAdapter:IsInGame(), "an empty lobby GameState was detected as an active game")
+liveState.Value = { Parameters = { Gamemode = "Story" } }
+assert(lobbyAdapter:IsInGame(), "a populated GameState was not detected as an active game")
+
 print("Match detection tests passed")

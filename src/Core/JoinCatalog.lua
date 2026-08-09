@@ -43,11 +43,15 @@ return function(Import)
 	end
 
 	function JoinCatalog.MapLabel(information, mapName)
+		return string.format("%s [%s]", JoinCatalog.MapDisplayName(information, mapName), tostring(mapName))
+	end
+
+	function JoinCatalog.MapDisplayName(information, mapName)
+		if mapName == nil or tostring(mapName) == "" then return "Unknown" end
 		local maps = type(information) == "table" and information.Maps or nil
 		local preview = type(maps) == "table" and maps.PreviewInfo or nil
 		local info = type(preview) == "table" and preview[mapName] or nil
-		local name = type(info) == "table" and (info.DisplayName or info.Name) or mapName
-		return string.format("%s [%s]", tostring(name), tostring(mapName))
+		return tostring(type(info) == "table" and (info.DisplayName or info.Name) or mapName)
 	end
 
 	function JoinCatalog.MapOptions(information, gamemode)
@@ -199,7 +203,7 @@ return function(Import)
 		return {
 			Gamemode = "Challenge",
 			ChallengeType = challengeType,
-			ChallengeIndex = tostring(index),
+			ChallengeIndex = tonumber(index) or index,
 			MapName = data.MapName,
 			ActName = data.ActName,
 			Difficulty = data.Difficulty,

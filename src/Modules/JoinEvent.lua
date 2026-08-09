@@ -68,7 +68,7 @@ return function(Import)
 			Difficulty = difficulties[1],
 			Factions = faction and { faction } or {},
 		}
-		if not queue.Difficulty or not Catalog.QueueUnlocked(information, playerData, queue) then
+		if not queue.Difficulty then
 			return nil
 		end
 		if act == "Crow" and relics <= 0 then

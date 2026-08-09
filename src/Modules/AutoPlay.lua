@@ -1,6 +1,7 @@
 return function(Import)
 	local Planner = Import("AutoPlayPlanner")
 	local SmartPlanner = Import("SmartAutoPlayPlanner")
+	local JoinCatalog = Import("JoinCatalog")
 	local AutoPlay = {}
 	local Players = game:GetService("Players")
 	local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -798,9 +799,28 @@ return function(Import)
 		end
 	end
 
+	local function smartStatus(decision)
+		if decision.Kind == "Place" then
+			return "Planning: Deploying " .. tostring(decision.Slot and decision.Slot.Name or "unit")
+		elseif decision.Kind == "Upgrade" then
+			return "Planning: Upgrading " .. tostring(decision.Slot and decision.Slot.Name or "unit")
+		elseif decision.Preview and decision.Preview.Kind == "Place" then
+			return "Planning: Saving for deployment"
+		elseif decision.Preview and decision.Preview.Kind == "Upgrade" then
+			return "Planning: Saving for upgrade"
+		end
+		local reason = string.lower(tostring(decision.Reason or ""))
+		if string.find(reason, "cap", 1, true) then
+			return "Planning: Placement cap reached"
+		elseif string.find(reason, "yen", 1, true) or string.find(reason, "save", 1, true) then
+			return "Planning: Saving Yen"
+		end
+		return "Planning: Monitoring"
+	end
+
 	local function updateSmartLabels(state, decision)
 		local context = decision.Context or {}
-		local status = decision.Kind == "Wait" and "Planning: Waiting" or "Planning: " .. tostring(decision.Kind)
+		local status = smartStatus(decision)
 		if state.SmartStatusText ~= status and state.SmartStatusLabel then
 			state.SmartStatusText = status
 			state.SmartStatusLabel:UpdateName(status)
@@ -845,6 +865,22 @@ return function(Import)
 		if state.SmartDecisionText ~= reason and state.SmartDecisionLabel then
 			state.SmartDecisionText = reason
 			state.SmartDecisionLabel:UpdateName(reason)
+		end
+	end
+
+	local function updateSmartCompleteLabels(state, result)
+		local outcome = type(result) == "table" and result.Victory == true and "Victory" or "Defeat"
+		local labels = {
+			{ "SmartStatusText", "SmartStatusLabel", "Planning: Match complete" },
+			{ "SmartThreatText", "SmartThreatLabel", "Threat: Match complete" },
+			{ "SmartAutomationText", "SmartAutomationLabel", "Automatic: Suspended until the next match" },
+			{ "SmartDecisionText", "SmartDecisionLabel", "Decision: " .. outcome .. "; no further actions" },
+		}
+		for _, entry in ipairs(labels) do
+			if state[entry[1]] ~= entry[3] and state[entry[2]] then
+				state[entry[1]] = entry[3]
+				state[entry[2]]:UpdateName(entry[3])
+			end
 		end
 	end
 
@@ -907,6 +943,15 @@ return function(Import)
 			BlockedSlots = blockedSlots,
 			History = state.SmartHistory,
 		})
+		local context = decision.Context or {}
+		local displayMap = JoinCatalog.MapDisplayName(ctx.Game:Information() or {}, context.Map)
+		context.Scenario = string.format(
+			"%s | %s | %s | %s",
+			tostring(context.Mode or "Unknown"),
+			tostring(displayMap or context.Map or "Unknown"),
+			tostring(context.Act or "Unknown"),
+			tostring(context.Difficulty or "Unknown")
+		)
 		state.LastSmartDecision = decision
 		updateSmartLabels(state, decision)
 		local visual = decision.Kind == "Place" and decision or decision.Preview
@@ -938,6 +983,18 @@ return function(Import)
 						destroyMarkers(state)
 					end
 					return
+				end
+				local result = ctx.Results and select(1, ctx.Results:Snapshot()) or nil
+				if type(result) == "table" then
+					state.Pending = nil
+					state.NextActionAt = math.huge
+					if state.SmartEnabled then
+						updateSmartCompleteLabels(state, result)
+					end
+					destroyMarkers(state)
+					return
+				elseif state.NextActionAt == math.huge then
+					state.NextActionAt = 0
 				end
 				local current = snapshot(ctx, state)
 				if not current then
@@ -987,7 +1044,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 14,
+		Version = 15,
 		Priority = 9,
 		Dependencies = {},
 

@@ -22,6 +22,7 @@ return function(Import)
 			OwnMatchmaking = false,
 			LastError = nil,
 			LastErrorAt = 0,
+			LastStatus = nil,
 		}, JoinCoordinator)
 		self.Worker = task.spawn(function() self:_Run() end)
 		return self
@@ -42,6 +43,13 @@ return function(Import)
 		if message == self.LastError and os.clock() - self.LastErrorAt < 10 then return end
 		self.LastError, self.LastErrorAt = message, os.clock()
 		if self.Runtime and self.Runtime.Notify then self.Runtime:Notify("Auto Join", message) else Util.Warn("Auto Join: " .. message) end
+	end
+
+	function JoinCoordinator:_NotifyStatus(message)
+		message = tostring(message)
+		if message == self.LastStatus then return end
+		self.LastStatus = message
+		if self.Runtime and self.Runtime.Notify then self.Runtime:Notify("Auto Join", message) end
 	end
 
 	function JoinCoordinator:_Candidate()
@@ -65,8 +73,13 @@ return function(Import)
 	function JoinCoordinator:_Run()
 		while self.Alive and self.Runtime.Alive do
 			local candidate = self:_Candidate()
-			if not candidate then
+			if self.Game:IsInGame() then
 				self.PendingKey = nil
+				self.OwnMatchmaking = false
+				task.wait(0.25)
+			elseif not candidate then
+				self.PendingKey = nil
+				self.LastStatus = nil
 				if self.OwnMatchmaking then
 					self.Game:LeaveMatchmaking()
 					self.OwnMatchmaking = false
@@ -81,17 +94,18 @@ return function(Import)
 					end
 					self.PendingKey = key
 					self.PendingSince = os.clock()
+					self:_NotifyStatus(candidate.Provider .. " selected; joining after " .. tostring(math.max(0, tonumber(candidate.Delay) or 0)) .. " seconds.")
 				end
 
 				local delay = math.max(0, tonumber(candidate.Delay) or 0)
 				local retryAfter = candidate.Matchmaking and 15 or 12
 				if os.clock() - self.PendingSince >= delay and (self.LastAttemptKey ~= key or os.clock() - self.LastAttemptAt >= retryAfter) then
-					if not self.Game:IsInGame() then
-						local ok, err = self.Game:Join(candidate.Queue, candidate.Matchmaking == true, 5)
-						self.LastAttemptKey, self.LastAttemptAt = key, os.clock()
-						if ok then self.OwnMatchmaking = candidate.Matchmaking == true
-						else self:_NotifyError(candidate.Provider .. " join failed: " .. tostring(err)) end
-					end
+					local ok, err = self.Game:Join(candidate.Queue, candidate.Matchmaking == true, 5)
+					self.LastAttemptKey, self.LastAttemptAt = key, os.clock()
+					if ok then
+						self.OwnMatchmaking = candidate.Matchmaking == true
+						self:_NotifyStatus(candidate.Provider .. " launch requested successfully.")
+					else self:_NotifyError(candidate.Provider .. " join failed: " .. tostring(err)) end
 				end
 				task.wait(0.2)
 			end

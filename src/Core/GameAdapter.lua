@@ -236,8 +236,18 @@ return function(Import)
 	end
 
 	function GameAdapter:IsInGame()
-		local ok, replica = self:InvokeSelf("GET_GAME_REPLICA")
-		return ok and type(replica) == "table" and type(replica.FireServer) == "function"
+		if not self.Ready or type(self.Dependencies) ~= "table" then
+			return false
+		end
+		local gameState = self.Dependencies.GameState
+		if gameState == nil then
+			return false
+		end
+		local value = self:Peek(gameState)
+		if type(value) == "table" then
+			return next(value) ~= nil
+		end
+		return value ~= nil and value ~= false
 	end
 
 	function GameAdapter:LeaveMatchmaking()

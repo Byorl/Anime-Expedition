@@ -148,6 +148,7 @@ return function(Import)
 				Index = "All",
 				SelectedDrops = {},
 				LastLobbyKey = nil,
+				LastLobbyAttemptAt = 0,
 			}
 			local amount = types[1] and Catalog.ChallengeAmount(information, types[1]) or 0
 			state.IndexOptions = { "All" }
@@ -262,19 +263,22 @@ return function(Import)
 			local worker = task.spawn(function()
 				while state.Alive and ctx.Runtime.Alive do
 					Challenge:_Refresh(ctx, state)
-					if state.Enabled and state.BackToLobby and ctx.Game:IsInGame() then
+					if state.Enabled and state.BackToLobby then
 						local queue = candidate(ctx, state)
-						if queue then
+						if not queue then
+							state.LastLobbyKey = nil
+						elseif ctx.Game:IsInGame() then
 							local key = table.concat({ queue.ChallengeType or "", queue.ChallengeIndex or "" }, "|")
-							if state.LastLobbyKey ~= key then
-								state.LastLobbyKey = key
+							if state.LastLobbyKey ~= key and os.clock() - state.LastLobbyAttemptAt >= 5 then
+								state.LastLobbyAttemptAt = os.clock()
 								local ok, err = ctx.Game:ReturnToLobby()
-								if not ok then
+								if ok then
+									state.LastLobbyKey = key
+									ctx.Runtime:Notify("Challenge", "A selected challenge refreshed; returning to the lobby.")
+								else
 									ctx.Runtime:Notify("Challenge", "Return to lobby failed: " .. tostring(err))
 								end
 							end
-						else
-							state.LastLobbyKey = nil
 						end
 					end
 					task.wait(2)

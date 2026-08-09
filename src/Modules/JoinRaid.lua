@@ -137,9 +137,6 @@ return function(Import)
 				end
 				local queue =
 					{ Gamemode = "Raid", MapName = state.Map, ActName = state.Act, Difficulty = state.Difficulty }
-				if not Catalog.QueueUnlocked(ctx.Game:Information() or {}, ctx.Game:PlayerData(), queue) then
-					return nil
-				end
 				return { Queue = queue, Matchmaking = state.Matchmaking, Delay = state.Delay }
 			end))
 			local worker = task.spawn(function()

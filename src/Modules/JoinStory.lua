@@ -143,10 +143,6 @@ return function(Import)
 				end
 				local info = ctx.Game:Information() or {}
 				local queue = Catalog.StoryQueue(info, state.Map, state.Stage, state.Difficulty)
-				local playerData = ctx.Game:PlayerData()
-				if not Catalog.QueueUnlocked(info, playerData, queue) then
-					return nil
-				end
 				return { Queue = queue, Matchmaking = state.Matchmaking, Delay = state.Delay }
 			end))
 			local worker = task.spawn(function()

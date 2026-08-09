@@ -35,7 +35,15 @@ local mapData = {
 		},
 	},
 }
-local maps = { MapData = mapData, PreviewInfo = {}, GamemodeTypes = {} }
+local maps = {
+	MapData = mapData,
+	PreviewInfo = {},
+	GamemodeTypes = {
+		Story = { RequiresMapProgression = true, RequiresActProgression = true },
+		Raid = { RequiresMapProgression = true, RequiresActProgression = true },
+		VillainInvasion = { RequiresMapProgression = true, RequiresActProgression = true },
+	},
+}
 function maps:GetOrderedMaps(mode)
 	local output = {}
 	for key in pairs(self.MapData[mode] or {}) do
@@ -47,10 +55,10 @@ function maps:GetMapData(mode, map)
 	return self.MapData[mode] and self.MapData[mode][map]
 end
 function maps:HasMapUnlocked()
-	return true
+	return false
 end
 function maps:HasActUnlocked()
-	return true
+	return false
 end
 
 local information = {
@@ -195,5 +203,9 @@ assert(
 )
 assert(providers.Event().Queue.Gamemode == "VillainInvasion", "event provider produced invalid queue data")
 assert(providers.Raid().Queue.Gamemode == "Raid", "raid provider produced invalid queue data")
+
+local challengeSource = fs.read("src/Modules/JoinChallenge.lua", "bin")
+assert(string.find(challengeSource, "LastLobbyAttemptAt", 1, true), "challenge lobby retries are missing")
+assert(string.find(challengeSource, "if ok then", 1, true), "challenge lobby requests are marked complete before success")
 
 print("Join feature tests passed")
