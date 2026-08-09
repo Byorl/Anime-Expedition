@@ -203,6 +203,7 @@ return function(Import)
 			break
 		end
 	end
+	ResponsiveUI:MountMobileLauncher(parent, Config)
 
 	local TabGroup = Window:TabGroup()
 	local Tabs = {

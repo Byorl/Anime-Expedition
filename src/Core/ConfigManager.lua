@@ -58,6 +58,7 @@ return function(Import)
 				HiddenOnExecute = false,
 				ToggleKey = "RightShift",
 				Scale = {Desktop = 0.9, Mobile = 0.62},
+				MobileLauncher = {X = 0.96, Y = 0.86},
 				UIBlur = false,
 				HidePrivateInfo = true,
 			},
@@ -126,6 +127,10 @@ return function(Import)
 		}
 		account.UI.Scale.Desktop = tonumber(account.UI.Scale.Desktop) or 0.9
 		account.UI.Scale.Mobile = tonumber(account.UI.Scale.Mobile) or 0.62
+		account.UI.MobileLauncher = type(account.UI.MobileLauncher) == "table"
+			and account.UI.MobileLauncher or {X = 0.96, Y = 0.86}
+		account.UI.MobileLauncher.X = math.clamp(tonumber(account.UI.MobileLauncher.X) or 0.96, 0, 1)
+		account.UI.MobileLauncher.Y = math.clamp(tonumber(account.UI.MobileLauncher.Y) or 0.86, 0, 1)
 		return account
 	end
 

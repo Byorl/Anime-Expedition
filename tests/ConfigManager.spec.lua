@@ -45,6 +45,12 @@ local first = ConfigManager.new(store, registry, {UserId = 100, Name = "First"})
 local initOk, initError = first:Initialize()
 assert(initOk, initError)
 assert(first.Account.Schema == 3 and first.Account.SelectedConfig == "main", "schema 3/main initialization failed")
+assert(
+	type(first.Account.UI.MobileLauncher) == "table"
+		and first.Account.UI.MobileLauncher.X == 0.96
+		and first.Account.UI.MobileLauncher.Y == 0.86,
+	"mobile launcher account defaults failed"
+)
 assert(first:ResolveName("MAIN") == "main", "case-insensitive lookup failed")
 
 local createOk, createError = first:Create("Work")

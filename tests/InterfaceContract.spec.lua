@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.25.2", "interface release version is wrong")
+assert(Build.Version == "1.25.3", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/f056b47ad3c18bed1d6cc18ecb85f5df64065c78/src/maclib.lua",
@@ -7,6 +7,14 @@ assert(
 )
 
 local mainSource = fs.read("src/Main.lua", "bin")
+local uiManagerSource = fs.read("src/Core/UIManager.lua", "bin")
+local configManagerSource = fs.read("src/Core/ConfigManager.lua", "bin")
+assert(string.find(mainSource, "MountMobileLauncher", 1, true), "mobile launcher is not mounted")
+assert(string.find(uiManagerSource, "AnimeExpeditions_MobileLauncher", 1, true), "mobile launcher UI is missing")
+assert(string.find(uiManagerSource, "self.Window:SetState", 1, true), "mobile launcher cannot toggle the window")
+assert(string.find(uiManagerSource, "InputChanged", 1, true), "mobile launcher is not draggable")
+assert(string.find(uiManagerSource, "account.UI.MobileLauncher", 1, true), "mobile launcher position is not saved")
+assert(string.find(configManagerSource, "MobileLauncher", 1, true), "mobile launcher account default is missing")
 local joinPosition = assert(string.find(mainSource, "Join = TabGroup:Tab", 1, true), "Join tab is missing")
 local autoPlayPosition = assert(string.find(mainSource, "AutoPlay = TabGroup:Tab", 1, true), "Auto Play tab is missing")
 local gamePosition = assert(string.find(mainSource, "Game = TabGroup:Tab", 1, true), "Game tab is missing")
