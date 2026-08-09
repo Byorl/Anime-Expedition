@@ -66,14 +66,23 @@ local receivedRuns
 local unsubscribe = hub:Subscribe("test", function(_, runs)
 	receivedRuns = runs
 end)
+local deliveryDone
+local unsubscribeDelivery = hub:Subscribe("delivery", function(_, _, resultRevision)
+	deliveryDone = hub:BeginDelivery("Webhook", resultRevision)
+end)
 nodeCallbacks.SET_END_PARAMETERS({ Victory = true })
 assert(receivedRuns == 1 and hub.Runs == 1, "results hub did not count or dispatch the match")
+local deliveryReady, pendingDeliveries = hub:DeliveryState(1, 15)
+assert(not deliveryReady and pendingDeliveries[1] == "Webhook", "pending webhook delivery was not tracked")
+deliveryDone()
+assert(hub:DeliveryState(1, 15), "completed webhook delivery continued blocking end actions")
 local current, runs, revision, visible = hub:Snapshot()
 assert(current.Victory == true and runs == 1 and revision == 1 and not visible, "result snapshot is incorrect")
 nodeCallbacks.SHOW_END_SCREEN()
 current, runs, revision, visible = hub:Snapshot()
 assert(current.Victory == true and visible, "visible result screen was not tracked")
 unsubscribe()
+unsubscribeDelivery()
 nodeCallbacks.SET_END_PARAMETERS({ Victory = true })
 assert(receivedRuns == 1 and hub.Runs == 2, "results hub unsubscribe failed")
 nodeCallbacks.HIDE_END_SCREEN()
@@ -282,8 +291,13 @@ assert(controls["webhook.equipment_rarity"].Settings.Search == true, "webhook ra
 local webhookSource = fs.read("src/Modules/Webhook.lua", "bin")
 assert(not string.find(webhookSource, "task.delay(0.5", 1, true), "match webhooks still have an artificial delivery delay")
 assert(
-	string.find(webhookSource, "local payload = ctx.Webhook:MatchPayload", 1, true),
+	string.find(webhookSource, "ctx.Webhook:MatchPayload(state, result, runs)", 1, true),
 	"match data is not captured before asynchronous delivery"
+)
+assert(
+	string.find(webhookSource, 'BeginDelivery("Webhook", revision)', 1, true)
+		and string.find(webhookSource, "complete()", 1, true),
+	"match webhook delivery is not acknowledged"
 )
 
 local gameEndSource = fs.read("src/Modules/GameEnd.lua", "bin")
@@ -291,6 +305,10 @@ assert(string.find(gameEndSource, "ctx.Results:Snapshot()", 1, true), "end actio
 assert(
 	string.find(gameEndSource, "state.EndAttempts = state.EndAttempts + 1", 1, true),
 	"end actions are not retried until accepted"
+)
+assert(
+	string.find(gameEndSource, "ctx.Results:DeliveryState(revision, 15)", 1, true),
+	"end actions do not wait for webhook delivery"
 )
 
 print("Game and webhook tests passed")

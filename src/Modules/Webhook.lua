@@ -59,7 +59,7 @@ return function(Import)
 
 	return {
 		Name = "Webhook",
-		Version = 2,
+		Version = 3,
 		Priority = 9,
 		Dependencies = {},
 
@@ -169,14 +169,27 @@ return function(Import)
 				end,
 			}, "webhook.equipment_rarity")
 
-			ctx:RegisterCleanup(ctx.Results:Subscribe("Webhook", function(result, runs)
+			ctx:RegisterCleanup(ctx.Results:Subscribe("Webhook", function(result, runs, revision)
 				if not state.SendMatch or state.Url == "" then
 					return
 				end
-				local payload = ctx.Webhook:MatchPayload(state, result, runs)
+				local complete = ctx.Results:BeginDelivery("Webhook", revision)
+				local payloadOk, payload = xpcall(function()
+					return ctx.Webhook:MatchPayload(state, result, runs)
+				end, debug.traceback)
+				if not payloadOk then
+					complete()
+					ctx.Runtime:Notify("Webhook", "Payload creation failed: " .. tostring(payload))
+					return
+				end
 				task.spawn(function()
-					local ok, err = ctx.Webhook:Post(state.Url, payload)
-					if not ok then
+					local requestOk, ok, err = xpcall(function()
+						return ctx.Webhook:Post(state.Url, payload)
+					end, debug.traceback)
+					complete()
+					if not requestOk then
+						ctx.Runtime:Notify("Webhook", "Delivery failed: " .. tostring(ok))
+					elseif not ok then
 						ctx.Runtime:Notify("Webhook", tostring(err))
 					end
 				end)

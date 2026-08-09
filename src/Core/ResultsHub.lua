@@ -11,17 +11,22 @@ return function(Import)
 			Revision = 0,
 			Visible = false,
 			Connections = {},
+			Deliveries = {},
 			StartedAt = os.clock(),
 		}, ResultsHub)
 		local resultConnection, resultError = gameAdapter:Connect("SET_END_PARAMETERS", function(result)
 			if not self.Alive or type(result) ~= "table" then return end
 			self.Runs = self.Runs + 1
 			self.Revision = self.Revision + 1
+			for revision in pairs(self.Deliveries) do
+				if revision < self.Revision - 2 then self.Deliveries[revision] = nil end
+			end
+			self.Deliveries[self.Revision] = { StartedAt = os.clock(), Pending = {} }
 			self.Current = result
 			self.Visible = false
 			self.ReadyAt = os.clock() + 3.25
 			for name, callback in pairs(self.Subscribers) do
-				local ok, callbackError = xpcall(function() callback(result, self.Runs) end, Util.Traceback)
+				local ok, callbackError = xpcall(function() callback(result, self.Runs, self.Revision) end, Util.Traceback)
 				if not ok then Util.Warn("result subscriber " .. tostring(name) .. " failed: " .. tostring(callbackError)) end
 			end
 		end)
@@ -60,6 +65,36 @@ return function(Import)
 		return function() self.Subscribers[name] = nil end
 	end
 
+	function ResultsHub:BeginDelivery(name, revision)
+		revision = tonumber(revision) or self.Revision
+		name = tostring(name)
+		local deliveries = self.Deliveries[revision]
+		if not deliveries then
+			deliveries = { StartedAt = os.clock(), Pending = {} }
+			self.Deliveries[revision] = deliveries
+		end
+		deliveries.Pending[name] = (deliveries.Pending[name] or 0) + 1
+		local finished = false
+		return function()
+			if finished then return end
+			finished = true
+			local current = self.Deliveries[revision]
+			if not current then return end
+			local remaining = (current.Pending[name] or 1) - 1
+			current.Pending[name] = remaining > 0 and remaining or nil
+		end
+	end
+
+	function ResultsHub:DeliveryState(revision, timeout)
+		local deliveries = self.Deliveries[tonumber(revision) or self.Revision]
+		if not deliveries or next(deliveries.Pending) == nil then return true, {}, false end
+		local names = {}
+		for name in pairs(deliveries.Pending) do table.insert(names, name) end
+		table.sort(names)
+		local timedOut = os.clock() - deliveries.StartedAt >= (tonumber(timeout) or 15)
+		return timedOut, names, timedOut
+	end
+
 	function ResultsHub:Destroy()
 		if not self.Alive then return end
 		self.Alive = false
@@ -70,6 +105,7 @@ return function(Import)
 		end
 		table.clear(self.Connections)
 		table.clear(self.Subscribers)
+		table.clear(self.Deliveries)
 		self.Current = nil
 	end
 

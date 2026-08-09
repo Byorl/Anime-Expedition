@@ -45,7 +45,7 @@ return function()
 
 	return {
 		Name = "GameEnd",
-		Version = 2,
+		Version = 3,
 		Priority = 8,
 		Dependencies = {},
 		Choose = choose,
@@ -68,6 +68,7 @@ return function()
 				EndAction = nil,
 				EndAttempts = 0,
 				NextEndActionAt = 0,
+				DeliveryTimeoutRevision = 0,
 			}
 			local actions = ctx.Tabs.Game:Section({ Side = "Right" })
 			actions:Header({ Text = "Match Actions" })
@@ -160,7 +161,16 @@ return function()
 			local timer = task.spawn(function()
 				while state.Alive and ctx.Runtime.Alive do
 					local result, runs, revision, resultReady = ctx.Results:Snapshot()
-					local action = resultReady and choose(ctx, state, result, runs) or nil
+					local deliveryReady, pendingDeliveries, deliveryTimedOut =
+						ctx.Results:DeliveryState(revision, 15)
+					if deliveryTimedOut and state.DeliveryTimeoutRevision ~= revision then
+						state.DeliveryTimeoutRevision = revision
+						ctx.Runtime:Notify(
+							"End of Match",
+							"Continuing after delivery timed out: " .. table.concat(pendingDeliveries, ", ")
+						)
+					end
+					local action = resultReady and deliveryReady and choose(ctx, state, result, runs) or nil
 					if not action then
 						state.EndRevision = revision or 0
 						state.EndAction = nil
