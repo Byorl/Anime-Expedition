@@ -1,5 +1,5 @@
 return {
-	Version = "1.24.1",
+	Version = "1.25.0",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -14,6 +14,7 @@ return {
 		MacLibProvider = "src/Core/MacLibProvider.lua",
 		GameAdapter = "src/Core/GameAdapter.lua",
 		JoinCatalog = "src/Core/JoinCatalog.lua",
+		BountyCatalog = "src/Core/BountyCatalog.lua",
 		JoinCoordinator = "src/Core/JoinCoordinator.lua",
 		RewardScanner = "src/Core/RewardScanner.lua",
 		AutomationCatalog = "src/Core/AutomationCatalog.lua",
@@ -34,6 +35,7 @@ return {
 		AutoSummon = "src/Modules/AutoSummon.lua",
 		Performance = "src/Modules/Performance.lua",
 		AutoTraitReroll = "src/Modules/AutoTraitReroll.lua",
+		Bounty = "src/Modules/Bounty.lua",
 		JoinPriority = "src/Modules/JoinPriority.lua",
 		Settings = "src/Modules/Settings.lua",
 		Main = "src/Main.lua",

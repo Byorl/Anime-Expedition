@@ -84,6 +84,7 @@ local performanceContext = {
 	Tabs = {
 		MiscClaims = {Section = function() return section end},
 		MiscUnits = {Section = function() return section end},
+		MiscBounty = {Section = function() return section end},
 		MiscPerformance = {Section = function() return section end},
 	},
 	Registry = registry,

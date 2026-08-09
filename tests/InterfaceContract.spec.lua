@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.24.1", "interface release version is wrong")
+assert(Build.Version == "1.25.0", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/883f45caaf4af75c59b8fc2d843f47a25d68bc91/src/maclib.lua",
@@ -15,7 +15,7 @@ local priorityPosition = assert(string.find(mainSource, "Priority = TabGroup:Tab
 local settingsPosition = assert(string.find(mainSource, "Settings = TabGroup:Tab", 1, true), "Settings tab is missing")
 assert(joinPosition < autoPlayPosition and autoPlayPosition < gamePosition, "Auto Play is not between Join and Game")
 assert(miscPosition < priorityPosition and priorityPosition < settingsPosition, "Priority is not between Misc and Settings")
-for _, name in ipairs({ "MiscClaims", "MiscUnits", "MiscPerformance" }) do
+for _, name in ipairs({ "MiscClaims", "MiscUnits", "MiscBounty", "MiscPerformance" }) do
 	assert(string.find(mainSource, "Tabs." .. name, 1, true), "missing subtab " .. name)
 end
 for _, name in ipairs({ "AutoPlayNormal", "AutoPlaySmart" }) do
@@ -27,7 +27,7 @@ local splitSubtabs = 0
 for _ in string.gmatch(mainSource, "Columns = 2") do
 	splitSubtabs = splitSubtabs + 1
 end
-assert(splitSubtabs == 5, "Misc and Auto Play subtabs should keep split sections")
+assert(splitSubtabs == 6, "Misc and Auto Play subtabs should keep split sections")
 
 local gameMatchSource = fs.read("src/Modules/GameMatch.lua", "bin")
 local gameEndSource = fs.read("src/Modules/GameEnd.lua", "bin")
