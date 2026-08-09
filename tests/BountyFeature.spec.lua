@@ -20,9 +20,10 @@ end
 local maps = {
 	MapData = {Infinite = {FlowerForest = {Difficulties = {"Hard"}}}},
 	PreviewInfo = {FlowerForest = {DisplayName = "Flower Forest"}},
-	GamemodeTypes = {Infinite = {}},
+	GamemodeTypes = {Infinite = {RequiresMapProgression = true}},
 }
 function maps:GetMapData(mode, map) return self.MapData[mode] and self.MapData[mode][map] end
+function maps:HasMapUnlocked() return false end
 local information = {
 	Maps = maps,
 	Quests = {Quests = {BountyBoard = {WaveBounty = {
@@ -98,7 +99,7 @@ assert(controls["bounty.stack_count"].Settings.Minimum == 2 and controls["bounty
 assert(controls["bounty.delay"].Settings.Minimum == 1 and controls["bounty.delay"].Settings.Maximum == 10 and controls["bounty.delay"].Settings.Step == 1, "join delay is not whole seconds")
 callbacks["bounty.auto_join"](true)
 local candidate = providers.Bounty()
-assert(candidate and candidate.Queue.Gamemode == "Infinite" and candidate.Queue.MapName == "FlowerForest", "Bounty join provider did not build the objective queue")
+assert(candidate and candidate.Queue.Gamemode == "Infinite" and candidate.Queue.MapName == "FlowerForest", "Bounty join provider rejected its server-assigned objective queue")
 assert(candidate.Delay == 1 and candidate.Matchmaking == false, "Bounty join settings were not forwarded")
 
 print("Bounty feature tests passed")

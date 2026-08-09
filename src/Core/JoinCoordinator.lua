@@ -35,6 +35,12 @@ return function(Import)
 		self.PendingKey = nil
 	end
 
+	function JoinCoordinator:SetSuspended(suspended)
+		self.Suspended = suspended == true
+		self.PendingKey = nil
+		self.PendingSince = 0
+	end
+
 	function JoinCoordinator:SetPriority(name, priority)
 		if type(name) ~= "string" or name == "" then return false end
 		self.Priorities[name] = math.clamp(math.floor((tonumber(priority) or 1) + 0.5), 1, 6)
@@ -78,6 +84,7 @@ return function(Import)
 	end
 
 	function JoinCoordinator:_Candidate()
+		if self.Suspended or self.Runtime and self.Runtime.Registry and self.Runtime.Registry.Applying then return nil end
 		local candidates = {}
 		for _, provider in pairs(self.Providers) do
 			local ok, candidate = xpcall(provider.Callback, Util.Traceback)
@@ -121,8 +128,12 @@ return function(Import)
 
 	function JoinCoordinator:_Run()
 		while self.Alive and self.Runtime.Alive do
-			local candidate = self:_Candidate()
-			if self.Game:IsInGame() then
+			local applying = self.Suspended or self.Runtime.Registry and self.Runtime.Registry.Applying
+			local candidate = applying and nil or self:_Candidate()
+			if applying then
+				self.PendingKey = nil
+				task.wait(0.1)
+			elseif self.Game:IsInGame() then
 				self.PendingKey = nil
 				self.OwnMatchmaking = false
 				task.wait(0.25)

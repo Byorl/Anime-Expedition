@@ -227,6 +227,7 @@ return function(Import)
 
 	local Adapter = GameAdapter.new()
 	local Join = JoinCoordinator.new(Runtime, Adapter)
+	Join:SetSuspended(true)
 	Runtime.Join = Join
 	local Results = ResultsHub.new(Adapter)
 	Runtime.Results = Results
@@ -292,6 +293,7 @@ return function(Import)
 	Registry.OnChanged = function()
 		Config:ScheduleAutoSave()
 	end
+	Join:SetSuspended(false)
 
 	if Config.Account.UI.HiddenOnExecute == true then
 		Window:SetState(false)

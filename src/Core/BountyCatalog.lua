@@ -340,8 +340,8 @@ return function(Import)
 		}
 		if string.lower(gamemode) ~= "infinite" then queue.ActName = objective.ActName or acts[1] end
 		if not queue.Difficulty then return nil end
-		if gamemode ~= "Infinite" and not queue.ActName then return nil end
-		if not JoinCatalog.QueueUnlocked(information, playerData, queue) then return nil end
+		if string.lower(gamemode) ~= "infinite" and not queue.ActName then return nil end
+		if type(JoinCatalog.MapData(information, gamemode, objective.MapName)) ~= "table" then return nil end
 		return queue
 	end
 

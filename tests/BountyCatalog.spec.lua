@@ -22,7 +22,7 @@ local maps = {
 		SpiritCity = {DisplayName = "Spirit City"},
 	},
 	GamemodeTypes = {
-		Infinite = {},
+		Infinite = {RequiresMapProgression = true},
 		Story = {},
 		Raid = {},
 	},
@@ -33,6 +33,7 @@ function maps:GetOrderedMaps(mode)
 	for key in pairs(self.MapData[mode] or {}) do table.insert(output, key) end
 	return output
 end
+function maps:HasMapUnlocked() return false end
 
 local information = {
 	Maps = maps,
@@ -98,6 +99,7 @@ assert(stack and stack.Count == 2 and stack.Target.MapName == "FlowerForest", "s
 local queue = Catalog.QueueForObjective(information, {}, {}, entries[1].Objectives[2])
 if queue == nil or queue.Gamemode ~= "Infinite" then queue = Catalog.QueueForObjective(information, {}, {}, entries[1].Objectives[1]) end
 assert(queue and queue.Gamemode == "Infinite" and queue.MapName == "FlowerForest", "infinite bounty queue was not built")
+assert(Catalog.JoinCandidate(information, {}, {}, entries).Queue.MapName == "FlowerForest", "server-assigned bounty target was rejected by stale client progression")
 
 local thisMap, board = Catalog.BoardText(information, questData, {Parameters = {Gamemode = "Infinite", MapName = "FlowerForest", Difficulty = "Hard"}})
 assert(string.find(thisMap, "Flower Forest", 1, true), "friendly map name is missing")
