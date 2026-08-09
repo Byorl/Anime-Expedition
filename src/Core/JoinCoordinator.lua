@@ -99,6 +99,26 @@ return function(Import)
 		return candidates[1]
 	end
 
+	function JoinCoordinator:SelectedProvider()
+		local candidate = self:_Candidate()
+		return candidate and candidate.Provider or nil, candidate
+	end
+
+	function JoinCoordinator:ShouldInterrupt(providerName, currentGamemode)
+		local selectedProvider, candidate = self:SelectedProvider()
+		if selectedProvider ~= providerName then
+			return false, candidate
+		end
+		if type(currentGamemode) ~= "string" or currentGamemode == "" then
+			return false, candidate
+		end
+		local targetGamemode = type(candidate.Queue) == "table" and candidate.Queue.Gamemode or providerName
+		if string.lower(currentGamemode) == string.lower(tostring(targetGamemode or providerName)) then
+			return false, candidate
+		end
+		return true, candidate
+	end
+
 	function JoinCoordinator:_Run()
 		while self.Alive and self.Runtime.Alive do
 			local candidate = self:_Candidate()

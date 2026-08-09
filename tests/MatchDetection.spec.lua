@@ -84,5 +84,6 @@ end
 assert(not lobbyAdapter:IsInGame(), "an empty lobby GameState was detected as an active game")
 liveState.Value = { Parameters = { Gamemode = "Story" } }
 assert(lobbyAdapter:IsInGame(), "a populated GameState was not detected as an active game")
+assert(lobbyAdapter:CurrentGamemode() == "Story", "current gamemode was not read from replicated match data")
 
 print("Match detection tests passed")

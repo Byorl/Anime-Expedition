@@ -126,6 +126,24 @@ return function(Import)
 		return nil, err or replica or "GameState has not replicated yet"
 	end
 
+	function GameAdapter:CurrentGamemode()
+		local ok, data = xpcall(function()
+			return self:GameData()
+		end, Util.Traceback)
+		if not ok or type(data) ~= "table" then
+			data = self:StateDeep("GameState", 5)
+		end
+		if type(data) ~= "table" then
+			return nil
+		end
+		local parameters = type(data.Parameters) == "table" and data.Parameters or nil
+		local gamemode = parameters and parameters.Gamemode or data.Gamemode
+		if type(gamemode) ~= "string" or gamemode == "" then
+			return nil
+		end
+		return gamemode
+	end
+
 	function GameAdapter:GamePlayerData()
 		local ok, replica = self:InvokeSelf("GET_GAME_PLAYER_REPLICA")
 		if ok and type(replica) == "table" and type(replica.Data) == "table" then

@@ -276,11 +276,13 @@ return function(Import)
 			local worker = task.spawn(function()
 				while state.Alive and ctx.Runtime.Alive do
 					Challenge:_Refresh(ctx, state)
-					if state.Enabled and state.BackToLobby then
-						local queue = candidate(ctx, state)
-						if not queue then
+					if state.Enabled and state.BackToLobby and ctx.Game:IsInGame() then
+						local currentGamemode = ctx.Game:CurrentGamemode()
+						local shouldReturn, selected = ctx.Join:ShouldInterrupt("Challenge", currentGamemode)
+						if string.lower(tostring(currentGamemode or "")) == "challenge" then
 							state.LastLobbyKey = nil
-						elseif ctx.Game:IsInGame() then
+						elseif shouldReturn and type(selected) == "table" and type(selected.Queue) == "table" then
+							local queue = selected.Queue
 							local key = table.concat({ queue.ChallengeType or "", queue.ChallengeIndex or "" }, "|")
 							if state.LastLobbyKey ~= key and os.clock() - state.LastLobbyAttemptAt >= 5 then
 								state.LastLobbyAttemptAt = os.clock()
@@ -292,6 +294,8 @@ return function(Import)
 									ctx.Runtime:Notify("Challenge", "Return to lobby failed: " .. tostring(err))
 								end
 							end
+						elseif not selected or selected.Provider ~= "Challenge" then
+							state.LastLobbyKey = nil
 						end
 					end
 					task.wait(2)
