@@ -512,7 +512,7 @@ return function(Import)
 		billboard.AlwaysOnTop = true
 		billboard.LightInfluence = 0
 		billboard.Size = UDim2.fromOffset(180, 34)
-		billboard.StudsOffsetWorldSpace = Vector3.new(0, 2.4, 0)
+		billboard.StudsOffsetWorldSpace = Vector3.new(0, 0, 0)
 		billboard.Parent = part
 		local label = Instance.new("TextLabel")
 		label.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
