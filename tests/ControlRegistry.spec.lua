@@ -20,16 +20,33 @@ registry.OnChanged = function() changes = changes + 1 end
 
 local section = {}
 function section:Toggle(settings)
-	return {UpdateState = function(_, value) settings.Callback(value) end}
+	local state = settings.Default == true
+	return {
+		UpdateState = function(_, value) state = value == true; settings.Callback(value) end,
+		GetState = function() return state end,
+	}
 end
 function section:Slider(settings)
-	return {UpdateValue = function(_, value) end}
+	local value = settings.Default
+	return {UpdateValue = function(_, updated) value = updated end, GetValue = function() return value end}
 end
 function section:Input(settings)
-	return {UpdateText = function(_, value) settings.onChanged(value) end}
+	local value = settings.Default
+	return {
+		UpdateText = function(_, updated) value = updated; settings.onChanged(updated) end,
+		GetInput = function() return value end,
+	}
 end
 function section:Dropdown(settings)
-	return {UpdateSelection = function(_, value) settings.Callback(value) end}
+	local selected
+	return {
+		UpdateSelection = function(_, value) selected = value; settings.Callback(value) end,
+		GetOptions = function()
+			local output = {}
+			for _, option in ipairs(settings.Options or {}) do output[option] = option == selected end
+			return output
+		end,
+	}
 end
 
 local toggle = scope:Toggle(section, {Default = true, Callback = function() callbacks = callbacks + 1 end}, "test.toggle")
@@ -58,6 +75,8 @@ assert(registry:Get("test.input") == "", "saved empty string was not applied")
 assert(changes == 0, "atomic apply leaked autosave change callbacks")
 assert(registry:Get("test.dropdown") == "Current [unit-1]", "dynamic dropdown identity was not resolved")
 assert(callbacks == 4, "atomic apply did not restore live feature callbacks")
+local verifyOk, verifyError = registry:VerifyApplied()
+assert(verifyOk, verifyError)
 
 toggle:UpdateState(true)
 assert(registry:Get("test.toggle") == true and changes == 1, "user change was not recorded")

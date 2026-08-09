@@ -3,6 +3,21 @@ return function(Import)
 	local ControlRegistry = {}
 	ControlRegistry.__index = ControlRegistry
 
+	local function valuesEqual(left, right, seen)
+		if type(left) ~= type(right) then return false end
+		if type(left) ~= "table" then return left == right end
+		seen = seen or {}
+		if seen[left] == right then return true end
+		seen[left] = right
+		for key, value in pairs(left) do
+			if not valuesEqual(value, right[key], seen) then return false end
+		end
+		for key in pairs(right) do
+			if left[key] == nil then return false end
+		end
+		return true
+	end
+
 	function ControlRegistry.new()
 		return setmetatable({
 			Entries = {},
@@ -271,8 +286,54 @@ return function(Import)
 				local value = values[flag]
 				if value == nil then value = Util.Clone(entry.Default) end
 				self.Values[flag] = Util.Clone(value)
+				local restoreIdentity = Util.ElevateIdentity()
 				local ok, err = xpcall(function() entry.Apply(Util.Clone(value)) end, Util.Traceback)
+				restoreIdentity()
 				if not ok then table.insert(errors, string.format("%s (%s): %s", flag, entry.Kind, tostring(err))) end
+			end
+		end
+		return #errors == 0, table.concat(errors, "\n")
+	end
+
+	function ControlRegistry:VerifyApplied(owner)
+		local errors = {}
+		for _, flag in ipairs(Util.SortedKeys(self.Entries)) do
+			local entry = self.Entries[flag]
+			if owner == nil or entry.Owner == owner then
+				local method
+				if entry.Kind == "Toggle" then method = "GetState"
+				elseif entry.Kind == "Slider" then method = "GetValue"
+				elseif entry.Kind == "Input" then method = "GetInput"
+				elseif entry.Kind == "Dropdown" then method = "GetOptions"
+				elseif entry.Kind == "Keybind" then method = "GetBind" end
+				if method and type(entry.Control[method]) == "function" then
+					local restoreIdentity = Util.ElevateIdentity()
+					local ok, actual = xpcall(function()
+						return entry.Control[method](entry.Control)
+					end, Util.Traceback)
+					restoreIdentity()
+					local expected = self.Values[flag]
+					if entry.Kind == "Keybind" and typeof(actual) == "EnumItem" then actual = actual.Name end
+					if ok and entry.Kind == "Dropdown" then
+						local selected = {}
+						for option, enabled in pairs(type(actual) == "table" and actual or {}) do
+							if enabled == true then table.insert(selected, option) end
+						end
+						table.sort(selected, function(a, b) return tostring(a) < tostring(b) end)
+						actual = type(expected) == "table" and selected or selected[1]
+					end
+					if not ok then
+						table.insert(errors, string.format("%s (%s) could not be read: %s", flag, entry.Kind, tostring(actual)))
+					elseif not valuesEqual(actual, expected) then
+						table.insert(errors, string.format(
+							"%s (%s) expected %s but UI reports %s",
+							flag,
+							entry.Kind,
+							tostring(expected),
+							tostring(actual)
+						))
+					end
+				end
 			end
 		end
 		return #errors == 0, table.concat(errors, "\n")

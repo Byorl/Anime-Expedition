@@ -276,16 +276,19 @@ return function(Import)
 		error(modulesError)
 	end
 
+	local profileReady = true
 	if Config.Account.AutoLoadSelected then
 		local ok, err = Config:Load(Config.Account.SelectedConfig)
 		if not ok then
+			profileReady = false
+			Config.LastLoadError = tostring(err)
 			Runtime:Notify("Config load failed", tostring(err))
 			Registry:Apply({})
 		end
 	else
 		Registry:Apply({})
 	end
-	Config:ActivateProfile()
+	if profileReady then Config:ActivateProfile() end
 	Registry.OnChanged = function()
 		Config:ScheduleAutoSave()
 	end

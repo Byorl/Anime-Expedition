@@ -338,6 +338,19 @@ return function(Import)
 		local previous = self.Registry:Snapshot()
 		local values = self:_FlattenModules(data.Modules)
 		local applyOk, applyError = self.Registry:ApplyAtomic(values)
+		if applyOk and type(self.Registry.VerifyApplied) == "function" then
+			local verifyOk, verifyError = self.Registry:VerifyApplied()
+			if not verifyOk then
+				local retryOk, retryError = self.Registry:ApplyAtomic(values)
+				local retryVerifyOk, retryVerifyError = false, "retry was not applied"
+				if retryOk then retryVerifyOk, retryVerifyError = self.Registry:VerifyApplied() end
+				if not retryOk or not retryVerifyOk then
+					applyOk = false
+					applyError = "post-load verification failed:\n" .. tostring(verifyError)
+						.. "\nRetry failed:\n" .. tostring(retryError or retryVerifyError)
+				end
+			end
+		end
 		if not applyOk then
 			local rollbackOk, rollbackError = self.Registry:ApplyAtomic(previous)
 			return false, "Atomic config apply failed:\n" .. tostring(applyError)
@@ -346,6 +359,7 @@ return function(Import)
 		self.KnownRevisions[string.lower(name)] = data.Revision
 		self.Account.SelectedConfig = name
 		self.ConfigDirty = false
+		self.LastLoadError = nil
 		local accountOk, accountError = self:SaveAccount(true)
 		if not accountOk then return false, "Config loaded, but account state could not be saved: " .. tostring(accountError) end
 		return true, data

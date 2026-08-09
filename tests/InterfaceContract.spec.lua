@@ -1,8 +1,8 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.25.3", "interface release version is wrong")
+assert(Build.Version == "1.25.4", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
-		== "https://raw.githubusercontent.com/Byorl/Maclib/f056b47ad3c18bed1d6cc18ecb85f5df64065c78/src/maclib.lua",
+		== "https://raw.githubusercontent.com/Byorl/Maclib/f232a4cfdc7069fad80188d2e92a8b6a3af8a596/src/maclib.lua",
 	"interface is not pinned to the tested Byorl Maclib revision"
 )
 
@@ -15,6 +15,8 @@ assert(string.find(uiManagerSource, "self.Window:SetState", 1, true), "mobile la
 assert(string.find(uiManagerSource, "InputChanged", 1, true), "mobile launcher is not draggable")
 assert(string.find(uiManagerSource, "account.UI.MobileLauncher", 1, true), "mobile launcher position is not saved")
 assert(string.find(configManagerSource, "MobileLauncher", 1, true), "mobile launcher account default is missing")
+assert(string.find(mainSource, "local profileReady = true", 1, true), "failed config loads are not save-locked")
+assert(string.find(configManagerSource, "post-load verification failed", 1, true), "config load verification is missing")
 local joinPosition = assert(string.find(mainSource, "Join = TabGroup:Tab", 1, true), "Join tab is missing")
 local autoPlayPosition = assert(string.find(mainSource, "AutoPlay = TabGroup:Tab", 1, true), "Auto Play tab is missing")
 local gamePosition = assert(string.find(mainSource, "Game = TabGroup:Tab", 1, true), "Game tab is missing")

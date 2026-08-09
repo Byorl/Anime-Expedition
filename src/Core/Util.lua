@@ -23,14 +23,19 @@ return function()
 	end
 
 	function Util.ElevateIdentity()
-		local environment = (getgenv and getgenv()) or _G
-		local setter = rawget(environment, "setthreadidentity")
-			or rawget(environment, "set_thread_identity")
-			or rawget(environment, "setidentity")
-		local getter = rawget(environment, "getthreadidentity")
-			or rawget(environment, "get_thread_identity")
-			or rawget(environment, "getidentity")
-		local synTable = rawget(environment, "syn")
+		local environment = _G
+		if type(getgenv) == "function" then
+			local ok, value = pcall(getgenv)
+			if ok and type(value) == "table" then environment = value end
+		end
+		if type(environment) ~= "table" then return function() end end
+		local setter = environment.setthreadidentity
+			or environment.set_thread_identity
+			or environment.setidentity
+		local getter = environment.getthreadidentity
+			or environment.get_thread_identity
+			or environment.getidentity
+		local synTable = environment.syn
 		if not setter and type(synTable) == "table" then
 			setter = synTable.set_thread_identity
 		end

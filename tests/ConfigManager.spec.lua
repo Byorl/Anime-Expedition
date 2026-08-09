@@ -125,4 +125,13 @@ guarded:Flush()
 assert(files[guardedPath].Modules.Misc.Values["misc.auto_reconnect"] == false,
 	"autosave did not resume after profile activation")
 
+registry.VerifyApplied = function() return false, "visual mismatch" end
+local protectedBefore = clone(files[guardedPath])
+loadOk, loaded = guarded:Load("Guarded")
+assert(not loadOk and string.find(tostring(loaded), "post-load verification failed", 1, true),
+	"visual config mismatch was silently accepted")
+assert(files[guardedPath].Revision == protectedBefore.Revision,
+	"failed visual config verification rewrote the stored profile")
+registry.VerifyApplied = nil
+
 print("ConfigManager tests passed")

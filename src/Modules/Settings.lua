@@ -90,6 +90,7 @@ return function()
 					local clean = ctx.Config:SanitizeName(pendingName)
 					local ok, err = ctx.Config:Create(clean)
 					if ok then
+						ctx.Config:ActivateProfile()
 						refresh(clean)
 						clearName()
 					end
@@ -120,6 +121,8 @@ return function()
 										local loadOk, loadError = ctx.Config:Load(ctx.Config.Account.SelectedConfig)
 										if not loadOk then
 											ctx.Runtime:Notify("Replacement config failed", tostring(loadError))
+										else
+											ctx.Config:ActivateProfile()
 										end
 									end
 									notifyResult("Delete config", ok, ok and ("Deleted " .. target) or err)
@@ -138,6 +141,7 @@ return function()
 					end
 					local target = ctx.Config.Account.SelectedConfig
 					local ok, err = ctx.Config:Load(target)
+					if ok then ctx.Config:ActivateProfile() end
 					notifyResult(
 						"Load config",
 						ok,
@@ -149,6 +153,14 @@ return function()
 				Name = "Save",
 				Callback = function()
 					if not isActive() then
+						return
+					end
+					if not ctx.Config.ProfileReady then
+						notifyResult(
+							"Save config",
+							false,
+							"Load or create a config before saving so stored settings are not overwritten."
+						)
 						return
 					end
 					ctx.Config.ConfigDirty = true
