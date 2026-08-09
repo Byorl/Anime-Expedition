@@ -45,7 +45,7 @@ return function()
 
 	return {
 		Name = "GameEnd",
-		Version = 3,
+		Version = 4,
 		Priority = 8,
 		Dependencies = {},
 		Choose = choose,
@@ -162,7 +162,7 @@ return function()
 				while state.Alive and ctx.Runtime.Alive do
 					local result, runs, revision, resultReady = ctx.Results:Snapshot()
 					local deliveryReady, pendingDeliveries, deliveryTimedOut =
-						ctx.Results:DeliveryState(revision, 15)
+						ctx.Results:DeliveryState(revision, 15, 1.25)
 					if deliveryTimedOut and state.DeliveryTimeoutRevision ~= revision then
 						state.DeliveryTimeoutRevision = revision
 						ctx.Runtime:Notify(

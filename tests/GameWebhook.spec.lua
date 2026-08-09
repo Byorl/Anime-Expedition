@@ -66,15 +66,22 @@ local receivedRuns
 local unsubscribe = hub:Subscribe("test", function(_, runs)
 	receivedRuns = runs
 end)
-local deliveryDone
-local unsubscribeDelivery = hub:Subscribe("delivery", function(_, _, resultRevision)
-	deliveryDone = hub:BeginDelivery("Webhook", resultRevision)
+local deliveryDone, preReserved
+local unsubscribeProbe = hub:Subscribe("probe", function(_, _, resultRevision)
+	preReserved = not hub:DeliveryState(resultRevision, 15)
 end)
+local unsubscribeDelivery = hub:Subscribe("Webhook", function(_, _, _, complete)
+	deliveryDone = complete
+end, true)
 nodeCallbacks.SET_END_PARAMETERS({ Victory = true })
 assert(receivedRuns == 1 and hub.Runs == 1, "results hub did not count or dispatch the match")
 local deliveryReady, pendingDeliveries = hub:DeliveryState(1, 15)
-assert(not deliveryReady and pendingDeliveries[1] == "Webhook", "pending webhook delivery was not tracked")
-deliveryDone()
+assert(
+	preReserved and not deliveryReady and pendingDeliveries[1] == "Webhook",
+	"webhook delivery was not reserved before result subscribers ran"
+)
+deliveryDone(true)
+assert(not hub:DeliveryState(1, 15, 1.25), "successful webhook delivery had no settling window")
 assert(hub:DeliveryState(1, 15), "completed webhook delivery continued blocking end actions")
 local current, runs, revision, visible = hub:Snapshot()
 assert(current.Victory == true and runs == 1 and revision == 1 and not visible, "result snapshot is incorrect")
@@ -82,6 +89,7 @@ nodeCallbacks.SHOW_END_SCREEN()
 current, runs, revision, visible = hub:Snapshot()
 assert(current.Victory == true and visible, "visible result screen was not tracked")
 unsubscribe()
+unsubscribeProbe()
 unsubscribeDelivery()
 nodeCallbacks.SET_END_PARAMETERS({ Victory = true })
 assert(receivedRuns == 1 and hub.Runs == 2, "results hub unsubscribe failed")
@@ -296,7 +304,8 @@ assert(
 )
 assert(
 	string.find(webhookSource, 'BeginDelivery("Webhook", revision)', 1, true)
-		and string.find(webhookSource, "complete()", 1, true),
+		and string.find(webhookSource, "complete(requestOk and ok == true)", 1, true)
+		and string.find(webhookSource, "end, true))", 1, true),
 	"match webhook delivery is not acknowledged"
 )
 
@@ -307,8 +316,8 @@ assert(
 	"end actions are not retried until accepted"
 )
 assert(
-	string.find(gameEndSource, "ctx.Results:DeliveryState(revision, 15)", 1, true),
-	"end actions do not wait for webhook delivery"
+	string.find(gameEndSource, "ctx.Results:DeliveryState(revision, 15, 1.25)", 1, true),
+	"end actions do not wait for webhook delivery and its settling window"
 )
 
 print("Game and webhook tests passed")

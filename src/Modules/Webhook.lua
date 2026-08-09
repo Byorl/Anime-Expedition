@@ -59,7 +59,7 @@ return function(Import)
 
 	return {
 		Name = "Webhook",
-		Version = 3,
+		Version = 4,
 		Priority = 9,
 		Dependencies = {},
 
@@ -169,16 +169,17 @@ return function(Import)
 				end,
 			}, "webhook.equipment_rarity")
 
-			ctx:RegisterCleanup(ctx.Results:Subscribe("Webhook", function(result, runs, revision)
+			ctx:RegisterCleanup(ctx.Results:Subscribe("Webhook", function(result, runs, revision, complete)
+				complete = complete or ctx.Results:BeginDelivery("Webhook", revision)
 				if not state.SendMatch or state.Url == "" then
+					complete(false)
 					return
 				end
-				local complete = ctx.Results:BeginDelivery("Webhook", revision)
 				local payloadOk, payload = xpcall(function()
 					return ctx.Webhook:MatchPayload(state, result, runs)
 				end, debug.traceback)
 				if not payloadOk then
-					complete()
+					complete(false)
 					ctx.Runtime:Notify("Webhook", "Payload creation failed: " .. tostring(payload))
 					return
 				end
@@ -186,14 +187,14 @@ return function(Import)
 					local requestOk, ok, err = xpcall(function()
 						return ctx.Webhook:Post(state.Url, payload)
 					end, debug.traceback)
-					complete()
+					complete(requestOk and ok == true)
 					if not requestOk then
 						ctx.Runtime:Notify("Webhook", "Delivery failed: " .. tostring(ok))
 					elseif not ok then
 						ctx.Runtime:Notify("Webhook", tostring(err))
 					end
 				end)
-			end))
+			end, true))
 
 			for key, entry in pairs(bountyEntries(ctx)) do
 				state.SeenBounties[tostring(key)] = type(entry) == "table" and entry.Completed == true

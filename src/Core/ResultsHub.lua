@@ -25,8 +25,17 @@ return function(Import)
 			self.Current = result
 			self.Visible = false
 			self.ReadyAt = os.clock() + 3.25
-			for name, callback in pairs(self.Subscribers) do
-				local ok, callbackError = xpcall(function() callback(result, self.Runs, self.Revision) end, Util.Traceback)
+			local completions = {}
+			for name, subscriber in pairs(self.Subscribers) do
+				if subscriber.Delivery then
+					completions[name] = self:BeginDelivery(name, self.Revision)
+				end
+			end
+			for name, subscriber in pairs(self.Subscribers) do
+				local ok, callbackError = xpcall(function()
+					subscriber.Callback(result, self.Runs, self.Revision, completions[name])
+				end, Util.Traceback)
+				if not ok and completions[name] then completions[name](false) end
 				if not ok then Util.Warn("result subscriber " .. tostring(name) .. " failed: " .. tostring(callbackError)) end
 			end
 		end)
@@ -58,10 +67,10 @@ return function(Import)
 		return self.Current, self.Runs, self.Revision, ready == true
 	end
 
-	function ResultsHub:Subscribe(name, callback)
+	function ResultsHub:Subscribe(name, callback, delivery)
 		assert(type(name) == "string" and name ~= "", "result subscriber requires a name")
 		assert(type(callback) == "function", "result subscriber requires a callback")
-		self.Subscribers[name] = callback
+		self.Subscribers[name] = { Callback = callback, Delivery = delivery == true }
 		return function() self.Subscribers[name] = nil end
 	end
 
@@ -74,20 +83,31 @@ return function(Import)
 			self.Deliveries[revision] = deliveries
 		end
 		deliveries.Pending[name] = (deliveries.Pending[name] or 0) + 1
+		deliveries.HadDeliveries = true
 		local finished = false
-		return function()
+		return function(needsSettle)
 			if finished then return end
 			finished = true
 			local current = self.Deliveries[revision]
 			if not current then return end
+			if needsSettle ~= false then current.NeedsSettle = true end
 			local remaining = (current.Pending[name] or 1) - 1
 			current.Pending[name] = remaining > 0 and remaining or nil
+			if next(current.Pending) == nil then current.CompletedAt = os.clock() end
 		end
 	end
 
-	function ResultsHub:DeliveryState(revision, timeout)
+	function ResultsHub:DeliveryState(revision, timeout, settle)
 		local deliveries = self.Deliveries[tonumber(revision) or self.Revision]
-		if not deliveries or next(deliveries.Pending) == nil then return true, {}, false end
+		if not deliveries then return true, {}, false end
+		if next(deliveries.Pending) == nil then
+			local settling = deliveries.HadDeliveries
+				and deliveries.NeedsSettle
+				and type(deliveries.CompletedAt) == "number"
+				and os.clock() - deliveries.CompletedAt < (tonumber(settle) or 0)
+			if settling then return false, { "Webhook finalizing" }, false end
+			return true, {}, false
+		end
 		local names = {}
 		for name in pairs(deliveries.Pending) do table.insert(names, name) end
 		table.sort(names)
