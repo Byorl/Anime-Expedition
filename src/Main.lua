@@ -263,9 +263,6 @@ return function(Import)
 	Modules:Register(AutoTraitRerollModule)
 	Modules:Register(SettingsModule)
 
-	Registry.OnChanged = function()
-		Config:ScheduleAutoSave()
-	end
 	local modulesOk, modulesError = Modules:LoadAll()
 	if not modulesOk then
 		Runtime:Shutdown("module load failure")
@@ -280,6 +277,10 @@ return function(Import)
 		end
 	else
 		Registry:Apply({})
+	end
+	Config:ActivateProfile()
+	Registry.OnChanged = function()
+		Config:ScheduleAutoSave()
 	end
 
 	if Config.Account.UI.HiddenOnExecute == true then

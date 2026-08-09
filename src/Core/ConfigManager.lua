@@ -39,6 +39,7 @@ return function(Import)
 		self.PendingFlush = false
 		self.ConfigDirty = false
 		self.AccountDirty = false
+		self.ProfileReady = false
 		self.Alive = true
 		self.DelayedTasks = {}
 		return self
@@ -345,7 +346,14 @@ return function(Import)
 		return true, data
 	end
 
+	function ConfigManager:ActivateProfile()
+		self.SaveNonce = self.SaveNonce + 1
+		self.ConfigDirty = false
+		self.ProfileReady = true
+	end
+
 	function ConfigManager:ScheduleAutoSave()
+		if not self.ProfileReady then return end
 		self.ConfigDirty = true
 		if not self.Account.AutoSave or not self.Alive then return end
 		self.SaveNonce = self.SaveNonce + 1
@@ -388,7 +396,7 @@ return function(Import)
 		local errors = {}
 		repeat
 			self.PendingFlush = false
-			if self.ConfigDirty then
+			if self.ConfigDirty and self.ProfileReady then
 				local configOk, configError = self:Save(self.Account.SelectedConfig)
 				if not configOk then table.insert(errors, "config: " .. tostring(configError)) end
 			end

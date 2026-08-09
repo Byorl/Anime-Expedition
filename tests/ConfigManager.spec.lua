@@ -92,4 +92,31 @@ assert(loaded.Locked == nil and loaded.LockedByUserId == nil, "legacy lock metad
 assert(currentValues["misc.auto_reconnect"] == true, "schema 2 feature value was not migrated")
 assert(currentValues["settings.ui_scale"] == nil, "legacy global UI scale was not removed")
 
+local guardedPath = first:_ConfigPath("Guarded")
+files[guardedPath] = {
+	Schema = 3,
+	Name = "Guarded",
+	Revision = 7,
+	Modules = {Misc = {Version = 1, Values = {["misc.auto_reconnect"] = true}}},
+}
+currentValues = {["misc.auto_reconnect"] = false}
+local guarded = ConfigManager.new(store, registry, {UserId = 300, Name = "GuardedUser"})
+initOk, initError = guarded:Initialize()
+assert(initOk, initError)
+guarded.Account.SelectedConfig = "Guarded"
+guarded.Account.AutoSave = true
+guarded:ScheduleAutoSave()
+guarded:Flush()
+assert(files[guardedPath].Modules.Misc.Values["misc.auto_reconnect"] == true,
+	"startup defaults overwrote a profile before it was loaded")
+loadOk, loaded = guarded:Load("Guarded")
+assert(loadOk, loaded)
+guarded:ActivateProfile()
+assert(currentValues["misc.auto_reconnect"] == true, "guarded profile did not load")
+currentValues["misc.auto_reconnect"] = false
+guarded:ScheduleAutoSave()
+guarded:Flush()
+assert(files[guardedPath].Modules.Misc.Values["misc.auto_reconnect"] == false,
+	"autosave did not resume after profile activation")
+
 print("ConfigManager tests passed")
