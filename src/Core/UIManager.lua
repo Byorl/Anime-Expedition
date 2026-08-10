@@ -24,14 +24,19 @@ return function(Import)
 	end
 
 	local function elevated(callback, ...)
-		local restoreIdentity = Util.ElevateIdentity()
 		local arguments = table.pack(...)
 		local results = table.pack(xpcall(function()
 			return callback(table.unpack(arguments, 1, arguments.n))
 		end, Util.Traceback))
+		if results[1] then return true, table.unpack(results, 2, results.n) end
+		local firstError = results[2]
+		local restoreIdentity = Util.ElevateIdentity()
+		results = table.pack(xpcall(function()
+			return callback(table.unpack(arguments, 1, arguments.n))
+		end, Util.Traceback))
 		restoreIdentity()
 		if not results[1] then
-			Util.Warn("mobile launcher: " .. tostring(results[2]))
+			Util.Warn("mobile launcher: " .. tostring(firstError) .. "\nFallback: " .. tostring(results[2]))
 			return false
 		end
 		return true, table.unpack(results, 2, results.n)
@@ -173,7 +178,7 @@ return function(Import)
 	end
 
 	function UIManager:MountMobileLauncher(parent, config)
-		if self.Device ~= "Mobile" or self.LauncherGui or not parent then return false end
+		if not UserInputService.TouchEnabled or self.LauncherGui or not parent then return false end
 		local ui = type(self.Account.UI) == "table" and self.Account.UI or {}
 		local stored = type(ui.MobileLauncher) == "table" and ui.MobileLauncher or {X = 0.96, Y = 0.86}
 		local created
@@ -181,10 +186,10 @@ return function(Import)
 			local screen = Instance.new("ScreenGui")
 			screen.Name = "AnimeExpeditions_MobileLauncher"
 			screen.DisplayOrder = 1000000
+			screen.Enabled = true
 			screen.IgnoreGuiInset = false
 			screen.ResetOnSpawn = false
 			screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-			screen.Parent = parent
 
 			local shadow = Instance.new("Frame")
 			shadow.Name = "Shadow"
@@ -275,6 +280,7 @@ return function(Import)
 			self.LauncherPressScale = scale
 			self.LauncherViewport = viewportSize()
 			self:_SetLauncherPosition(stored)
+			screen.Parent = parent
 			created = screen
 		end)
 		if not ok or not created then return false end

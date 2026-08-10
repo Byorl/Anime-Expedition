@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.27.0", "interface release version is wrong")
+assert(Build.Version == "1.27.1", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/7a99c23bde4eee7d19b054462b17985d06a74ae5/src/maclib.lua",
@@ -11,6 +11,8 @@ local uiManagerSource = fs.read("src/Core/UIManager.lua", "bin")
 local configManagerSource = fs.read("src/Core/ConfigManager.lua", "bin")
 assert(string.find(mainSource, "MountMobileLauncher", 1, true), "mobile launcher is not mounted")
 assert(string.find(uiManagerSource, "AnimeExpeditions_MobileLauncher", 1, true), "mobile launcher UI is missing")
+assert(string.find(uiManagerSource, "not UserInputService.TouchEnabled", 1, true), "mobile launcher is not keyed directly to touch support")
+assert(string.find(uiManagerSource, "screen.Parent = parent", 1, true), "mobile launcher ScreenGui is never mounted")
 assert(string.find(uiManagerSource, "self.Window:SetState", 1, true), "mobile launcher cannot toggle the window")
 assert(string.find(uiManagerSource, "InputChanged", 1, true), "mobile launcher is not draggable")
 assert(string.find(uiManagerSource, "account.UI.MobileLauncher", 1, true), "mobile launcher position is not saved")
