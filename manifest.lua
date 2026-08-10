@@ -1,5 +1,5 @@
 return {
-	Version = "1.26.0",
+	Version = "1.27.0",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -36,6 +36,7 @@ return {
 		Performance = "src/Modules/Performance.lua",
 		AutoTraitReroll = "src/Modules/AutoTraitReroll.lua",
 		Bounty = "src/Modules/Bounty.lua",
+		GuessUnit = "src/Modules/GuessUnit.lua",
 		JoinPriority = "src/Modules/JoinPriority.lua",
 		Settings = "src/Modules/Settings.lua",
 		Main = "src/Main.lua",
