@@ -528,8 +528,87 @@ local bossFallback = Smart.Decide({
 	ReactToEnemies = true,
 })
 assert(
-	bossFallback.Kind == "Upgrade" and bossFallback.Slot.Index == 2,
-	"final-boss planning hoarded yen instead of buying an affordable combat upgrade"
+	bossFallback.Kind == "Wait" and bossFallback.Cost == 1000,
+	"final-boss planning wasted carry savings on a much weaker affordable upgrade"
+)
+
+local coverageTrapInformation = {
+	Units = {
+		Carry = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 100, Damage = 2000, SPA = 1, Range = 24, HitboxType = "Single" },
+				[1] = { Cost = 4000, Damage = 12000, SPA = 1, Range = 30, HitboxType = "Single" },
+			},
+		},
+		Legendary = {
+			PlacementLimit = 4,
+			UpgradeInfo = {
+				[0] = { Cost = 1800, Damage = 1200, SPA = 2, Range = 45, HitboxType = "Circle", HitboxSize = 30 },
+			},
+		},
+	},
+}
+local coverageTrapSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "carry" }, ["2"] = { ID = "legendary" } } },
+	{ UnitData = { carry = { Asset = "Carry" }, legendary = { Asset = "Legendary" } } },
+	coverageTrapInformation,
+	6
+)
+local coverageTrap = {
+	GameState = {
+		Wave = 8,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = {},
+	LiveProgress = {},
+	Slots = coverageTrapSlots,
+	Placed = {
+		[1] = { { GameUnitID = "carry", Upgrade = 0, MaxUpgrade = 1, NextCost = 4000, CFrame = CFrame.new(30, 0, 45), Data = {} } },
+		[2] = {},
+	},
+	PlacementCounts = { Carry = 1 },
+	Yen = 2000,
+	Path = path,
+	Paths = { path },
+}
+local saveForCarry = Smart.Decide(coverageTrap, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	saveForCarry.Kind == "Wait" and saveForCarry.Cost == 4000,
+	"route coverage made the planner buy an expensive weak unit instead of saving for carry damage"
+)
+coverageTrap.Enemies = { { Health = 5000, MaxHealth = 5000, Progress = 0.9 } }
+coverageTrap.LiveProgress = { 0.9 }
+local emergencyCoverage = Smart.Decide(coverageTrap, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	emergencyCoverage.Kind == "Place" and emergencyCoverage.Slot.Index == 2,
+	"the minimum coverage floor did not react to an actual backline emergency"
+)
+coverageTrap.Enemies = {}
+coverageTrap.LiveProgress = {}
+coverageTrap.Yen = 5000
+local upgradeCarry = Smart.Decide(coverageTrap, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	upgradeCarry.Kind == "Upgrade" and upgradeCarry.Slot.Index == 1,
+	"a weak high-coverage placement beat an affordable carry upgrade"
 )
 
 local source = fs.read("src/Modules/AutoPlay.lua", "bin")
@@ -545,8 +624,8 @@ assert(
 local plannerSource = fs.read("src/Core/SmartAutoPlayPlanner.lua", "bin")
 assert(string.find(plannerSource, "tacticalTarget", 1, true), "combat placements are not distributed tactically")
 assert(
-	string.find(plannerSource, "combatPlaced < requiredCombat", 1, true),
-	"Smart mode does not establish a defensive baseline before value planning"
+	string.find(plannerSource, "minimumCoverage", 1, true),
+	"Smart mode does not retain an emergency coverage safety floor"
 )
 assert(string.find(plannerSource, "BacklineEnemies", 1, true), "Smart mode does not react to actual enemy route progress")
 assert(string.find(plannerSource, "paybackWaves", 1, true), "farm upgrades ignore their remaining-wave payback")
@@ -556,5 +635,6 @@ assert(string.find(source, "RouteConfident", 1, true), "unoriented routes can st
 assert(string.find(source, "enrichSlotStats", 1, true), "profile-adjusted unit stats are not loaded")
 assert(string.find(plannerSource, "defenseCoverage", 1, true), "placed-unit route coverage is not re-evaluated")
 assert(string.find(plannerSource, "MarginalCoverage", 1, true), "new placements ignore already covered path sections")
+assert(string.find(plannerSource, "impactEfficiency", 1, true), "combat spending does not favor concentrated impact")
 
 print("Smart Auto Play tests passed")

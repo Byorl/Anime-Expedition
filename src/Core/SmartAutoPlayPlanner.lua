@@ -503,6 +503,10 @@ return function(Import)
 		return direct + support
 	end
 
+	local function impactEfficiency(value, cost)
+		return math.max(0, value) / math.max(1, cost) ^ 0.92
+	end
+
 	local function coverage(path, cframe, range)
 		if type(path) ~= "table" or #path < 2 or not cframe then
 			return 0
@@ -783,14 +787,17 @@ return function(Import)
 					local economy = base.Farm * math.max(1, context.RemainingWaves)
 					local weights = strategyWeights[strategy]
 					local waveProgress = context.MaxWave > 0 and context.Wave / context.MaxWave or 0
-					local score = (
-						power
-							* weights.Damage
-							* (0.45 + location.RouteCoverage * 0.7 + location.MarginalCoverage * 1.35)
-						+ economy * weights.Economy
-						+ (role == "Support" and power * 0.35 or 0)
-					) / math.max(1, base.Cost)
-					score = score / (1 + current * (0.7 + waveProgress * 0.55))
+					local rangeUptime = clamp(
+						0.72 + number(location.RangeUtilization, 0) * 0.18 + math.min(location.RouteCoverage, 0.5) * 0.2,
+						0.72,
+						1
+					)
+					local safetyBonus = 1 + math.min(location.MarginalCoverage, 0.45) * 0.2
+					local combatValue = power * weights.Damage * rangeUptime * safetyBonus
+						+ (role == "Support" and power * 0.2 or 0)
+					local score = impactEfficiency(combatValue, base.Cost)
+						+ economy * weights.Economy / math.max(1, base.Cost)
+					score = score / (1 + current * (0.95 + waveProgress * 0.7))
 					if current == 0 then
 						score = score * 1.12
 					end
@@ -818,16 +825,18 @@ return function(Import)
 						Score = score,
 						Role = role,
 						Stats = base,
+						CombatPower = power,
+						RangeUptime = rangeUptime,
+						MarginalCoverage = location.MarginalCoverage,
 						PaybackWaves = role == "Farm" and base.Cost / math.max(1, base.Farm) or math.huge,
 						RangeUtilization = location.RangeUtilization,
 						Reason = role == "Farm"
 							and string.format("deploy %s with %.1f-wave payback", slot.Name, base.Cost / math.max(1, base.Farm))
 							or string.format(
-								"deploy %s for %.0f DPS, %.0f range and %.0f%% route coverage%s",
+								"deploy %s for %.0f effective combat power at %.0f%% expected range uptime%s",
 								slot.Name,
 								power,
-								base.Range,
-								location.RouteCoverage * 100,
+								rangeUptime * 100,
 								current > 0 and string.format(" (%d/%d)", current + 1, cap) or ""
 							),
 					})
@@ -885,13 +894,14 @@ return function(Import)
 						local economyGain = math.max(0, nextStats.Farm - current.Farm)
 							* math.max(1, context.RemainingWaves)
 						local utilityGain = rangeGain * math.max(1, combatPower(nextStats, context) * 0.025)
-						local score = (
+						local upgradeValue = (
 							damageGain * weights.Damage
 							+ utilityGain * weights.Coverage
 							+ economyGain * weights.Economy
-						) / math.max(1, cost)
+						)
+						local score = impactEfficiency(upgradeValue, cost)
 						if score <= 0 then
-							score = (combatPower(nextStats, context) * 0.025 + 0.01) / math.max(1, cost)
+							score = impactEfficiency(combatPower(nextStats, context) * 0.025 + 0.01, cost)
 						end
 						local paybackWaves = economyGain > 0 and cost / math.max(0.01, nextStats.Farm - current.Farm) or math.huge
 						if role == "Farm" and paybackWaves > context.RemainingWaves * 0.72 then
@@ -919,6 +929,8 @@ return function(Import)
 							Cost = cost,
 							Score = score,
 							Role = role,
+							CombatGain = damageGain,
+							UpgradeValue = upgradeValue,
 							PaybackWaves = paybackWaves,
 							Reason = role == "Farm"
 								and string.format("upgrade %s with %.1f waves to repay the cost", slot.Name, paybackWaves)
@@ -1044,17 +1056,21 @@ return function(Import)
 			end
 			return compare(a, b)
 		end)
-		local needsDefense = combatPlaced < requiredCombat or routeCoverage < coverageGoal
+		local minimumCoverage = clamp(0.18 + number(context.ModifierCoverageBoost, 0) * 0.45, 0.18, 0.42)
+		if context.RecentLeak then
+			minimumCoverage = 0.5
+		end
+		local needsDefense = combatPlaced == 0
+			or (context.BacklineEnemies > 0 or context.RecentLeak) and routeCoverage < minimumCoverage
 		local worthwhileDeployment = not upgrades[1]
 			or not deployment[1]
-			or deployment[1].Score >= upgrades[1].Score * 0.35
+			or deployment[1].Score >= upgrades[1].Score * 0.9
 		local coverageCrisis = (context.BacklineEnemies > 0 or context.RecentLeak)
-			and routeCoverage < coverageGoal
+			and routeCoverage < minimumCoverage
 		local baselineShort = combatPlaced == 0
-			or context.EnemyCount > 0 and combatPlaced < math.min(requiredCombat, 2)
 		local forceDeployment = #deployment > 0
 			and needsDefense
-			and (coverageCrisis or baselineShort or combatPlaced == 0 or worthwhileDeployment)
+			and (coverageCrisis or baselineShort or worthwhileDeployment)
 		local earlyFarm = context.Wave <= 2
 			and context.HealthRatio >= 0.99
 			and context.MaxProgress < 0.5
@@ -1163,8 +1179,8 @@ return function(Import)
 		context.Spendable = spendable
 		local best = choices[1]
 		for index, choice in ipairs(choices) do
-			local fallbackRatio = (context.Boss or context.RemainingWaves == 0) and 0.18 or 0.5
-			local acceptableEmergencyFallback = (context.Emergency or context.Boss or context.RemainingWaves == 0)
+			local fallbackRatio = context.Emergency and 0.5 or 0.72
+			local acceptableEmergencyFallback = (context.Emergency or context.BacklineEnemies > 0 or context.RecentLeak)
 				and best
 				and choice.Score >= best.Score * fallbackRatio
 			if choice.Cost <= spendable and choice.Score > 0 and (index == 1 or acceptableEmergencyFallback) then
