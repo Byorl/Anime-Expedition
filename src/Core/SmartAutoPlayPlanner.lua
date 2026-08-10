@@ -49,7 +49,7 @@ return function(Import)
 		if type(value) ~= "table" then
 			return value
 		end
-		for _, key in ipairs({ "DisplayName", "Name", "Value", "ID", "Id", "Asset" }) do
+		for _, key in ipairs({ "DisplayName", "Name", "Modifier", "ModifierName", "Key", "ID", "Id", "Asset", "Value" }) do
 			if type(value[key]) ~= "table" and value[key] ~= nil then
 				return value[key]
 			end
@@ -133,11 +133,140 @@ return function(Import)
 				or hasText(name, "tank")
 				or hasText(name, "shield")
 				or hasText(name, "regen")
+				or hasText(name, "split")
+				or hasText(name, "stun")
 			then
 				dangerous = true
 			end
 		end
 		return count, dangerous
+	end
+
+	local function modifierValue(value, fallback)
+		if type(value) == "table" then
+			return number(value.Value or value.Amount or value.Percent or value.DefaultValue, fallback)
+		end
+		return number(value, fallback)
+	end
+
+	local function collectModifiers(values, output)
+		if type(values) ~= "table" then
+			return
+		end
+		local directName = values.Modifier or values.ModifierName or values.Name
+		if directName ~= nil and type(directName) ~= "table" then
+			output[tostring(directName)] = values
+			return
+		end
+		for key, value in pairs(values) do
+			local name = type(key) == "number" and readable(value) or key
+			if name ~= nil and value ~= false then
+				output[tostring(name)] = value
+			end
+		end
+	end
+
+	local function collectModifierContainers(root, output, depth, seen)
+		if type(root) ~= "table" or depth < 0 then
+			return
+		end
+		seen = seen or {}
+		if seen[root] then
+			return
+		end
+		seen[root] = true
+		for key, value in pairs(root) do
+			if type(value) == "table" then
+				if hasText(key, "modifier") then
+					collectModifiers(value, output)
+				elseif depth > 0 then
+					collectModifierContainers(value, output, depth - 1, seen)
+				end
+			end
+		end
+	end
+
+	local function modifierProfile(gameState, enemies, modifierState, information)
+		local active = {}
+		if type(modifierState) == "table" and type(modifierState.GameModifiers) == "table" then
+			collectModifiers(modifierState.GameModifiers, active)
+			collectModifierContainers(modifierState.MapState, active, 4)
+		else
+			collectModifiers(modifierState, active)
+		end
+		collectModifierContainers(gameState, active, 4)
+		for _, enemy in pairs(type(enemies) == "table" and enemies or {}) do
+			if type(enemy) == "table" then
+				collectModifiers(enemy.Modifiers, active)
+			end
+		end
+		local gameDefinitions = type(information) == "table"
+			and type(information.GameModifiers) == "table"
+			and (information.GameModifiers.List or information.GameModifiers)
+			or {}
+		local enemyDefinitions = type(information) == "table"
+			and type(information.EnemyModifiers) == "table"
+			and (information.EnemyModifiers.List or information.EnemyModifiers)
+			or {}
+		local profile = {
+			Names = {},
+			SpeedMultiplier = 1,
+			SpawnMultiplier = 1,
+			PressureBonus = 0,
+			CoverageBoost = 0,
+			Redundancy = 0,
+			StunRisk = 0,
+			NoFarms = false,
+		}
+		for name, activeValue in pairs(active) do
+			local gameDefinition = type(gameDefinitions) == "table" and gameDefinitions[name] or nil
+			local enemyDefinition = type(enemyDefinitions) == "table" and enemyDefinitions[name] or nil
+			local definition = type(enemyDefinition) == "table" and enemyDefinition
+				or type(gameDefinition) == "table" and gameDefinition
+				or {}
+			local key = lower(name)
+			table.insert(profile.Names, tostring(definition.DisplayName or name))
+			local speedPercent = number(definition.SpeedMulti, 0)
+			if hasText(key, "speedy") then
+				speedPercent = modifierValue(activeValue, number(definition.DefaultValue, 0))
+			end
+			if speedPercent > 0 then
+				profile.SpeedMultiplier = profile.SpeedMultiplier * (1 + speedPercent / 100)
+				profile.CoverageBoost = profile.CoverageBoost + clamp(speedPercent / 250, 0.04, 0.24)
+			end
+			local summons = type(definition.SummonEnemies) == "table" and definition.SummonEnemies or {}
+			local summonAmount = 0
+			for _, summon in pairs(summons) do
+				summonAmount = summonAmount + math.max(0, number(type(summon) == "table" and summon.Amount, 0))
+			end
+			if summonAmount > 0 or hasText(key, "split") or hasText(key, "summon") then
+				local healthPercent = number(definition.SummonHealthPercent, hasText(key, "split") and 33 or 20)
+				local effective = math.max(1, summonAmount) * math.max(0.05, healthPercent / 100)
+				profile.SpawnMultiplier = math.max(profile.SpawnMultiplier, 1 + effective)
+				profile.CoverageBoost = profile.CoverageBoost + clamp(effective * 0.12, 0.08, 0.3)
+				profile.PressureBonus = profile.PressureBonus + clamp(effective * 0.08, 0.05, 0.24)
+			end
+			local stunDuration = number(definition.StunDuration, 0)
+			local interval = math.max(1, number(definition.Interval, 15))
+			local stunCount = math.max(0, number(definition.StunCount, 0))
+			if stunDuration > 0 and (stunCount > 0 or hasText(key, "stun")) then
+				profile.StunRisk = math.max(profile.StunRisk, clamp(stunDuration / interval * math.max(1, stunCount) / 3, 0.1, 0.8))
+				profile.Redundancy = math.max(profile.Redundancy, math.max(1, math.ceil(stunCount / 2)))
+				profile.CoverageBoost = profile.CoverageBoost + profile.StunRisk * 0.2
+				profile.PressureBonus = profile.PressureBonus + profile.StunRisk * 0.12
+			end
+			if hasText(key, "nofarm") or hasText(key, "no farm") then
+				profile.NoFarms = activeValue ~= false
+			end
+			if hasText(key, "bosswaves") or hasText(key, "boss waves") then
+				profile.BossWaves = activeValue ~= false
+			end
+		end
+		table.sort(profile.Names)
+		profile.CoverageBoost = clamp(profile.CoverageBoost, 0, 0.38)
+		profile.PressureBonus = clamp(profile.PressureBonus, 0, 0.36)
+		profile.Summary = #profile.Names > 0 and table.concat(profile.Names, ", ") or "None"
+		return profile
 	end
 
 	local function pathProgress(enemy, path)
@@ -154,8 +283,9 @@ return function(Import)
 		return clamp(segment, 0, 1)
 	end
 
-	function Smart.Context(gameState, enemies, path, liveProgress, routeConfident)
+	function Smart.Context(gameState, enemies, path, liveProgress, routeConfident, modifierState, information)
 		gameState = type(gameState) == "table" and gameState or {}
+		local modifiers = modifierProfile(gameState, enemies, modifierState, information)
 		local routeReady = routeConfident ~= false
 		local difficulty = findValue(gameState, { "Difficulty", "DifficultyName" }, 4) or "Unknown"
 		local mode = findValue(gameState, { "Gamemode", "GameMode", "Mode" }, 4) or "Unknown"
@@ -204,7 +334,7 @@ return function(Import)
 				backlineEnemies = backlineEnemies + (progress >= 0.72 and 1 or 0)
 			end
 		end
-		local countPressure = clamp(enemyCount / 100, 0, 1)
+		local countPressure = clamp(enemyCount * modifiers.SpawnMultiplier / 100, 0, 1)
 		local progressPressure = maxProgress ^ 1.7
 		local averageProgress = progressTotal / math.max(
 			1,
@@ -214,15 +344,17 @@ return function(Import)
 		local scenarioFactor = difficultyFactor(difficulty)
 		local actNumber = tonumber(string.match(tostring(act), "%d+") or "") or 1
 		scenarioFactor = scenarioFactor * (1 + math.max(0, actNumber - 1) * 0.04)
+		boss = boss or modifiers.BossWaves == true
 		local pressure = (
 			progressPressure * 0.5
 			+ averageProgress ^ 1.35 * 0.12
 			+ countPressure * 0.1
-			+ clamp(speedPressure / math.max(1, enemyCount), 0, 1) * 0.06
+			+ clamp(speedPressure / math.max(1, enemyCount) + modifiers.SpeedMultiplier - 1, 0, 1) * 0.09
 			+ clamp(shieldPressure / math.max(1, enemyCount * 5), 0, 1) * 0.05
 			+ clamp(specialPressure, 0, 0.22)
 			+ basePressure * 0.45
 			+ (boss and 0.15 or 0)
+			+ modifiers.PressureBonus
 		) * scenarioFactor
 		return {
 			Difficulty = tostring(difficulty),
@@ -242,6 +374,14 @@ return function(Import)
 			BaseMaxHealth = baseMax,
 			HealthRatio = healthRatio,
 			Boss = boss,
+			Modifiers = modifiers.Names,
+			ModifierSummary = modifiers.Summary,
+			ModifierCoverageBoost = modifiers.CoverageBoost,
+			ModifierRedundancy = modifiers.Redundancy,
+			ModifierStunRisk = modifiers.StunRisk,
+			ModifierSpeed = modifiers.SpeedMultiplier,
+			ModifierSpawn = modifiers.SpawnMultiplier,
+			NoFarms = modifiers.NoFarms,
 			Pressure = clamp(pressure, 0, 1.5),
 			Emergency = pressure >= 0.78 or healthRatio <= 0.4,
 			Scenario = string.format("%s | %s | %s | %s", mode, map, act, difficulty),
@@ -349,6 +489,13 @@ return function(Import)
 		end
 		if context.Boss then
 			aoe = 1 + (aoe - 1) * 0.35
+		elseif number(context.ModifierSpawn, 1) > 1 then
+			local crowd = number(context.ModifierSpawn, 1) - 1
+			if hasText(stats.HitboxType, "circle") or hasText(stats.HitboxType, "radial") then
+				aoe = aoe * (1 + clamp(crowd * 0.25, 0.1, 0.55))
+			elseif hasText(stats.HitboxType, "line") or hasText(stats.HitboxType, "cone") then
+				aoe = aoe * (1 + clamp(crowd * 0.18, 0.08, 0.4))
+			end
 		end
 		local utility = 1 + stats.StatusCount * 0.1 + stats.AbilityCount * 0.035 + stats.Buff * 0.01
 		local direct = stats.Damage * stats.Ticks / stats.SPA * crit * aoe * utility
@@ -458,6 +605,9 @@ return function(Import)
 		local targets = { 48, 58, 38, 66, 30, 72 }
 		local combatOrdinal = math.max(1, ordinal - 1)
 		local target = targets[(combatOrdinal - 1) % #targets + 1]
+		if number(context.ModifierSpeed, 1) > 1 then
+			target = math.min(82, target + clamp((context.ModifierSpeed - 1) * 35, 4, 14))
+		end
 		if context.Emergency then
 			target = math.min(84, target + 10)
 		end
@@ -471,12 +621,16 @@ return function(Import)
 		end
 		local desired
 		if role == "Farm" then
+			if context.NoFarms then
+				return 0
+			end
 			desired = 1
 			local placementPayback = stats.Farm > 0 and stats.Cost / stats.Farm or math.huge
-			if strategy == "Economy" and placementPayback <= context.RemainingWaves * 0.7 then
-				desired = context.RemainingWaves >= 10 and 3 or 2
-			elseif context.Pressure < 0.28 and placementPayback <= context.RemainingWaves * 0.5 then
-				desired = 2
+			if placementPayback <= context.RemainingWaves * 0.72 then
+				desired = context.RemainingWaves >= 8 and 3 or 2
+				if context.Pressure >= 0.62 and strategy ~= "Economy" then
+					desired = math.min(desired, 2)
+				end
 			end
 		elseif role == "Support" then
 			desired = 1
@@ -485,6 +639,7 @@ return function(Import)
 			if context.Emergency or strategy == "Rush" or strategy == "Boss" then
 				desired = desired + 1
 			end
+			desired = desired + math.max(0, math.floor(number(context.ModifierRedundancy, 0)))
 		end
 		return math.max(0, math.min(math.floor(intrinsic), desired))
 	end
@@ -524,6 +679,9 @@ return function(Import)
 				local cframe = Planner.Candidate(path, percent, spacing, ordinal, 0)
 				if cframe then
 					local covered = coverage(path, cframe, base.Range)
+					local _, pathDistance = Planner.NearestProgress(path, cframe.Position)
+					local rangeRatio = clamp(pathDistance / math.max(1, base.Range), 0, 2)
+					local rangeUtilization = rangeRatio < 1 and math.sqrt(math.max(0, 1 - rangeRatio * rangeRatio)) or 0
 					local marginal, samples = 0, 0
 					for sample = 4, 96, 4 do
 						local point = Planner.SamplePath(path, sample)
@@ -543,7 +701,31 @@ return function(Import)
 						end
 					end
 					local tactical = 1 - math.min(1, math.abs(percent - target) / 60)
-					local score = covered + marginal * 1.7 + intersection * 0.7 + tactical * 0.45
+					local separation = 1
+					if context.ModifierStunRisk > 0 then
+						local nearest = math.huge
+						for _, entries in pairs(snapshot.Placed) do
+							for _, unit in ipairs(entries) do
+								local position = unitPosition(unit)
+								if position then
+									local delta = cframe.Position - position
+									nearest = math.min(nearest, Vector3.new(delta.X, 0, delta.Z).Magnitude)
+								end
+							end
+						end
+						if nearest < math.huge then
+							separation = clamp(nearest / math.max(10, base.Range * 0.75), 0.2, 1)
+						end
+					end
+					local score = covered
+						+ marginal * 1.7
+						+ intersection * 0.7
+						+ tactical * 0.45
+						+ rangeUtilization * 0.8
+						+ separation * context.ModifierStunRisk * 0.65
+					if role ~= "Farm" and rangeRatio > 0.72 then
+						score = score * 0.3
+					end
 					if role == "Farm" then
 						score = 1
 					end
@@ -555,6 +737,7 @@ return function(Import)
 							Coverage = score,
 							RouteCoverage = covered,
 							MarginalCoverage = marginal,
+							RangeUtilization = rangeUtilization,
 							Stats = base,
 							Role = role,
 						}
@@ -637,6 +820,8 @@ return function(Import)
 						Ordinal = ordinal + 1,
 						Score = score,
 						Role = role,
+						Stats = base,
+						RangeUtilization = location.RangeUtilization,
 						Reason = role == "Farm"
 							and string.format("deploy %s with %.1f-wave payback", slot.Name, base.Cost / math.max(1, base.Farm))
 							or string.format(
@@ -771,7 +956,9 @@ return function(Import)
 			snapshot.Enemies,
 			snapshot.Path,
 			snapshot.LiveProgress,
-			snapshot.RouteConfident
+			snapshot.RouteConfident,
+			snapshot.ModifierState or snapshot.GameModifiers,
+			snapshot.Information
 		)
 		updateHistory(context, options.History, options.Now)
 		if options.ReactToEnemies == false then
@@ -795,6 +982,7 @@ return function(Import)
 		local placements = placementChoices(snapshot, context, strategy, options)
 		local deployment = {}
 		local farmSeed = {}
+		local farmExpansion = {}
 		local combatPlaced = 0
 		local routeCoverage = defenseCoverage(snapshot)
 		context.RouteCoverage = routeCoverage
@@ -809,8 +997,12 @@ return function(Import)
 			for _, placement in ipairs(placements) do
 				if placement.Role ~= "Farm" then
 					table.insert(deployment, placement)
-				elseif placement.Count == 0 and placement.Role == "Farm" and options.SmartEconomy ~= false then
-					table.insert(farmSeed, placement)
+				elseif placement.Role == "Farm" and options.SmartEconomy ~= false then
+					if placement.Count == 0 then
+						table.insert(farmSeed, placement)
+					else
+						table.insert(farmExpansion, placement)
+					end
 				end
 			end
 		end
@@ -824,7 +1016,10 @@ return function(Import)
 		if context.Wave >= 8 or context.Pressure >= 0.8 then
 			requiredCombat = 4
 		end
-		local coverageGoal = context.Wave >= 4 and 0.66 or context.Wave >= 2 and 0.5 or 0.32
+		requiredCombat = requiredCombat + math.max(0, math.floor(number(context.ModifierRedundancy, 0)))
+		local coverageGoal = (context.Wave >= 4 and 0.66 or context.Wave >= 2 and 0.5 or 0.32)
+			+ number(context.ModifierCoverageBoost, 0)
+		coverageGoal = clamp(coverageGoal, 0.32, 0.94)
 		if context.RecentLeak then
 			coverageGoal = 0.82
 		end
@@ -848,15 +1043,23 @@ return function(Import)
 			and not context.RecentLeak
 		local preferFarm = #farmSeed > 0
 			and (earlyFarm or not context.Emergency and not context.RecentLeak)
+		local expandFarm = #farmExpansion > 0
+			and combatPlaced >= math.min(requiredCombat, 2)
+			and routeCoverage >= math.min(coverageGoal, 0.5)
+			and context.HealthRatio >= 0.99
+			and context.Pressure < 0.58
+			and context.RemainingWaves >= 6
 		local choices = {}
 		if preferFarm then
 			choices = farmSeed
 		elseif forceDeployment then
 			choices = deployment
+		elseif expandFarm then
+			choices = farmExpansion
 		else
 			choices = placements
 		end
-		if not forceDeployment and not preferFarm then
+		if not forceDeployment and not preferFarm and not expandFarm then
 			for _, choice in ipairs(upgrades) do
 				local suppressFarm = choice.Role == "Farm" and context.Emergency
 				if not suppressFarm and (options.SmartEconomy ~= false or choice.Role ~= "Farm") then

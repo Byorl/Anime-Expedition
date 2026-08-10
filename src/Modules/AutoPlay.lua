@@ -393,7 +393,7 @@ return function(Import)
 		return false
 	end
 
-	local function taggedPlacementCFrame(state, slot, pathPoint, tangent, reservations, spacing)
+	local function taggedPlacementCFrame(state, slot, pathPoint, tangent, reservations, spacing, maxPathDistance)
 		local placementType = type(slot.Info) == "table" and slot.Info.PlacementType or nil
 		local tag = placementType == "Ground" and "GroundPlacement" or "HillPlacement"
 		local map = Workspace:FindFirstChild("Map")
@@ -431,7 +431,9 @@ return function(Import)
 					and math.abs(localPoint.Z) <= math.max(0, part.Size.Z / 2 - inset)
 				then
 					local surface = part.CFrame:PointToWorldSpace(Vector3.new(localPoint.X, part.Size.Y / 2, localPoint.Z))
-					if not isOverPath(surface) then
+					local pathDelta = surface - pathPoint
+					local pathDistance = Vector3.new(pathDelta.X, 0, pathDelta.Z).Magnitude
+					if not isOverPath(surface) and (not maxPathDistance or pathDistance <= maxPathDistance) then
 						local position = surface + Vector3.new(0, (slot.BoundingHeight or 4) / 2, 0)
 						local cframe = CFrame.lookAt(position, position + look)
 						if
@@ -460,6 +462,10 @@ return function(Import)
 		end
 		local recordRetry = options.RecordRetry ~= false
 		local spacing = tonumber(choice.Spacing) or state.Spacing
+		local combatRange = type(choice.Stats) == "table" and tonumber(choice.Stats.Range) or nil
+		local maxPathDistance = choice.Role ~= "Farm" and combatRange
+			and math.clamp(combatRange * 0.62, 5, 15)
+			or nil
 		local reservations = options.Reserved
 		if reservations == nil then
 			reservations = {}
@@ -478,7 +484,15 @@ return function(Import)
 			local pathPoint, tangent = Planner.SamplePath(path, percent)
 			local candidate = pathPoint
 				and tangent
-				and taggedPlacementCFrame(state, choice.Slot, pathPoint, tangent, reservations, spacing)
+				and taggedPlacementCFrame(
+					state,
+					choice.Slot,
+					pathPoint,
+					tangent,
+					reservations,
+					spacing,
+					maxPathDistance
+				)
 			if candidate then
 				return candidate
 			end
@@ -501,7 +515,7 @@ return function(Import)
 						candidate.Position.X - pathPoint.X,
 						0,
 						candidate.Position.Z - pathPoint.Z
-					).Magnitude <= 22
+					).Magnitude <= (maxPathDistance or 22)
 				if
 					closeToPath
 					and not overlapsReservation(choice.Slot, candidate, reservations, spacing)
@@ -688,6 +702,8 @@ return function(Import)
 		path = paths[1]
 		return {
 			GameState = gameState,
+			ModifierState = { GameModifiers = gameModifiers, MapState = mapState },
+			Information = information,
 			Slots = slots,
 			Placed = placed,
 			Yen = math.max(0, tonumber(type(playerState) == "table" and playerState.Yen) or 0),
@@ -933,13 +949,16 @@ return function(Import)
 			or context.RecentLeak and " | Recovering coverage"
 			or string.format(" | Coverage: %d%%", math.floor((tonumber(context.RouteCoverage) or 0) * 100 + 0.5))
 		local threat = string.format(
-			"Threat: %d%% | Enemies: %d | Wave: %d/%d%s%s",
+			"Threat: %d%% | Enemies: %d | Wave: %d/%d%s%s%s",
 			math.floor((tonumber(context.Pressure) or 0) * 100 + 0.5),
 			tonumber(context.EnemyCount) or 0,
 			tonumber(context.Wave) or 0,
 			tonumber(context.MaxWave) or 0,
 			context.Boss and " | Boss detected" or "",
-			routeState
+			routeState,
+			context.ModifierSummary and context.ModifierSummary ~= "None"
+				and " | Modifiers: " .. context.ModifierSummary
+				or ""
 		)
 		if state.SmartThreatText ~= threat and state.SmartThreatLabel then
 			state.SmartThreatText = threat

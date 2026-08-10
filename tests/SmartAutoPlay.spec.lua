@@ -90,6 +90,47 @@ local measuredCrowd = Smart.Context({
 }, earlyCrowd, path)
 assert(not measuredCrowd.Emergency, "healthy enemies near spawn created a permanent false emergency")
 
+local modifierInformation = {
+	GameModifiers = {
+		List = {
+			Speedy = { DisplayName = "Speedy", DefaultValue = 50 },
+		},
+	},
+	EnemyModifiers = {
+		List = {
+			Splitter = {
+				DisplayName = "Splitter",
+				SummonHealthPercent = 33,
+				SummonEnemies = { { Amount = 3 } },
+			},
+			Stunner = { DisplayName = "Stunner", Interval = 15, StunDuration = 5, StunCount = 3 },
+		},
+	},
+}
+local modifierAware = Smart.Context(
+	{
+		Wave = 3,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Difficulty = "Hard" },
+	},
+	{ { Health = 100, MaxHealth = 100, Progress = 0.2, Modifiers = { "Splitter", "Stunner" } } },
+	path,
+	nil,
+	true,
+	{ GameModifiers = { Speedy = 15 } },
+	modifierInformation
+)
+assert(math.abs(modifierAware.ModifierSpeed - 1.15) < 0.001, "live Speedy percentage was not applied")
+assert(modifierAware.ModifierSpawn > 1.9, "Splitter child pressure was not modeled")
+assert(modifierAware.ModifierStunRisk > 0 and modifierAware.ModifierRedundancy >= 2, "Stunner redundancy was ignored")
+assert(
+	string.find(modifierAware.ModifierSummary, "Splitter", 1, true)
+		and string.find(modifierAware.ModifierSummary, "Speedy", 1, true),
+	"active modifiers are not exposed to the live planner"
+)
+
 local information = {
 	Units = {
 		Farm = {
@@ -268,6 +309,41 @@ local affordable = Smart.Decide(snapshot, {
 	ReactToEnemies = true,
 })
 assert(affordable.Kind == "Place", "an affordable placement remained stuck waiting")
+
+snapshot.GameState = {
+	Wave = 3,
+	MaxWave = 15,
+	BaseHealth = 3,
+	BaseMaxHealth = 3,
+	Parameters = { Gamemode = "Trial", Difficulty = "Normal" },
+}
+snapshot.Placed = {
+	[1] = {
+		{ GameUnitID = "farm-one", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, Farm = true, CFrame = CFrame.new(12, 0, 50), Data = {} },
+	},
+	[2] = {
+		{ GameUnitID = "damage-one", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, CFrame = CFrame.new(6, 0, 30), Data = {} },
+		{ GameUnitID = "damage-two", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, CFrame = CFrame.new(14, 0, 70), Data = {} },
+	},
+}
+snapshot.PlacementCounts = { Farm = 1, Damage = 2 }
+snapshot.Yen = 1000
+slots[1].PlacementLimit = 3
+local expandProfitableFarm = Smart.Decide(snapshot, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	expandProfitableFarm.Kind == "Place"
+		and expandProfitableFarm.Slot.Index == 1
+		and expandProfitableFarm.Cap >= 2,
+	"smart economy treated one profitable farm as complete despite a larger intrinsic cap"
+)
+
+snapshot.Placed = { [1] = {}, [2] = {} }
+snapshot.PlacementCounts = nil
 snapshot.Yen = 1000
 snapshot.PlacementCap = 0
 local capped = Smart.Decide(snapshot, {

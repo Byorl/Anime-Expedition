@@ -366,7 +366,11 @@ assert(
 		and string.find(source, 'map:FindFirstChild("Environment")', 1, true),
 	"live and exported map path layouts are not supported"
 )
-assert(string.find(source, ").Magnitude <= 22", 1, true), "placement is not bounded around the selected path")
+assert(
+	string.find(source, "math.clamp(combatRange * 0.62, 5, 15)", 1, true)
+		and string.find(source, ").Magnitude <= (maxPathDistance or 22)", 1, true),
+	"smart combat placement is not bounded by usable unit range around the selected path"
+)
 assert(Planner.RouteVote(0, 0.8, 0.79) < 0, "reverse route movement was not detected")
 assert(Planner.RouteVote(0, 0.2, 0.21) > 0, "forward route movement was not detected")
 assert(Planner.RouteVote(3, 0.2, 0.20001) == 3, "route jitter changed the learned direction")
