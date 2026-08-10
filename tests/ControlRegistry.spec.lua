@@ -43,7 +43,18 @@ function section:Dropdown(settings)
 		UpdateSelection = function(_, value) selected = value; settings.Callback(value) end,
 		GetOptions = function()
 			local output = {}
-			for _, option in ipairs(settings.Options or {}) do output[option] = option == selected end
+			for _, option in ipairs(settings.Options or {}) do
+				local enabled = option == selected
+				if type(selected) == "table" then
+					enabled = selected[option] == true
+					if not enabled then
+						for _, item in ipairs(selected) do
+							if item == option then enabled = true break end
+						end
+					end
+				end
+				output[option] = enabled
+			end
 			return output
 		end,
 	}
@@ -61,12 +72,19 @@ local dropdown = scope:Dropdown(section, {
 	end,
 	Callback = function() callbacks = callbacks + 1 end,
 }, "test.dropdown")
+scope:Dropdown(section, {
+	Options = {"Normal", "Hard"},
+	Default = {},
+	Multi = true,
+	Callback = function() callbacks = callbacks + 1 end,
+}, "test.multi_dropdown")
 
 local applyOk, applyError = registry:ApplyAtomic({
 	["test.toggle"] = false,
 	["test.slider"] = 0,
 	["test.input"] = "",
 	["test.dropdown"] = "Old [unit-1]",
+	["test.multi_dropdown"] = {"Normal", "Hard"},
 })
 assert(applyOk, applyError)
 assert(registry:Get("test.toggle") == false, "saved false was not applied")
@@ -74,7 +92,7 @@ assert(registry:Get("test.slider") == 0, "saved zero was not applied")
 assert(registry:Get("test.input") == "", "saved empty string was not applied")
 assert(changes == 0, "atomic apply leaked autosave change callbacks")
 assert(registry:Get("test.dropdown") == "Current [unit-1]", "dynamic dropdown identity was not resolved")
-assert(callbacks == 4, "atomic apply did not restore live feature callbacks")
+assert(callbacks == 5, "atomic apply did not restore live feature callbacks")
 local verifyOk, verifyError = registry:VerifyApplied()
 assert(verifyOk, verifyError)
 dropdown.GetOptions = function() return {} end

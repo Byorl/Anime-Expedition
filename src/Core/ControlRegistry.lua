@@ -18,6 +18,26 @@ return function(Import)
 		return true
 	end
 
+	local function selectionList(value)
+		local selected = {}
+		for key, state in pairs(type(value) == "table" and value or {}) do
+			if type(key) == "number" then
+				table.insert(selected, state)
+			elseif state == true then
+				table.insert(selected, key)
+			end
+		end
+		table.sort(selected, function(a, b) return tostring(a) < tostring(b) end)
+		return selected
+	end
+
+	local function formatValue(value)
+		if type(value) ~= "table" then return tostring(value) end
+		local values = selectionList(value)
+		for index, item in ipairs(values) do values[index] = tostring(item) end
+		return "[" .. table.concat(values, ", ") .. "]"
+	end
+
 	function ControlRegistry.new()
 		return setmetatable({
 			Entries = {},
@@ -326,25 +346,23 @@ return function(Import)
 					end, Util.Traceback)
 					restoreIdentity()
 					local expected = self.Values[flag]
+					local comparableExpected = expected
 					if entry.Kind == "Keybind" and typeof(actual) == "EnumItem" then actual = actual.Name end
 					if ok and entry.Kind == "Dropdown" then
-						local selected = {}
-						for option, enabled in pairs(type(actual) == "table" and actual or {}) do
-							if enabled == true then table.insert(selected, option) end
-						end
-						table.sort(selected, function(a, b) return tostring(a) < tostring(b) end)
+						local selected = selectionList(actual)
+						if type(expected) == "table" then comparableExpected = selectionList(expected) end
 						actual = type(expected) == "table" and selected or selected[1]
 					end
 					if not ok then
 						table.insert(errors, string.format("%s (%s) could not be read: %s", flag, entry.Kind, tostring(actual)))
-					elseif not valuesEqual(actual, expected) then
+					elseif not valuesEqual(actual, comparableExpected) then
 						local target = entry.Kind == "Dropdown" and warnings or errors
 						table.insert(target, string.format(
 							"%s (%s) expected %s but UI reports %s",
 							flag,
 							entry.Kind,
-							tostring(expected),
-							tostring(actual)
+							formatValue(expected),
+							formatValue(actual)
 						))
 					end
 				end
