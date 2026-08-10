@@ -1,5 +1,8 @@
 
-local REPOSITORY = "https://jexvral.xyz/game/ap/"
+local REPOSITORIES = {
+	"https://jexvral.xyz/game/ap/",
+	"https://raw.githubusercontent.com/Byorl/Anime-Expedition/main/",
+}
 local traceback = debug and debug.traceback or function(message) return tostring(message) end
 local Environment = (getgenv and getgenv()) or _G
 
@@ -24,16 +27,31 @@ local function fail(phase, moduleName, path, message)
 end
 
 local function fetch(path, cacheBuster)
-	local url = REPOSITORY .. path
-	if cacheBuster then url = url .. "?v=" .. tostring(cacheBuster) end
 	local lastError
-	for attempt = 1, 4 do
-		local ok, body = pcall(function() return game:HttpGet(url) end)
-		if ok and type(body) == "string" and #body > 0 then return body end
-		lastError = ok and "empty/non-text response" or tostring(body)
-		if attempt < 4 then task.wait(0.2 * attempt) end
+	for repositoryIndex, repository in ipairs(REPOSITORIES) do
+		local url = repository .. path
+		if cacheBuster then url = url .. "?v=" .. tostring(cacheBuster) end
+		for attempt = 1, 2 do
+			local ok, body = pcall(function() return game:HttpGet(url) end)
+			if ok and type(body) == "string" and #body > 0 then
+				local preview = body:sub(1, 240):lower()
+				local rejected = preview:find("too many requests", 1, true)
+					or preview:find("source gateway is busy", 1, true)
+					or preview:find("source host returned http", 1, true)
+					or preview:find("source request timed out", 1, true)
+					or preview:find("unable to retrieve source", 1, true)
+					or preview:find("<!doctype", 1, true)
+					or preview:find("<html", 1, true)
+				if not rejected then return body end
+				lastError = string.format("%s returned an error document: %s", url, body:sub(1, 160):gsub("[%c]+", " "))
+			else
+				lastError = string.format("%s: %s", url, ok and "empty/non-text response" or tostring(body))
+			end
+			if attempt < 2 then task.wait(0.15 * attempt) end
+		end
+		if repositoryIndex < #REPOSITORIES then task.wait() end
 	end
-	fail("download", nil, path, string.format("HTTP fetch failed after 4 attempts: %s", tostring(lastError)))
+	fail("download", nil, path, string.format("All source endpoints failed: %s", tostring(lastError)))
 end
 
 local manifestSource = fetch("manifest.lua", os.time())
