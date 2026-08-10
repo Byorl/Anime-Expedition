@@ -13,6 +13,11 @@ local playerData = {
 			Unknown = {Completed = true, Claimed = false},
 		}},
 		ForgeFever = {Quests = {EventQuest = {Completed = true, Claimed = false}}},
+		ShenronEvent = {Quests = {
+			Orb1 = {Completed = true, Claimed = false},
+			Orb2 = {Completed = true, Claimed = true},
+			Orb3 = {Completed = false, Claimed = false},
+		}},
 		Achievement_Kills = {Completed = true, Claimed = false, Quests = {C = {Completed = true, Claimed = false}}},
 		Achievement_NoReward = {Completed = true, Claimed = false, Quests = {D = {Completed = true, Claimed = false}}},
 	},
@@ -54,6 +59,10 @@ local quests = Scanner.Quests(playerData, false, questInformation)
 assert(#quests == 3, "regular quest scan must honor claim permission, prerequisites, and known quest metadata")
 local eventQuests = Scanner.QuestCategories(playerData, {ForgeFever = true}, questInformation)
 assert(#eventQuests == 1 and eventQuests[1].Quest == "EventQuest", "specific quest category scan is wrong")
+local dragonBalls = Scanner.DragonBalls(playerData, {ShenronEvent = true})
+assert(#dragonBalls == 1 and dragonBalls[1].Quest == "Orb1", "dragon ball scan must only return completed, unclaimed wish quests")
+local questsWithoutDragonBalls = Scanner.Quests(playerData, false, questInformation, {ShenronEvent = true})
+assert(#questsWithoutDragonBalls == 3, "dedicated dragon ball claims must be excluded from the generic quest route")
 local achievements, achievementCategories = Scanner.Quests(playerData, true, questInformation)
 assert(#achievements == 2, "achievement quest scan is wrong")
 assert(#achievementCategories == 1 and achievementCategories[1] == "Achievement_Kills",

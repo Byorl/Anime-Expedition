@@ -45,11 +45,12 @@ return function()
 		return isTable(info) and hasEntries(info.Rewards)
 	end
 
-	function Scanner.Quests(playerData, achievements, questInformation)
+	function Scanner.Quests(playerData, achievements, questInformation, excludedCategories)
 		local claims, categoryClaims = {}, {}
 		local questData = isTable(playerData) and playerData.QuestData or nil
 		for category, categoryData in pairs(isTable(questData) and questData or {}) do
-			if isAchievement(category, questInformation) == (achievements == true) and isTable(categoryData) then
+			if not (isTable(excludedCategories) and excludedCategories[category])
+				and isAchievement(category, questInformation) == (achievements == true) and isTable(categoryData) then
 				for quest, questDataEntry in pairs(isTable(categoryData.Quests) and categoryData.Quests or {}) do
 					if questIsClaimable(questData, category, quest, questDataEntry, questInformation) then
 						table.insert(claims, {Category = category, Quest = quest})
@@ -64,17 +65,39 @@ return function()
 		return claims, categoryClaims
 	end
 
-	function Scanner.QuestCategories(playerData, categorySet, questInformation)
+	function Scanner.QuestCategories(playerData, categorySet, questInformation, excludedCategories)
+		local claims = {}
+		local questData = isTable(playerData) and playerData.QuestData or nil
+		for category in pairs(isTable(categorySet) and categorySet or {}) do
+			if not (isTable(excludedCategories) and excludedCategories[category]) then
+				local categoryData = isTable(questData) and questData[category] or nil
+				for quest, entry in pairs(isTable(categoryData) and isTable(categoryData.Quests) and categoryData.Quests or {}) do
+					if questIsClaimable(questData, category, quest, entry, questInformation) then
+						table.insert(claims, {Category = category, Quest = quest})
+					end
+				end
+			end
+		end
+		return claims
+	end
+
+	function Scanner.DragonBalls(playerData, categorySet)
 		local claims = {}
 		local questData = isTable(playerData) and playerData.QuestData or nil
 		for category in pairs(isTable(categorySet) and categorySet or {}) do
 			local categoryData = isTable(questData) and questData[category] or nil
-			for quest, entry in pairs(isTable(categoryData) and isTable(categoryData.Quests) and categoryData.Quests or {}) do
-				if questIsClaimable(questData, category, quest, entry, questInformation) then
+			local quests = isTable(categoryData) and categoryData.Quests or nil
+			for quest, entry in pairs(isTable(quests) and quests or {}) do
+				if isTable(entry) and entry.Completed == true and entry.Claimed ~= true then
 					table.insert(claims, {Category = category, Quest = quest})
 				end
 			end
 		end
+		table.sort(claims, function(left, right)
+			local leftKey = tostring(left.Category) .. "/" .. tostring(left.Quest)
+			local rightKey = tostring(right.Category) .. "/" .. tostring(right.Quest)
+			return leftKey < rightKey
+		end)
 		return claims
 	end
 

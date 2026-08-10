@@ -81,6 +81,29 @@ return function(Import)
 		return categories
 	end
 
+	local function dragonBallQuestCategories(information)
+		local categories = {ShenronEvent = true}
+		for eventId, event in pairs(type(information.Events) == "table" and information.Events or {}) do
+			if type(event) == "table" then
+				local identity = string.lower(table.concat({
+					tostring(eventId),
+					tostring(event.DataKey or ""),
+					tostring(event.DisplayName or ""),
+				}, " "))
+				if string.find(identity, "shenron", 1, true)
+					or string.find(identity, "dragon's wish", 1, true)
+					or string.find(identity, "dragons wish", 1, true) then
+					categories[eventId] = true
+					if event.DataKey then categories[event.DataKey] = true end
+					for _, category in ipairs(type(event.QuestCategories) == "table" and event.QuestCategories or {}) do
+						categories[category] = true
+					end
+				end
+			end
+		end
+		return categories
+	end
+
 	function AutoClaim:_Report(ctx, state, action, err)
 		local now = os.clock()
 		if now - (state.LastErrors[action] or 0) < 15 then return end
@@ -150,14 +173,29 @@ return function(Import)
 		if type(playerData) ~= "table" then return end
 		local information = ctx.Game:Information() or {}
 		local questInformation = type(information.Quests) == "table" and information.Quests or nil
+		local dragonBallCategories = dragonBallQuestCategories(information)
+		local excludedDragonBallCategories = state.Values.DragonBalls and dragonBallCategories or nil
 
 		if state.Values.Quests then
-			local claims = Scanner.Quests(playerData, false, questInformation)
+			local claims = Scanner.Quests(playerData, false, questInformation, excludedDragonBallCategories)
 			local signature = sortedSignature(claims, function(v) return tostring(v.Category) .. "/" .. tostring(v.Quest) end)
 			self:_Once(ctx, state, "quests", signature, function()
 				for index, claim in ipairs(claims) do
 					if index > MAX_INDIVIDUAL_CLAIMS then break end
 					self:_Fire(ctx, state, "quest", "QUEST_CLAIM", claim.Category, claim.Quest)
+				end
+			end)
+		end
+
+		if state.Values.DragonBalls then
+			local claims = Scanner.DragonBalls(playerData, dragonBallCategories)
+			local signature = sortedSignature(claims, function(v)
+				return tostring(v.Category) .. "/" .. tostring(v.Quest)
+			end)
+			self:_Once(ctx, state, "dragon balls", signature, function()
+				for index, claim in ipairs(claims) do
+					if index > 7 then break end
+					self:_Fire(ctx, state, "dragon ball", "QUEST_CLAIM", claim.Category, claim.Quest)
 				end
 			end)
 		end
@@ -249,7 +287,8 @@ return function(Import)
 			local eventQuests = state.Values.Quests and {} or Scanner.QuestCategories(
 				playerData,
 				eventQuestCategories(information),
-				questInformation
+				questInformation,
+				excludedDragonBallCategories
 			)
 			local eventSignature = (villain and "villain" or "") .. sortedSignature(preRelease)
 				.. sortedSignature(eventQuests, function(v) return tostring(v.Category) .. "/" .. tostring(v.Quest) end)
@@ -313,7 +352,7 @@ return function(Import)
 
 	return {
 		Name = "AutoClaim",
-		Version = 1,
+		Version = 2,
 		Priority = 11,
 		Dependencies = {"Misc"},
 
@@ -350,6 +389,7 @@ return function(Import)
 				{"Auto Claim Expeditions", "Expeditions", "auto_claim.expeditions", "Special"},
 				{"Auto Claim Events", "Events", "auto_claim.events", "Special"},
 				{"Auto Claim Tournaments", "Tournaments", "auto_claim.tournaments", "Special"},
+				{"Auto Claim Dragon Balls", "DragonBalls", "auto_claim.dragon_balls", "Special"},
 				{"Auto Claim Group Rewards", "GroupRewards", "auto_claim.group_rewards", "Special"},
 				{"Auto Redeem Codes", "Codes", "auto_claim.codes", "Codes"},
 			}

@@ -80,6 +80,20 @@ function registry:Dropdown(_, settings, flag)
 	controls[flag] = control
 	return control
 end
+local claimContext = {
+	Tabs = {MiscClaims = {Section = function() return section end}},
+	Registry = registry,
+	Config = {AccountFolder = "accounts/test"},
+	FileSystem = {
+		ReadJson = function(_, _, fallback) return fallback end,
+		WriteJson = function() return true end,
+	},
+	Player = {UserId = 1, IsInGroup = function() return false end},
+}
+local claimState = autoClaim.Init(autoClaim, claimContext)
+assert(controls["auto_claim.dragon_balls"], "Auto Claim Dragon Balls toggle was not registered")
+callbacks["auto_claim.dragon_balls"](true)
+assert(claimState.Values.DragonBalls == true, "Auto Claim Dragon Balls toggle did not update module state")
 local performanceContext = {
 	Tabs = {
 		MiscClaims = {Section = function() return section end},
