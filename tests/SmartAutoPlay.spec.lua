@@ -293,7 +293,7 @@ snapshot.Yen = 100
 local reserved = Smart.Decide(snapshot, {
 	Strategy = "Balanced",
 	AdaptivePlacement = true,
-	SmartEconomy = true,
+	SmartEconomy = false,
 	ReactToEnemies = true,
 })
 assert(reserved.Kind == "Wait", "automatic yen reserve was not applied in a safe wave")
@@ -340,6 +340,59 @@ assert(
 		and expandProfitableFarm.Slot.Index == 1
 		and expandProfitableFarm.Cap >= 2,
 	"smart economy treated one profitable farm as complete despite a larger intrinsic cap"
+)
+
+snapshot.Placed = {
+	[1] = {
+		{ GameUnitID = "farm-one", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, Farm = true, CFrame = CFrame.new(12, 0, 50), Data = {} },
+	},
+	[2] = {
+		{ GameUnitID = "damage-one", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, CFrame = CFrame.new(6, 0, 30), Data = {} },
+	},
+}
+snapshot.PlacementCounts = { Farm = 1, Damage = 1 }
+snapshot.Enemies = { { Health = 40000, MaxHealth = 40000, Progress = 0.3 } }
+snapshot.LiveProgress = { 0.3 }
+snapshot.Yen = 1000
+local completeFarmPlacement = Smart.Decide(snapshot, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	completeFarmPlacement.Kind == "Place"
+		and completeFarmPlacement.Slot.Index == 1
+		and completeFarmPlacement.Count == 1
+		and completeFarmPlacement.Cap == 3,
+	"smart opening filled combat slots instead of completing all three profitable farm placements"
+)
+
+snapshot.GameState.Wave = 5
+snapshot.Placed = {
+	[1] = {
+		{ GameUnitID = "farm-one", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, Farm = true, CFrame = CFrame.new(12, 0, 45), Data = {} },
+		{ GameUnitID = "farm-two", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, Farm = true, CFrame = CFrame.new(18, 0, 50), Data = {} },
+		{ GameUnitID = "farm-three", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, Farm = true, CFrame = CFrame.new(24, 0, 55), Data = {} },
+	},
+	[2] = {
+		{ GameUnitID = "damage-one", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, CFrame = CFrame.new(6, 0, 30), Data = {} },
+		{ GameUnitID = "damage-two", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, CFrame = CFrame.new(14, 0, 70), Data = {} },
+	},
+}
+snapshot.PlacementCounts = { Farm = 3, Damage = 2 }
+snapshot.Enemies = { { Health = 40000, MaxHealth = 40000, Progress = 0.3 } }
+snapshot.LiveProgress = { 0.3 }
+snapshot.Yen = 1000
+local buildFarmEngine = Smart.Decide(snapshot, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	buildFarmEngine.Kind == "Upgrade" and buildFarmEngine.Slot.Index == 1,
+	"smart opening filled the remaining combat capacity before building the completed farm engine"
 )
 
 snapshot.Placed = { [1] = {}, [2] = {} }

@@ -627,10 +627,7 @@ return function(Import)
 			desired = 1
 			local placementPayback = stats.Farm > 0 and stats.Cost / stats.Farm or math.huge
 			if placementPayback <= context.RemainingWaves * 0.72 then
-				desired = context.RemainingWaves >= 8 and 3 or 2
-				if context.Pressure >= 0.62 and strategy ~= "Economy" then
-					desired = math.min(desired, 2)
-				end
+				desired = context.RemainingWaves >= 5 and 3 or 2
 			end
 		elseif role == "Support" then
 			desired = 1
@@ -985,14 +982,20 @@ return function(Import)
 		local farmSeed = {}
 		local farmExpansion = {}
 		local combatPlaced = 0
+		local farmPlaced = 0
+		local farmTarget = 0
 		local routeCoverage = defenseCoverage(snapshot)
 		context.RouteCoverage = routeCoverage
 		if strategy ~= "Economy" then
 			for _, slot in ipairs(snapshot.Slots) do
-				local role = Smart.Role(slot, upgradeStats(slot, 0))
+				local base = upgradeStats(slot, 0)
+				local role = Smart.Role(slot, base)
+				local count = Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
 				if role ~= "Farm" then
-					combatPlaced = combatPlaced
-						+ Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
+					combatPlaced = combatPlaced + count
+				elseif options.SmartEconomy ~= false then
+					farmPlaced = farmPlaced + count
+					farmTarget = farmTarget + smartCap(slot, role, strategy, context, base)
 				end
 			end
 			for _, placement in ipairs(placements) do
@@ -1025,10 +1028,22 @@ return function(Import)
 			coverageGoal = 0.82
 		end
 		local upgrades = upgradeChoices(snapshot, context, strategy)
+		local farmUpgrades = {}
+		for _, upgrade in ipairs(upgrades) do
+			if upgrade.Role == "Farm" then
+				table.insert(farmUpgrades, upgrade)
+			end
+		end
 		table.sort(deployment, compare)
 		table.sort(farmSeed, compare)
 		table.sort(farmExpansion, compare)
 		table.sort(upgrades, compare)
+		table.sort(farmUpgrades, function(a, b)
+			if a.PaybackWaves ~= b.PaybackWaves then
+				return a.PaybackWaves < b.PaybackWaves
+			end
+			return compare(a, b)
+		end)
 		local needsDefense = combatPlaced < requiredCombat or routeCoverage < coverageGoal
 		local worthwhileDeployment = not upgrades[1]
 			or not deployment[1]
@@ -1049,31 +1064,72 @@ return function(Import)
 		local openPlacementSlots = placementCap
 			and math.max(0, placementCap - totalPlaced)
 			or math.huge
-		local defenseSlotsNeeded = math.max(0, requiredCombat - combatPlaced)
+		local defenseSlotsNeeded = math.max(0, 1 - combatPlaced)
 		local farmCapacitySafe = openPlacementSlots > defenseSlotsNeeded
 		local preferFarm = #farmSeed > 0
 			and farmCapacitySafe
 			and (earlyFarm or not context.Emergency and not context.RecentLeak)
-		local bestFarmPayback = farmExpansion[1] and farmExpansion[1].PaybackWaves or math.huge
-		local fastFarmWindow = farmCapacitySafe
+		local economySafe = context.HealthRatio >= 0.99
+			and context.BacklineEnemies == 0
+			and context.MaxProgress < 0.62
+			and not context.RecentLeak
+		local economyWindow = context.RemainingWaves >= 6
+			and context.Wave <= math.max(5, math.floor(context.MaxWave * 0.6))
+		local farmPlacementOpening = #farmExpansion > 0
+			and farmPlaced < farmTarget
+			and farmCapacitySafe
+			and combatPlaced >= 1
+			and routeCoverage >= math.min(coverageGoal, 0.14)
+			and economySafe
+			and economyWindow
+		local farmPlacementComplete = farmTarget > 0 and farmPlaced >= farmTarget
+		local farmUpgradeOpening = farmPlacementComplete
+			and #farmUpgrades > 0
 			and combatPlaced >= math.min(requiredCombat, 2)
-			and routeCoverage >= math.min(coverageGoal, 0.4)
+			and routeCoverage >= math.min(coverageGoal, 0.28)
+			and economySafe
+			and context.RemainingWaves >= 5
+			and context.Wave <= math.max(6, math.floor(context.MaxWave * 0.64))
+		local hardDefenseCrisis = combatPlaced == 0
+			or context.RecentLeak
+			or context.BacklineEnemies > 0
+			or context.HealthRatio < 0.99
+			or context.MaxProgress >= 0.68
+		local secondAnchorNeeded = farmPlacementComplete
+			and combatPlaced < math.min(requiredCombat, 2)
+			and #deployment > 0
+		local fastFarmWindow = farmCapacitySafe
+			and combatPlaced >= 1
+			and routeCoverage >= math.min(coverageGoal, 0.14)
 			and context.HealthRatio >= 0.99
 			and not context.RecentLeak
 			and not context.Emergency
 			and context.RemainingWaves >= 7
 			and context.Wave <= math.max(4, math.floor(context.MaxWave * 0.45))
-			and bestFarmPayback <= math.min(2.25, context.RemainingWaves * 0.25)
+			and farmExpansion[1]
+			and farmExpansion[1].PaybackWaves <= math.min(2.25, context.RemainingWaves * 0.25)
 		local expandFarm = #farmExpansion > 0
 			and farmCapacitySafe
-			and combatPlaced >= math.min(requiredCombat, 2)
+			and combatPlaced >= 1
 			and routeCoverage >= math.min(coverageGoal, 0.5)
 			and context.HealthRatio >= 0.99
 			and (context.Pressure < 0.58 or fastFarmWindow)
 			and context.RemainingWaves >= 6
 		local choices = {}
+		local economyCommit = false
 		if preferFarm then
 			choices = farmSeed
+			economyCommit = true
+		elseif hardDefenseCrisis and forceDeployment then
+			choices = deployment
+		elseif farmPlacementOpening then
+			choices = farmExpansion
+			economyCommit = true
+		elseif secondAnchorNeeded then
+			choices = deployment
+		elseif farmUpgradeOpening then
+			choices = farmUpgrades
+			economyCommit = true
 		elseif forceDeployment then
 			choices = deployment
 		elseif expandFarm then
@@ -1081,7 +1137,13 @@ return function(Import)
 		else
 			choices = placements
 		end
-		if not forceDeployment and not preferFarm and not expandFarm then
+		if not forceDeployment
+			and not preferFarm
+			and not expandFarm
+			and not farmPlacementOpening
+			and not secondAnchorNeeded
+			and not farmUpgradeOpening
+		then
 			for _, choice in ipairs(upgrades) do
 				local suppressFarm = choice.Role == "Farm" and context.Emergency
 				if not suppressFarm and (options.SmartEconomy ~= false or choice.Role ~= "Farm") then
@@ -1090,7 +1152,7 @@ return function(Import)
 			end
 		end
 		table.sort(choices, compare)
-		local reservePercent = automaticReserve(context, strategy)
+		local reservePercent = economyCommit and 0 or automaticReserve(context, strategy)
 		context.ReservePercent = reservePercent
 		context.Yen = math.max(0, number(snapshot.Yen, 0))
 		local reserve = snapshot.Yen * reservePercent / 100
