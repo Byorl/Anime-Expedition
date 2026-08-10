@@ -33,6 +33,8 @@ return function(Import)
 			loadModule(fusionPackage and fusionPackage:FindFirstChild("Dependencies"), "FusionPackage.Dependencies")
 		local fusion, fusionError =
 			loadModule(fusionPackage and fusionPackage:FindFirstChild("Fusion"), "FusionPackage.Fusion")
+		local actions = select(1,
+			loadModule(fusionPackage and fusionPackage:FindFirstChild("Actions"), "FusionPackage.Actions"))
 		if not nodes or not dependencies or not fusion or type(fusion.peek) ~= "function" then
 			self.Error = table.concat({
 				nodesError or "",
@@ -44,6 +46,7 @@ return function(Import)
 		self.Nodes = nodes
 		self.Dependencies = dependencies
 		self.Fusion = fusion
+		self.Actions = actions
 		self.ReplicaClient =
 			select(1, loadModule(shared and shared:FindFirstChild("ReplicaClient"), "Shared.ReplicaClient"))
 		self.Ready = true
@@ -226,6 +229,24 @@ return function(Import)
 			return false, tostring(err)
 		end
 		return true
+	end
+
+	function GameAdapter:Action(actionName, ...)
+		if not self.Ready then
+			return false, self.Error
+		end
+		local action = type(self.Actions) == "table" and rawget(self.Actions, actionName) or nil
+		if type(action) ~= "function" then
+			return false, "bound game action '" .. tostring(actionName) .. "' is unavailable"
+		end
+		local arguments = table.pack(...)
+		local results = table.pack(xpcall(function()
+			return action(table.unpack(arguments, 1, arguments.n))
+		end, Util.Traceback))
+		if not results[1] then
+			return false, tostring(results[2])
+		end
+		return true, table.unpack(results, 2, results.n)
 	end
 
 	function GameAdapter:FireLocal(nodeName, ...)

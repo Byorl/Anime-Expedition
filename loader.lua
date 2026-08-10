@@ -1,6 +1,27 @@
 
 local REPOSITORY = "https://jexvral.xyz/game/ap/"
 local traceback = debug and debug.traceback or function(message) return tostring(message) end
+local Environment = (getgenv and getgenv()) or _G
+
+local function diagnostic(phase, moduleName, path, message)
+	local record = {
+		Phase = tostring(phase),
+		Module = moduleName and tostring(moduleName) or nil,
+		Path = path and tostring(path) or nil,
+		Message = tostring(message),
+		OccurredAt = os.time(),
+	}
+	Environment.__ANIME_EXPEDITIONS_LAST_ERROR = record
+	local context = {"[Anime Expeditions] " .. record.Phase .. " failed"}
+	if record.Module then table.insert(context, "Module: " .. record.Module) end
+	if record.Path then table.insert(context, "Source: " .. record.Path) end
+	table.insert(context, record.Message)
+	return table.concat(context, "\n")
+end
+
+local function fail(phase, moduleName, path, message)
+	error(diagnostic(phase, moduleName, path, message), 0)
+end
 
 local function fetch(path, cacheBuster)
 	local url = REPOSITORY .. path
@@ -12,21 +33,23 @@ local function fetch(path, cacheBuster)
 		lastError = ok and "empty/non-text response" or tostring(body)
 		if attempt < 4 then task.wait(0.2 * attempt) end
 	end
-	error(string.format("HTTP fetch failed for '%s' after 4 attempts: %s", path, tostring(lastError)), 0)
+	fail("download", nil, path, string.format("HTTP fetch failed after 4 attempts: %s", tostring(lastError)))
 end
 
 local manifestSource = fetch("manifest.lua", os.time())
 local manifestChunk, manifestCompileError = loadstring(manifestSource, "@Anime-Expedition/manifest.lua")
-assert(manifestChunk, "Manifest compile failed:\n" .. tostring(manifestCompileError))
+if not manifestChunk then fail("compile", "Manifest", "manifest.lua", manifestCompileError) end
 local manifestOk, manifest = xpcall(manifestChunk, traceback)
-assert(manifestOk, "Manifest execution failed:\n" .. tostring(manifest))
-assert(type(manifest) == "table", "Manifest must return a table")
-assert(type(manifest.Entry) == "string", "Manifest Entry must be a module name")
-assert(type(manifest.Modules) == "table", "Manifest Modules must be a table")
+if not manifestOk then fail("execute", "Manifest", "manifest.lua", manifest) end
+if type(manifest) ~= "table" then fail("validate", "Manifest", "manifest.lua", "Manifest must return a table") end
+if type(manifest.Entry) ~= "string" then fail("validate", "Manifest", "manifest.lua", "Manifest Entry must be a module name") end
+if type(manifest.Modules) ~= "table" then fail("validate", "Manifest", "manifest.lua", "Manifest Modules must be a table") end
 
 local jobs = {}
 for name, path in pairs(manifest.Modules) do
-	assert(type(name) == "string" and type(path) == "string", "Manifest module entries must map names to paths")
+	if type(name) ~= "string" or type(path) ~= "string" then
+		fail("validate", "Manifest", "manifest.lua", "Manifest module entries must map names to paths")
+	end
 	table.insert(jobs, {Name = name, Path = path})
 end
 table.sort(jobs, function(a, b) return a.Name < b.Name end)
@@ -56,14 +79,14 @@ if completed < #jobs then
 	for _, job in ipairs(jobs) do
 		if not sourceByPath[job.Path] and not fetchErrors[job.Name] then table.insert(pending, job.Name) end
 	end
-	error("Module download timed out after 25 seconds. Pending: " .. table.concat(pending, ", "), 0)
+	fail("download", "Prefetch", nil, "Timed out after 25 seconds. Pending modules: " .. table.concat(pending, ", "))
 end
 if next(fetchErrors) then
 	local messages = {}
 	for _, job in ipairs(jobs) do
 		if fetchErrors[job.Name] then table.insert(messages, job.Name .. ": " .. fetchErrors[job.Name]) end
 	end
-	error("One or more modules failed to download:\n" .. table.concat(messages, "\n"), 0)
+	fail("download", "Prefetch", nil, table.concat(messages, "\n"))
 end
 
 local loaded, loading, importStack = {}, {}, {}
@@ -72,26 +95,26 @@ local function Import(name)
 	if loading[name] then
 		local chain = table.clone(importStack)
 		table.insert(chain, tostring(name))
-		error("Circular source import: " .. table.concat(chain, " -> "), 0)
+		fail("import", name, manifest.Modules[name], "Circular dependency: " .. table.concat(chain, " -> "))
 	end
 	local path = manifest.Modules[name]
-	if type(path) ~= "string" then error("Unknown Anime Expedition source module: " .. tostring(name), 0) end
+	if type(path) ~= "string" then fail("import", name, nil, "Unknown source module") end
 
 	loading[name] = true
 	table.insert(importStack, name)
 	local source = sourceByPath[path]
-	if not source then error("Prefetched source is missing for module '" .. name .. "' at " .. path, 0) end
+	if not source then fail("import", name, path, "Prefetched source is missing") end
 	local chunk, compileError = loadstring(source, "@Anime-Expedition/" .. path)
 	if not chunk then
 		loading[name] = nil
 		table.remove(importStack)
-		error(string.format("Module '%s' compile failed (%s):\n%s", name, path, tostring(compileError)), 0)
+		fail("compile", name, path, compileError)
 	end
 	local chunkOk, factory = xpcall(chunk, traceback)
 	if not chunkOk then
 		loading[name] = nil
 		table.remove(importStack)
-		error(string.format("Module '%s' chunk failed (%s):\n%s", name, path, tostring(factory)), 0)
+		fail("chunk execution", name, path, factory)
 	end
 	local result = factory
 	if type(factory) == "function" then
@@ -99,7 +122,7 @@ local function Import(name)
 		if not factoryOk then
 			loading[name] = nil
 			table.remove(importStack)
-			error(string.format("Module '%s' factory failed (%s):\n%s", name, path, tostring(factoryResult)), 0)
+			fail("factory", name, path, factoryResult)
 		end
 		result = factoryResult
 	end
@@ -109,8 +132,23 @@ local function Import(name)
 	return result
 end
 
-local Environment = (getgenv and getgenv()) or _G
 Environment.__ANIME_EXPEDITIONS_IMPORT = Import
 Environment.__ANIME_EXPEDITIONS_MANIFEST = manifest
 
-return Import(manifest.Entry)
+local entryOk, entryResult = xpcall(function()
+	return Import(manifest.Entry)
+end, traceback)
+if not entryOk then
+	if type(Environment.__ANIME_EXPEDITIONS_LAST_ERROR) ~= "table" then
+		Environment.__ANIME_EXPEDITIONS_LAST_ERROR = {
+			Phase = "startup",
+			Module = manifest.Entry,
+			Path = manifest.Modules[manifest.Entry],
+			Message = tostring(entryResult),
+			OccurredAt = os.time(),
+		}
+	end
+	error(tostring(entryResult), 0)
+end
+Environment.__ANIME_EXPEDITIONS_LAST_ERROR = nil
+return entryResult

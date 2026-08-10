@@ -162,7 +162,13 @@ return function(Import)
 		state.PendingRerollKey = entry.Key
 		state.PendingRerollAt = os.clock()
 		self:_Status(state, string.format("Rerolling %s (%s)...", entry.Rarity, reason))
-		local ok, err = ctx.Game:Fire("BOUNTY_BOARD_REROLL_QUEST", entry.Key, entry.Rarity == "Mythic")
+		local ok, err = false, "bound action unavailable"
+		if type(ctx.Game.Action) == "function" then
+			ok, err = ctx.Game:Action("BountyBoard_RerollQuest", entry.Key, entry.Rarity == "Mythic")
+		end
+		if not ok then
+			ok, err = ctx.Game:Fire("BOUNTY_BOARD_REROLL_QUEST", entry.Key, entry.Rarity == "Mythic")
+		end
 		if not ok then state.PendingRerollKey = nil self:_Status(state, "Reroll failed: " .. tostring(err)) end
 		return true
 	end
