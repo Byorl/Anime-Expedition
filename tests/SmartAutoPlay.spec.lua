@@ -425,6 +425,60 @@ local upgradeForValue = Smart.Decide(valueSnapshot, {
 })
 assert(upgradeForValue.Kind == "Upgrade" and upgradeForValue.Slot.Index == 1, "an unnecessary weak placement beat a valuable upgrade")
 
+local bossInformation = {
+	Units = {
+		Core = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 100, Damage = 500, SPA = 1, Range = 25 },
+				[1] = { Cost = 1000, Damage = 5500, SPA = 1, Range = 25 },
+			},
+		},
+		Backup = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 100, Damage = 100, SPA = 1, Range = 25 },
+				[1] = { Cost = 200, Damage = 300, SPA = 1, Range = 25 },
+			},
+		},
+	},
+}
+local bossSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "core" }, ["2"] = { ID = "backup" } } },
+	{ UnitData = { core = { Asset = "Core" }, backup = { Asset = "Backup" } } },
+	bossInformation,
+	6
+)
+local bossFallback = Smart.Decide({
+	GameState = {
+		Wave = 15,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = { { Boss = true, Health = 100000, MaxHealth = 100000, Progress = 0.3 } },
+	Slots = bossSlots,
+	Placed = {
+		[1] = { { GameUnitID = "core", Upgrade = 0, MaxUpgrade = 1, NextCost = 1000, CFrame = CFrame.new(5, 0, 30), Data = {} } },
+		[2] = { { GameUnitID = "backup", Upgrade = 0, MaxUpgrade = 1, NextCost = 200, CFrame = CFrame.new(10, 0, 40), Data = {} } },
+	},
+	PlacementCounts = { Core = 1, Backup = 1 },
+	PlacementCap = 2,
+	Yen = 300,
+	Path = path,
+	Paths = { path },
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	bossFallback.Kind == "Upgrade" and bossFallback.Slot.Index == 2,
+	"final-boss planning hoarded yen instead of buying an affordable combat upgrade"
+)
+
 local source = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(string.find(source, "if state.SmartEnabled then", 1, true), "Smart mode does not override Normal mode")
 assert(
@@ -443,6 +497,7 @@ assert(
 )
 assert(string.find(plannerSource, "BacklineEnemies", 1, true), "Smart mode does not react to actual enemy route progress")
 assert(string.find(plannerSource, "paybackWaves", 1, true), "farm upgrades ignore their remaining-wave payback")
+assert(string.find(plannerSource, "fastFarmWindow", 1, true), "fast-payback farms cannot expand during the early economy window")
 assert(string.find(source, "RouteVote", 1, true), "active route direction is not learned from live enemy movement")
 assert(string.find(source, "RouteConfident", 1, true), "unoriented routes can still trigger false leak pressure")
 assert(string.find(source, "enrichSlotStats", 1, true), "profile-adjusted unit stats are not loaded")

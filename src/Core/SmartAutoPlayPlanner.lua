@@ -821,6 +821,7 @@ return function(Import)
 						Score = score,
 						Role = role,
 						Stats = base,
+						PaybackWaves = role == "Farm" and base.Cost / math.max(1, base.Farm) or math.huge,
 						RangeUtilization = location.RangeUtilization,
 						Reason = role == "Farm"
 							and string.format("deploy %s with %.1f-wave payback", slot.Name, base.Cost / math.max(1, base.Farm))
@@ -1025,6 +1026,8 @@ return function(Import)
 		end
 		local upgrades = upgradeChoices(snapshot, context, strategy)
 		table.sort(deployment, compare)
+		table.sort(farmSeed, compare)
+		table.sort(farmExpansion, compare)
 		table.sort(upgrades, compare)
 		local needsDefense = combatPlaced < requiredCombat or routeCoverage < coverageGoal
 		local worthwhileDeployment = not upgrades[1]
@@ -1041,13 +1044,32 @@ return function(Import)
 			and context.HealthRatio >= 0.99
 			and context.MaxProgress < 0.5
 			and not context.RecentLeak
+		local totalPlaced = Planner.TotalPlacementCount(snapshot.Slots, snapshot.Placed, snapshot.PlacementCounts)
+		local placementCap = tonumber(snapshot.PlacementCap)
+		local openPlacementSlots = placementCap
+			and math.max(0, placementCap - totalPlaced)
+			or math.huge
+		local defenseSlotsNeeded = math.max(0, requiredCombat - combatPlaced)
+		local farmCapacitySafe = openPlacementSlots > defenseSlotsNeeded
 		local preferFarm = #farmSeed > 0
+			and farmCapacitySafe
 			and (earlyFarm or not context.Emergency and not context.RecentLeak)
+		local bestFarmPayback = farmExpansion[1] and farmExpansion[1].PaybackWaves or math.huge
+		local fastFarmWindow = farmCapacitySafe
+			and combatPlaced >= math.min(requiredCombat, 2)
+			and routeCoverage >= math.min(coverageGoal, 0.4)
+			and context.HealthRatio >= 0.99
+			and not context.RecentLeak
+			and not context.Emergency
+			and context.RemainingWaves >= 7
+			and context.Wave <= math.max(4, math.floor(context.MaxWave * 0.45))
+			and bestFarmPayback <= math.min(2.25, context.RemainingWaves * 0.25)
 		local expandFarm = #farmExpansion > 0
+			and farmCapacitySafe
 			and combatPlaced >= math.min(requiredCombat, 2)
 			and routeCoverage >= math.min(coverageGoal, 0.5)
 			and context.HealthRatio >= 0.99
-			and context.Pressure < 0.58
+			and (context.Pressure < 0.58 or fastFarmWindow)
 			and context.RemainingWaves >= 6
 		local choices = {}
 		if preferFarm then
@@ -1079,9 +1101,10 @@ return function(Import)
 		context.Spendable = spendable
 		local best = choices[1]
 		for index, choice in ipairs(choices) do
-			local acceptableEmergencyFallback = context.Emergency
+			local fallbackRatio = (context.Boss or context.RemainingWaves == 0) and 0.18 or 0.5
+			local acceptableEmergencyFallback = (context.Emergency or context.Boss or context.RemainingWaves == 0)
 				and best
-				and choice.Score >= best.Score * 0.5
+				and choice.Score >= best.Score * fallbackRatio
 			if choice.Cost <= spendable and choice.Score > 0 and (index == 1 or acceptableEmergencyFallback) then
 				context.Spacing = choice.Spacing
 				choice.Context = context

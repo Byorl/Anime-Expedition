@@ -14,23 +14,40 @@ return function()
 		if not state.DisableRewardPopups and not (state.FastSummon and promptId == "SummonAnimation") then return end
 		if state.ClosingPrompts[promptId] then return end
 		state.ClosingPrompts[promptId] = true
-		task.defer(function()
-			if
-				state.Alive
-				and (state.DisableRewardPopups or state.FastSummon and promptId == "SummonAnimation")
-			then
-				ctx.Game:FireLocal("PROMPT_CLOSE", promptId)
-				ctx.Game:Fire("PROMPT_CLOSED", promptId)
-			end
-			task.delay(0.15, function()
-				state.ClosingPrompts[promptId] = nil
-			end)
+		ctx.Game:FireLocal("PROMPT_CLOSE", promptId)
+		ctx.Game:Fire("PROMPT_CLOSED", promptId)
+		task.delay(0.15, function()
+			state.ClosingPrompts[promptId] = nil
 		end)
+	end
+
+	local function applyRewardSuppression(ctx, state)
+		local actions = ctx.Game.Actions
+		if type(actions) ~= "table" then return end
+		local current = actions.PromptObtainedRewards
+		if state.DisableRewardPopups then
+			if not state.PromptActionOverride then
+				if type(current) ~= "function" then return end
+				state.OriginalPromptAction = current
+				state.PromptActionOverride = function()
+					return nil
+				end
+			end
+			if current ~= state.PromptActionOverride then
+				pcall(function()
+					actions.PromptObtainedRewards = state.PromptActionOverride
+				end)
+			end
+		elseif state.PromptActionOverride and current == state.PromptActionOverride then
+			pcall(function()
+				actions.PromptObtainedRewards = state.OriginalPromptAction
+			end)
+		end
 	end
 
 	return {
 		Name = "Misc",
-		Version = 2,
+		Version = 3,
 		Priority = 10,
 		Dependencies = {},
 
@@ -38,8 +55,10 @@ return function()
 			local state = {
 				Alive = false,
 				FastSummon = false,
-				DisableRewardPopups = false,
+				DisableRewardPopups = true,
 				OriginalFastSummon = false,
+				OriginalPromptAction = nil,
+				PromptActionOverride = nil,
 				Connections = {},
 				ClosingPrompts = {},
 			}
@@ -95,21 +114,23 @@ return function()
 				end,
 			}, "misc.fast_summon")
 			ctx.Registry:Toggle(summoning, {
-				Name = "Disable Obtained Rewards Popups",
-				Default = false,
+				Name = "Hide Obtained Rewards",
+				Default = true,
 				Callback = function(value)
 					state.DisableRewardPopups = value == true
+					applyRewardSuppression(ctx, state)
 				end,
 			}, "misc.disable_reward_popups")
 			summoning:Paragraph({
-				Header = "Fast Summon",
-				Body = "Keeps the summon menu usable by immediately dismissing summon results. Reward popup suppression also covers other Obtained Rewards screens.",
+				Header = "Popup behavior",
+				Body = "Fast Summon skips summon animations. Hide Obtained Rewards blocks the game-wide reward screen from opening for any source.",
 			})
 			return state
 		end,
 
 		Enable = function(self, ctx, state)
 			state.Alive = true
+			applyRewardSuppression(ctx, state)
 			local settingOk, original = ctx.Game:InvokeSelf("GET_SETTING_VALUE", "FastSummon")
 			state.OriginalFastSummon = settingOk and original == true or false
 			for _, nodeName in ipairs({"PROMPT_OBTAINED_REWARDS", "PROMPT_OBTAINED_REWARD_SLOTS"}) do
@@ -135,6 +156,8 @@ return function()
 			state.Alive = false
 			disconnectAll(state)
 			table.clear(state.ClosingPrompts)
+			state.DisableRewardPopups = false
+			applyRewardSuppression(ctx, state)
 			ctx.Session:SetAutoReconnect(false)
 			ctx.Game:ChangeSetting("FastSummon", state.OriginalFastSummon == true)
 		end,

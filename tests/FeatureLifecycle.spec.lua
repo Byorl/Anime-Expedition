@@ -115,6 +115,12 @@ local disableOk, disableError = pcall(performance.Disable, performance, performa
 assert(disableOk, "Performance Disable lifecycle binding failed: " .. tostring(disableError))
 
 local promptCallbacks, settingCalls, localPromptCloses, serverPromptCloses, disconnected = {}, {}, {}, {}, 0
+local directRewardPrompts = 0
+local promptActions = {
+	PromptObtainedRewards = function()
+		directRewardPrompts = directRewardPrompts + 1
+	end,
+}
 local miscContext = {
 	Tabs = performanceContext.Tabs,
 	Registry = registry,
@@ -122,6 +128,7 @@ local miscContext = {
 	Config = {Account = {Session = {AutoExecute = false}, UI = {HiddenOnExecute = false}}},
 	Session = {SetAutoExecute = function() end, SetAutoReconnect = function() end},
 	Game = {
+		Actions = promptActions,
 		InvokeSelf = function(_, name, key)
 			assert(name == "GET_SETTING_VALUE" and key == "FastSummon", "wrong Fast Summon setting lookup")
 			return true, false
@@ -147,6 +154,8 @@ local miscContext = {
 local misc = Import("Misc")
 local miscState = misc.Init(misc, miscContext)
 misc.Enable(misc, miscContext, miscState)
+promptActions.PromptObtainedRewards({}, true)
+assert(directRewardPrompts == 0, "direct Obtained Rewards actions were not blocked before mounting")
 callbacks["misc.fast_summon"](true)
 promptCallbacks.PROMPT_OBTAINED_REWARDS({}, true, "SummonAnimation")
 callbacks["misc.disable_reward_popups"](true)
@@ -170,6 +179,8 @@ assert(
 )
 misc.Disable(misc, miscContext, miscState)
 assert(disconnected == 2 and settingCalls[#settingCalls][2] == false, "Misc unload did not restore prompt state")
+promptActions.PromptObtainedRewards({}, true)
+assert(directRewardPrompts == 1, "Misc unload did not restore the game's Obtained Rewards action")
 
 local featureInformation = {
 	BannerInfo = {Styling = {Standard = {Name = "Standard"}}},
