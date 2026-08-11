@@ -10,14 +10,24 @@ return function()
 
 	local function closeRewardPrompt(ctx, state, promptId)
 		promptId = promptId ~= nil and tostring(promptId) or nil
-		if not promptId or promptId == "" then return end
-		if not state.DisableRewardPopups and not (state.FastSummon and promptId == "SummonAnimation") then return end
-		if state.ClosingPrompts[promptId] then return end
-		state.ClosingPrompts[promptId] = true
-		ctx.Game:FireLocal("PROMPT_CLOSE", promptId)
-		ctx.Game:Fire("PROMPT_CLOSED", promptId)
+		if promptId == "" then promptId = nil end
+		local closeAll = state.DisableRewardPopups == true
+		if not closeAll and not (state.FastSummon and promptId == "SummonAnimation") then return end
+		local closeKey = promptId or "__all_obtained_rewards"
+		if state.ClosingPrompts[closeKey] then return end
+		state.ClosingPrompts[closeKey] = true
+		local function dismiss()
+			if not state.Alive then return end
+			if closeAll and not state.DisableRewardPopups then return end
+			if closeAll then ctx.Game:FireLocal("PROMPT_CLOSE_ALL") end
+			if promptId then ctx.Game:FireLocal("PROMPT_CLOSE", promptId) end
+		end
+		dismiss()
+		task.defer(dismiss)
+		task.delay(0.05, dismiss)
+		if promptId then ctx.Game:Fire("PROMPT_CLOSED", promptId) end
 		task.delay(0.15, function()
-			state.ClosingPrompts[promptId] = nil
+			state.ClosingPrompts[closeKey] = nil
 		end)
 	end
 
@@ -47,7 +57,7 @@ return function()
 
 	return {
 		Name = "Misc",
-		Version = 3,
+		Version = 4,
 		Priority = 10,
 		Dependencies = {},
 
@@ -92,6 +102,20 @@ return function()
 					ctx.Session:SetAutoReconnect(value)
 				end,
 			}, "misc.auto_reconnect")
+			local interface = ctx.Tabs.MiscClaims:Section({Side = "Right"})
+			interface:Header({Text = "Interface"})
+			ctx.Registry:Toggle(interface, {
+				Name = "Hide Obtained Rewards",
+				Default = true,
+				Callback = function(value)
+					state.DisableRewardPopups = value == true
+					applyRewardSuppression(ctx, state)
+				end,
+			}, "misc.disable_reward_popups")
+			interface:Paragraph({
+				Header = "Reward screens",
+				Body = "Prevents the game-wide Obtained Rewards screen from opening, regardless of where the reward came from.",
+			})
 
 			local summoning = ctx.Tabs.MiscUnits:Section({Side = "Left"})
 			summoning:Header({Text = "Summoning"})
@@ -103,17 +127,9 @@ return function()
 					applyFastSummon()
 				end,
 			}, "misc.fast_summon")
-			ctx.Registry:Toggle(summoning, {
-				Name = "Hide Obtained Rewards",
-				Default = true,
-				Callback = function(value)
-					state.DisableRewardPopups = value == true
-					applyRewardSuppression(ctx, state)
-				end,
-			}, "misc.disable_reward_popups")
 			summoning:Paragraph({
-				Header = "Popup behavior",
-				Body = "Fast Summon skips summon animations. Hide Obtained Rewards blocks the game-wide reward screen from opening for any source.",
+				Header = "Summon animation",
+				Body = "Fast Summon skips the summon animation so another summon can be started immediately.",
 			})
 			return state
 		end,

@@ -160,17 +160,19 @@ callbacks["misc.fast_summon"](true)
 promptCallbacks.PROMPT_OBTAINED_REWARDS({}, true, "SummonAnimation")
 callbacks["misc.disable_reward_popups"](true)
 promptCallbacks.PROMPT_OBTAINED_REWARD_SLOTS({}, true, "DailyReward")
+promptCallbacks.PROMPT_OBTAINED_REWARD_SLOTS({}, true)
 assert(settingCalls[#settingCalls][2] == true, "Fast Summon did not enable the native game setting")
-local closedSummon, closedDaily, acknowledgedDaily = false, false, false
+local closedSummon, closedDaily, closedAll, acknowledgedDaily = false, false, false, false
 for _, entry in ipairs(localPromptCloses) do
 	if entry[1] == "PROMPT_CLOSE" and entry[2] == "SummonAnimation" then closedSummon = true end
 	if entry[1] == "PROMPT_CLOSE" and entry[2] == "DailyReward" then closedDaily = true end
+	if entry[1] == "PROMPT_CLOSE_ALL" then closedAll = true end
 end
 for _, entry in ipairs(serverPromptCloses) do
 	if entry[1] == "PROMPT_CLOSED" and entry[2] == "DailyReward" then acknowledgedDaily = true end
 end
 assert(
-	closedSummon and closedDaily,
+	closedSummon and closedDaily and closedAll,
 	"summon or generic obtained reward prompts were not dismissed"
 )
 assert(

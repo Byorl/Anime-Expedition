@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.28.5", "interface release version is wrong")
+assert(Build.Version == "1.28.6", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/7a99c23bde4eee7d19b054462b17985d06a74ae5/src/maclib.lua",
@@ -9,6 +9,7 @@ assert(
 local mainSource = fs.read("src/Main.lua", "bin")
 local uiManagerSource = fs.read("src/Core/UIManager.lua", "bin")
 local configManagerSource = fs.read("src/Core/ConfigManager.lua", "bin")
+local miscSource = fs.read("src/Modules/Misc.lua", "bin")
 assert(string.find(mainSource, "MountMobileLauncher", 1, true), "mobile launcher is not mounted")
 assert(string.find(uiManagerSource, "AnimeExpeditions_MobileLauncher", 1, true), "mobile launcher UI is missing")
 assert(string.find(uiManagerSource, "not UserInputService.TouchEnabled", 1, true), "mobile launcher is not keyed directly to touch support")
@@ -19,6 +20,9 @@ assert(string.find(uiManagerSource, "account.UI.MobileLauncher", 1, true), "mobi
 assert(string.find(configManagerSource, "MobileLauncher", 1, true), "mobile launcher account default is missing")
 assert(string.find(configManagerSource, "HiddenOnLoad", 1, true), "hide-on-load account default is missing")
 assert(string.find(mainSource, "Config.Account.UI.HiddenOnLoad", 1, true), "hide-on-load is not applied after startup")
+assert(string.find(miscSource, 'ctx.Tabs.MiscClaims:Section', 1, true), "reward popup control is not in a general Misc area")
+assert(string.find(miscSource, 'ctx.Game:FireLocal("PROMPT_CLOSE_ALL")', 1, true), "reward popup suppression does not close unkeyed prompts")
+assert(string.find(miscSource, "task.delay(0.05, dismiss)", 1, true), "reward popup suppression does not run after the game mounts its prompt")
 assert(string.find(mainSource, "local profileReady = true", 1, true), "failed config loads are not save-locked")
 assert(string.find(configManagerSource, "post-load verification failed", 1, true), "config load verification is missing")
 local bountySource = fs.read("src/Modules/Bounty.lua", "bin")
