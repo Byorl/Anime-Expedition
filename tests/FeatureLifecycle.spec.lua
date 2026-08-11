@@ -125,7 +125,7 @@ local miscContext = {
 	Tabs = performanceContext.Tabs,
 	Registry = registry,
 	Runtime = {Modules = {Loaded = {Misc = true}}, Notify = function() end},
-	Config = {Account = {Session = {AutoExecute = false}, UI = {HiddenOnExecute = false}}},
+	Config = {Account = {Session = {AutoExecute = false}, UI = {HiddenOnLoad = false}}},
 	Session = {SetAutoExecute = function() end, SetAutoReconnect = function() end},
 	Game = {
 		Actions = promptActions,

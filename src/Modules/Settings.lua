@@ -1,7 +1,7 @@
 return function()
 	return {
 		Name = "Settings",
-		Version = 4,
+		Version = 5,
 		Priority = 20,
 		Dependencies = {},
 
@@ -218,6 +218,18 @@ return function()
 				end,
 			})
 			appearance:Header({ Text = "Appearance" })
+			appearance:Toggle({
+				Name = "Hide UI on Load",
+				Default = ctx.Config.Account.UI.HiddenOnLoad == true,
+				Callback = function(value)
+					if not isActive() then
+						return
+					end
+					ctx.Config:UpdateAccount(function(account)
+						account.UI.HiddenOnLoad = value == true
+					end, false)
+				end,
+			})
 			local keyName = tostring(ctx.Config.Account.UI.ToggleKey or "RightShift")
 			local defaultKey = Enum.KeyCode[keyName] or Enum.KeyCode.RightShift
 			appearance:Keybind({

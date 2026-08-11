@@ -55,7 +55,7 @@ return function(Import)
 			AutoLoadSelected = true,
 			AutoSave = false,
 			UI = {
-				HiddenOnExecute = false,
+				HiddenOnLoad = false,
 				ToggleKey = "RightShift",
 				Scale = {Desktop = 0.9, Mobile = 0.62},
 				MobileLauncher = {X = 0.96, Y = 0.86},
@@ -117,6 +117,10 @@ return function(Import)
 	end
 
 	function ConfigManager:_MigrateAccount(account)
+		local legacyHiddenOnLoad = type(account) == "table"
+			and type(account.UI) == "table"
+			and account.UI.HiddenOnLoad == nil
+			and account.UI.HiddenOnExecute == true
 		account = mergeDefaults(type(account) == "table" and account or {}, self:_DefaultAccount())
 		account.Schema = ACCOUNT_SCHEMA
 		account.UserId = self.Player.UserId
@@ -131,6 +135,8 @@ return function(Import)
 			and account.UI.MobileLauncher or {X = 0.96, Y = 0.86}
 		account.UI.MobileLauncher.X = math.clamp(tonumber(account.UI.MobileLauncher.X) or 0.96, 0, 1)
 		account.UI.MobileLauncher.Y = math.clamp(tonumber(account.UI.MobileLauncher.Y) or 0.86, 0, 1)
+		if legacyHiddenOnLoad then account.UI.HiddenOnLoad = true end
+		account.UI.HiddenOnExecute = nil
 		return account
 	end
 

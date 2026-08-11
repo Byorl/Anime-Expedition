@@ -51,7 +51,23 @@ assert(
 		and first.Account.UI.MobileLauncher.Y == 0.86,
 	"mobile launcher account defaults failed"
 )
+assert(first.Account.UI.HiddenOnLoad == false, "hide-on-load account default failed")
 assert(first:ResolveName("MAIN") == "main", "case-insensitive lookup failed")
+
+local legacyAccount = ConfigManager.new(store, registry, {UserId = 101, Name = "LegacyAccount"})
+files[legacyAccount.AccountPath] = {
+	Schema = 3,
+	UserId = 101,
+	UserName = "LegacyAccount",
+	SelectedConfig = "main",
+	UI = {HiddenOnExecute = true},
+}
+initOk, initError = legacyAccount:Initialize()
+assert(initOk, initError)
+assert(
+	legacyAccount.Account.UI.HiddenOnLoad == true and legacyAccount.Account.UI.HiddenOnExecute == nil,
+	"legacy hide-on-execute preference was not migrated to hide-on-load"
+)
 
 local createOk, createError = first:Create("Work")
 assert(createOk, createError)

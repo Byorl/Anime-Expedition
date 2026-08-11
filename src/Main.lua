@@ -298,7 +298,7 @@ return function(Import)
 	end
 	Join:SetSuspended(false)
 
-	if Config.Account.UI.HiddenOnExecute == true then
+	if Config.Account.UI.HiddenOnLoad == true then
 		Window:SetState(false)
 	end
 	Window.onUnloaded(function()

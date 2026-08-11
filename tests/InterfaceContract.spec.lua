@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.28.4", "interface release version is wrong")
+assert(Build.Version == "1.28.5", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/7a99c23bde4eee7d19b054462b17985d06a74ae5/src/maclib.lua",
@@ -17,6 +17,8 @@ assert(string.find(uiManagerSource, "self.Window:SetState", 1, true), "mobile la
 assert(string.find(uiManagerSource, "InputChanged", 1, true), "mobile launcher is not draggable")
 assert(string.find(uiManagerSource, "account.UI.MobileLauncher", 1, true), "mobile launcher position is not saved")
 assert(string.find(configManagerSource, "MobileLauncher", 1, true), "mobile launcher account default is missing")
+assert(string.find(configManagerSource, "HiddenOnLoad", 1, true), "hide-on-load account default is missing")
+assert(string.find(mainSource, "Config.Account.UI.HiddenOnLoad", 1, true), "hide-on-load is not applied after startup")
 assert(string.find(mainSource, "local profileReady = true", 1, true), "failed config loads are not save-locked")
 assert(string.find(configManagerSource, "post-load verification failed", 1, true), "config load verification is missing")
 local bountySource = fs.read("src/Modules/Bounty.lua", "bin")
@@ -94,5 +96,6 @@ assert(
 	"UI size does not use literal percentages"
 )
 assert(string.find(settingsSource, "Step = 1", 1, true), "UI size does not use whole-percent steps")
+assert(string.find(settingsSource, 'Name = "Hide UI on Load"', 1, true), "Settings is missing Hide UI on Load")
 
 print("Interface contract tests passed")
