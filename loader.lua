@@ -26,6 +26,16 @@ local function fail(phase, moduleName, path, message)
 	error(diagnostic(phase, moduleName, path, message), 0)
 end
 
+local gameLoadDeadline = os.clock() + 30
+local loadStateOk, gameLoaded = pcall(function() return game:IsLoaded() end)
+while loadStateOk and not gameLoaded and os.clock() < gameLoadDeadline do
+	task.wait(0.05)
+	loadStateOk, gameLoaded = pcall(function() return game:IsLoaded() end)
+end
+if loadStateOk and not gameLoaded then
+	fail("startup", "Roblox", nil, "The client did not finish loading within 30 seconds")
+end
+
 local function fetch(path, cacheBuster)
 	local lastError
 	for repositoryIndex, repository in ipairs(REPOSITORIES) do

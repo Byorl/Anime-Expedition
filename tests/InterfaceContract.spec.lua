@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.28.6", "interface release version is wrong")
+assert(Build.Version == "1.28.7", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/7a99c23bde4eee7d19b054462b17985d06a74ae5/src/maclib.lua",
@@ -9,6 +9,8 @@ assert(
 local mainSource = fs.read("src/Main.lua", "bin")
 local uiManagerSource = fs.read("src/Core/UIManager.lua", "bin")
 local configManagerSource = fs.read("src/Core/ConfigManager.lua", "bin")
+local gameAdapterSource = fs.read("src/Core/GameAdapter.lua", "bin")
+local loaderSource = fs.read("loader.lua", "bin")
 local miscSource = fs.read("src/Modules/Misc.lua", "bin")
 assert(string.find(mainSource, "MountMobileLauncher", 1, true), "mobile launcher is not mounted")
 assert(string.find(uiManagerSource, "AnimeExpeditions_MobileLauncher", 1, true), "mobile launcher UI is missing")
@@ -20,6 +22,11 @@ assert(string.find(uiManagerSource, "account.UI.MobileLauncher", 1, true), "mobi
 assert(string.find(configManagerSource, "MobileLauncher", 1, true), "mobile launcher account default is missing")
 assert(string.find(configManagerSource, "HiddenOnLoad", 1, true), "hide-on-load account default is missing")
 assert(string.find(mainSource, "Config.Account.UI.HiddenOnLoad", 1, true), "hide-on-load is not applied after startup")
+assert(string.find(gameAdapterSource, 'waitForChild(replicatedStorage, "Nodes", deadline)', 1, true), "game adapter does not wait for Nodes replication")
+assert(string.find(gameAdapterSource, 'waitForChild(fusionInstance, "State", deadline)', 1, true), "game adapter has no Fusion State fallback")
+assert(string.find(gameAdapterSource, "self.FusionPeek(value)", 1, true), "game adapter does not use the validated Fusion peek function")
+assert(string.find(mainSource, "if not Adapter.Ready then", 1, true), "game binding startup failures are not reported before feature loading")
+assert(string.find(loaderSource, "game:IsLoaded()", 1, true), "loader does not wait for Roblox startup")
 assert(string.find(miscSource, 'ctx.Tabs.MiscClaims:Section', 1, true), "reward popup control is not in a general Misc area")
 assert(string.find(miscSource, 'ctx.Game:FireLocal("PROMPT_CLOSE_ALL")', 1, true), "reward popup suppression does not close unkeyed prompts")
 assert(string.find(miscSource, "task.delay(0.05, dismiss)", 1, true), "reward popup suppression does not run after the game mounts its prompt")
@@ -52,7 +59,6 @@ assert(splitSubtabs == 7, "Misc and Auto Play subtabs should keep split sections
 
 local gameMatchSource = fs.read("src/Modules/GameMatch.lua", "bin")
 local gameEndSource = fs.read("src/Modules/GameEnd.lua", "bin")
-local gameAdapterSource = fs.read("src/Core/GameAdapter.lua", "bin")
 local autoPlaySource = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(not string.find(gameMatchSource, "Leave at Wave (0=off)", 1, true), "Leave at Wave is still in Match")
 assert(string.find(gameEndSource, "Leave at Wave (0=off)", 1, true), "Leave at Wave is missing from End of Match")

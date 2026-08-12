@@ -2,6 +2,16 @@ return function(Import)
 	local Util = Import("Util")
 	local GameAdapter = {}
 	GameAdapter.__index = GameAdapter
+	local DEFAULT_STARTUP_TIMEOUT = 20
+
+	local function waitForChild(parent, name, deadline)
+		if not parent then return nil end
+		local child = parent:FindFirstChild(name)
+		if child then return child end
+		local remaining = deadline - os.clock()
+		if remaining <= 0 then return nil end
+		return parent:WaitForChild(name, remaining)
+	end
 
 	local function loadModule(instance, label)
 		if not instance then
@@ -19,33 +29,62 @@ return function(Import)
 		return result
 	end
 
-	function GameAdapter.new()
+	function GameAdapter.new(timeout)
 		local self = setmetatable({
 			Ready = false,
 			RespondedVotes = setmetatable({}, { __mode = "k" }),
 			LocalPlayer = game:GetService("Players").LocalPlayer,
 		}, GameAdapter)
+		local startupTimeout = math.max(tonumber(timeout) or DEFAULT_STARTUP_TIMEOUT, 0)
+		local deadline = os.clock() + startupTimeout
 		local replicatedStorage = game:GetService("ReplicatedStorage")
-		local fusionPackage = replicatedStorage:FindFirstChild("FusionPackage")
-		local shared = replicatedStorage:FindFirstChild("Shared")
-		local nodes, nodesError = loadModule(replicatedStorage:FindFirstChild("Nodes"), "ReplicatedStorage.Nodes")
+		local fusionPackage = waitForChild(replicatedStorage, "FusionPackage", deadline)
+		local shared = waitForChild(replicatedStorage, "Shared", deadline)
+		local nodesInstance = waitForChild(replicatedStorage, "Nodes", deadline)
+		local dependenciesInstance = waitForChild(fusionPackage, "Dependencies", deadline)
+		local fusionInstance = waitForChild(fusionPackage, "Fusion", deadline)
+		local actionsInstance = waitForChild(fusionPackage, "Actions", deadline)
+		local nodes, nodesError = loadModule(nodesInstance, "ReplicatedStorage.Nodes")
 		local dependencies, dependenciesError =
-			loadModule(fusionPackage and fusionPackage:FindFirstChild("Dependencies"), "FusionPackage.Dependencies")
+			loadModule(dependenciesInstance, "FusionPackage.Dependencies")
 		local fusion, fusionError =
-			loadModule(fusionPackage and fusionPackage:FindFirstChild("Fusion"), "FusionPackage.Fusion")
-		local actions = select(1,
-			loadModule(fusionPackage and fusionPackage:FindFirstChild("Actions"), "FusionPackage.Actions"))
-		if not nodes or not dependencies or not fusion or type(fusion.peek) ~= "function" then
-			self.Error = table.concat({
-				nodesError or "",
-				dependenciesError or "",
-				fusionError or (fusion and "Fusion.peek is unavailable" or ""),
-			}, "\n")
+			loadModule(fusionInstance, "FusionPackage.Fusion")
+		local actions, actionsError = loadModule(actionsInstance, "FusionPackage.Actions")
+		local fusionPeek = type(fusion) == "table" and fusion.peek or nil
+		local peekError
+		if type(fusionPeek) ~= "function" and fusionInstance then
+			local stateInstance = waitForChild(fusionInstance, "State", deadline)
+			local peekInstance = waitForChild(stateInstance, "peek", deadline)
+			if peekInstance then
+				local ok, result = xpcall(function() return require(peekInstance) end, Util.Traceback)
+				if ok and type(result) == "function" then
+					fusionPeek = result
+				else
+					peekError = ok and "Fusion State.peek returned " .. type(result)
+						or "Fusion State.peek failed to load:\n" .. tostring(result)
+				end
+			else
+				peekError = "Fusion State.peek was not replicated before the startup timeout"
+			end
+		end
+		if not nodes or not dependencies or not fusion or not actions or type(fusionPeek) ~= "function" then
+			local errors = {}
+			for _, message in ipairs({nodesError, dependenciesError, fusionError, actionsError, peekError}) do
+				if type(message) == "string" and message ~= "" then table.insert(errors, message) end
+			end
+			if type(fusionPeek) ~= "function" and not peekError then
+				table.insert(errors, "Fusion.peek is unavailable")
+			end
+			self.Error = "game bindings were not ready within "
+				.. tostring(startupTimeout)
+				.. " seconds:\n"
+				.. table.concat(errors, "\n")
 			return self
 		end
 		self.Nodes = nodes
 		self.Dependencies = dependencies
 		self.Fusion = fusion
+		self.FusionPeek = fusionPeek
 		self.Actions = actions
 		self.ReplicaClient =
 			select(1, loadModule(shared and shared:FindFirstChild("ReplicaClient"), "Shared.ReplicaClient"))
@@ -58,7 +97,7 @@ return function(Import)
 			return nil, self.Error
 		end
 		local ok, result = xpcall(function()
-			return self.Fusion.peek(value)
+			return self.FusionPeek(value)
 		end, Util.Traceback)
 		if not ok then
 			return nil, tostring(result)

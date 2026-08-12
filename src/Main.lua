@@ -228,6 +228,10 @@ return function(Import)
 	Tabs.AutoPlaySmart = AutoPlayPages:SubTab({ Name = "Smart", Columns = 2 })
 
 	local Adapter = GameAdapter.new()
+	if not Adapter.Ready then
+		Runtime:Shutdown("game binding startup failure")
+		error("Anime Expeditions could not initialize the current game's replicated bindings:\n" .. tostring(Adapter.Error))
+	end
 	local Join = JoinCoordinator.new(Runtime, Adapter)
 	Join:SetSuspended(true)
 	Runtime.Join = Join
