@@ -683,6 +683,144 @@ assert(
 	"modifier-heavy late planning spread yen into another shallow placement instead of concentrating carry damage"
 )
 
+local resistanceInformation = {
+	Units = {
+		Resisted = {
+			Element = "Terra",
+			Archetype = "Physical",
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Damage = 2000, SPA = 1, Range = 25 },
+				[1] = { Cost = 1500, Damage = 5000, SPA = 1, Range = 27 },
+			},
+		},
+		Effective = {
+			Element = "Hydro",
+			Archetype = "Magical",
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Damage = 1200, SPA = 1, Range = 25 },
+				[1] = { Cost = 1500, Damage = 3000, SPA = 1, Range = 27 },
+			},
+		},
+	},
+}
+local resistanceSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "resisted" }, ["2"] = { ID = "effective" } } },
+	{ UnitData = { resisted = { Asset = "Resisted" }, effective = { Asset = "Effective" } } },
+	resistanceInformation,
+	6
+)
+local resistanceDecision = Smart.Decide({
+	GameState = {
+		Wave = 15,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = {
+		{
+			Health = 75000,
+			MaxHealth = 75000,
+			Progress = 0.25,
+			Boss = true,
+			Resistances = { Terra = 80, Physical = 50, Hydro = -50, Magical = -25 },
+		},
+	},
+	LiveProgress = { 0.25 },
+	Slots = resistanceSlots,
+	Placed = {
+		[1] = { { GameUnitID = "resisted", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 35), Data = {} } },
+		[2] = { { GameUnitID = "effective", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(12, 0, 55), Data = {} } },
+	},
+	PlacementCounts = { Resisted = 1, Effective = 1 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	Information = resistanceInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	resistanceDecision.Kind == "Upgrade" and resistanceDecision.Slot.Index == 2,
+	"live boss resistances did not redirect spending to the effective element and archetype"
+)
+assert(
+	resistanceDecision.Context.ResistanceMultipliers.Terra < 1
+		and resistanceDecision.Context.ResistanceMultipliers.Hydro > 1,
+	"live resistance percentages were not converted into damage multipliers"
+)
+
+local completionInformation = {
+	Units = {
+		Farm = {
+			PlacementLimit = 3,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Farm = 500, HitboxType = "Farm" },
+				[1] = { Cost = 1000, Farm = 900, HitboxType = "Farm" },
+				[2] = { Cost = 2000, Farm = 1400, HitboxType = "Farm" },
+				[3] = { Cost = 4000, Farm = 3000, HitboxType = "Farm" },
+			},
+		},
+		Damage = {
+			PlacementLimit = 2,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Damage = 2000, SPA = 1, Range = 35 },
+				[1] = { Cost = 3000, Damage = 6000, SPA = 1, Range = 40 },
+			},
+		},
+	},
+}
+local completionSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "farm" }, ["2"] = { ID = "damage" } } },
+	{ UnitData = { farm = { Asset = "Farm" }, damage = { Asset = "Damage" } } },
+	completionInformation,
+	6
+)
+local completeProfitableFarm = Smart.Decide({
+	GameState = {
+		Wave = 10,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = { { Health = 20000, MaxHealth = 20000, Progress = 0.3 } },
+	LiveProgress = { 0.3 },
+	Slots = completionSlots,
+	Placed = {
+		[1] = {
+			{ GameUnitID = "farm-1", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(10, 0, 45), Data = {} },
+			{ GameUnitID = "farm-2", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(18, 0, 50), Data = {} },
+			{ GameUnitID = "farm-3", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(26, 0, 55), Data = {} },
+		},
+		[2] = {
+			{ GameUnitID = "damage-1", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 35), Data = {} },
+			{ GameUnitID = "damage-2", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(12, 0, 65), Data = {} },
+		},
+	},
+	PlacementCounts = { Farm = 3, Damage = 2 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	Information = completionInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	completeProfitableFarm.Kind == "Upgrade"
+		and completeProfitableFarm.Slot.Index == 1
+		and completeProfitableFarm.CompletesFarm == true,
+	"a profitable final farm tier was abandoned by the old fixed wave cutoff"
+)
+
 local source = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(string.find(source, "if state.SmartEnabled then", 1, true), "Smart mode does not override Normal mode")
 assert(

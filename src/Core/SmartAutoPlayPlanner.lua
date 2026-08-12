@@ -316,6 +316,7 @@ return function(Import)
 		local enemyCount, totalHealth, totalMaxHealth = 0, 0, 0
 		local maxProgress, speedPressure, shieldPressure, specialPressure = 0, 0, 0, 0
 		local backlineEnemies, progressTotal = 0, 0
+		local resistanceSums, resistanceWeights = {}, {}
 		local boss = false
 		for _, enemy in pairs(type(enemies) == "table" and enemies or {}) do
 			if type(enemy) == "table" and enemy.Finished ~= true then
@@ -335,9 +336,39 @@ return function(Import)
 				local modifiers, dangerous = modifierCount(enemy.Modifiers)
 				specialPressure = specialPressure + modifiers * 0.03 + (dangerous and 0.12 or 0)
 				local enemyType = enemy.Type or enemy.Asset or enemy.Name
-				boss = boss or enemy.Boss == true or hasText(enemyType, "boss")
+				local isBoss = enemy.Boss == true or hasText(enemyType, "boss")
+				boss = boss or isBoss
+				local resistanceWeight = math.max(1, math.sqrt(math.max(1, maximum)))
+					* (1 + progress * 0.65)
+					* (isBoss and 2.5 or 1)
+				for resistanceType, amount in pairs(type(enemy.Resistances) == "table" and enemy.Resistances or {}) do
+					amount = tonumber(amount)
+					if amount then
+						local key = tostring(resistanceType)
+						resistanceSums[key] = number(resistanceSums[key], 0) + amount * resistanceWeight
+						resistanceWeights[key] = number(resistanceWeights[key], 0) + resistanceWeight
+					end
+				end
 			end
 		end
+		if next(resistanceSums) == nil then
+			local fallbackResistances = findValue(gameState, { "EnemyResistances", "Resistances" }, 5)
+			for resistanceType, amount in pairs(type(fallbackResistances) == "table" and fallbackResistances or {}) do
+				amount = tonumber(amount)
+				if amount then
+					local key = tostring(resistanceType)
+					resistanceSums[key] = amount
+					resistanceWeights[key] = 1
+				end
+			end
+		end
+		local resistanceMultipliers, resistanceSummary = {}, {}
+		for resistanceType, sum in pairs(resistanceSums) do
+			local amount = sum / math.max(0.01, number(resistanceWeights[resistanceType], 1))
+			resistanceMultipliers[resistanceType] = clamp(1 - amount / 100, 0.05, 3)
+			table.insert(resistanceSummary, string.format("%s %.2fx", resistanceType, resistanceMultipliers[resistanceType]))
+		end
+		table.sort(resistanceSummary)
 		if routeReady and type(liveProgress) == "table" and #liveProgress > 0 then
 			maxProgress, progressTotal, backlineEnemies = 0, 0, 0
 			for _, progress in ipairs(liveProgress) do
@@ -395,6 +426,8 @@ return function(Import)
 			ModifierStunRisk = modifiers.StunRisk,
 			ModifierSpeed = modifiers.SpeedMultiplier,
 			ModifierSpawn = modifiers.SpawnMultiplier,
+			ResistanceMultipliers = resistanceMultipliers,
+			ResistanceSummary = #resistanceSummary > 0 and table.concat(resistanceSummary, ", ") or "None",
 			NoFarms = modifiers.NoFarms,
 			Pressure = clamp(pressure, 0, 1.5),
 			Emergency = pressure >= 0.78 or healthRatio <= 0.4,
@@ -436,6 +469,8 @@ return function(Import)
 			Damage = damage,
 			SPA = spa,
 			Ticks = ticks,
+			Element = raw.Element or fallback.Element,
+			Archetype = raw.Archetype or raw.AttackType or fallback.Archetype or fallback.AttackType,
 			Range = math.max(1, number(raw.Range or raw.AttackRange, number(fallback.Range or fallback.AttackRange, 10))),
 			HitboxSize = math.max(0, number(raw.HitboxSize, number(fallback.HitboxSize, 0))),
 			HitboxType = raw.HitboxType or fallback.HitboxType or "Single",
@@ -465,13 +500,13 @@ return function(Import)
 	end
 
 	local function slotStats(slot, info)
-		return applyTrait(statSet(info), slot.TraitInfo)
+		return applyTrait(statSet(info, slot.Info), slot.TraitInfo)
 	end
 
 	local function upgradeStats(slot, index)
 		local calculated = indexed(slot.CalculatedUpgradeInfo, index)
 		if type(calculated) == "table" and next(calculated) then
-			return statSet(calculated)
+			return statSet(calculated, slot.Info)
 		end
 		return slotStats(slot, indexed(slot.Info and slot.Info.UpgradeInfo, index))
 	end
@@ -491,6 +526,19 @@ return function(Import)
 			return "Lane Damage"
 		end
 		return "Damage"
+	end
+
+	local function matchupMultiplier(stats, context)
+		local multipliers = type(context.ResistanceMultipliers) == "table" and context.ResistanceMultipliers or {}
+		local result, applied = 1, {}
+		for _, attackType in ipairs({ stats.Element, stats.Archetype }) do
+			local key = attackType ~= nil and tostring(attackType) or nil
+			if key and key ~= "" and not applied[key] then
+				result = result * number(multipliers[key], 1)
+				applied[key] = true
+			end
+		end
+		return clamp(result, 0.05, 4)
 	end
 
 	local function combatPower(stats, context)
@@ -513,6 +561,7 @@ return function(Import)
 		end
 		local utility = 1 + stats.StatusCount * 0.1 + stats.AbilityCount * 0.035 + stats.Buff * 0.01
 		local direct = stats.Damage * stats.Ticks / stats.SPA * crit * aoe * utility
+			* matchupMultiplier(stats, context)
 		local support = stats.Buff * 100 + stats.StatusCount * 45 + stats.AbilityCount * 25
 		return direct + support
 	end
@@ -563,7 +612,7 @@ return function(Import)
 		local upgrades = type(slot.Info and slot.Info.UpgradeInfo) == "table" and slot.Info.UpgradeInfo or {}
 		local info = indexed(upgrades, unit.Upgrade) or indexed(upgrades, 0) or {}
 		local data = type(unit.Data) == "table" and unit.Data or {}
-		return type(data.CurrentStats) == "table" and next(data.CurrentStats) and statSet(data.CurrentStats, info)
+		return type(data.CurrentStats) == "table" and next(data.CurrentStats) and statSet(data.CurrentStats, upgradeStats(slot, unit.Upgrade))
 			or upgradeStats(slot, unit.Upgrade)
 	end
 
@@ -867,9 +916,9 @@ return function(Import)
 		local data = type(unit.Data) == "table" and unit.Data or {}
 		local current = type(data.CurrentStats) == "table"
 				and next(data.CurrentStats)
-				and statSet(data.CurrentStats, currentInfo)
+				and statSet(data.CurrentStats, upgradeStats(slot, unit.Upgrade))
 			or upgradeStats(slot, unit.Upgrade)
-		local nextStats = type(data.NextStats) == "table" and next(data.NextStats) and statSet(data.NextStats, nextInfo)
+		local nextStats = type(data.NextStats) == "table" and next(data.NextStats) and statSet(data.NextStats, upgradeStats(slot, unit.Upgrade + 1))
 			or upgradeStats(slot, unit.Upgrade + 1)
 		if nextStats.Cost == math.huge then
 			nextStats.Cost = number(unit.NextCost, math.huge)
@@ -921,6 +970,7 @@ return function(Import)
 							score = impactEfficiency(combatPower(nextStats, context) * 0.025 + 0.01, cost)
 						end
 						local paybackWaves = economyGain > 0 and cost / math.max(0.01, nextStats.Farm - current.Farm) or math.huge
+						local completesFarm = role == "Farm" and unit.Upgrade + 1 >= unit.MaxUpgrade
 						if role == "Farm" and paybackWaves > context.RemainingWaves * 0.72 then
 							score = score * 0.05
 						elseif role == "Farm" and context.Emergency then
@@ -955,6 +1005,7 @@ return function(Import)
 							UpgradeDepth = unit.MaxUpgrade > 0 and clamp(unit.Upgrade / unit.MaxUpgrade, 0, 1) or 0,
 							UpgradeValue = upgradeValue,
 							PaybackWaves = paybackWaves,
+							CompletesFarm = completesFarm,
 							Reason = role == "Farm"
 								and string.format("upgrade %s with %.1f waves to repay the cost", slot.Name, paybackWaves)
 								or string.format(
@@ -1097,6 +1148,13 @@ return function(Import)
 			end
 			return compare(a, b)
 		end)
+		local profitableFarmUpgrades = {}
+		for _, upgrade in ipairs(farmUpgrades) do
+			local paybackShare = upgrade.CompletesFarm and 0.84 or 0.7
+			if upgrade.PaybackWaves <= context.RemainingWaves * paybackShare then
+				table.insert(profitableFarmUpgrades, upgrade)
+			end
+		end
 		local minimumCoverage = clamp(0.18 + number(context.ModifierCoverageBoost, 0) * 0.45, 0.18, 0.42)
 		if context.RecentLeak then
 			minimumCoverage = 0.5
@@ -1138,12 +1196,11 @@ return function(Import)
 			and economyWindow
 		local farmPlacementComplete = farmTarget > 0 and farmPlaced >= farmTarget
 		local farmUpgradeOpening = farmPlacementComplete
-			and #farmUpgrades > 0
+			and #profitableFarmUpgrades > 0
 			and combatPlaced >= math.min(requiredCombat, 2)
 			and routeCoverage >= math.min(coverageGoal, 0.28)
 			and economySafe
-			and context.RemainingWaves >= 5
-			and context.Wave <= math.max(6, math.floor(context.MaxWave * 0.64))
+			and context.RemainingWaves >= 2
 		local hardDefenseCrisis = baselineShort or coverageCrisis
 		local lateCombatFocus = context.Boss
 			or context.RemainingWaves <= math.max(3, math.floor(context.MaxWave * 0.3))
@@ -1181,7 +1238,7 @@ return function(Import)
 		elseif secondAnchorNeeded then
 			choices = deployment
 		elseif farmUpgradeOpening then
-			choices = farmUpgrades
+			choices = profitableFarmUpgrades
 			economyCommit = true
 		elseif forceDeployment then
 			choices = deployment

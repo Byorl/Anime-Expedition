@@ -949,7 +949,7 @@ return function(Import)
 			or context.RecentLeak and " | Recovering coverage"
 			or string.format(" | Coverage: %d%%", math.floor((tonumber(context.RouteCoverage) or 0) * 100 + 0.5))
 		local threat = string.format(
-			"Threat: %d%% | Enemies: %d | Wave: %d/%d%s%s%s",
+			"Threat: %d%% | Enemies: %d | Wave: %d/%d%s%s%s%s",
 			math.floor((tonumber(context.Pressure) or 0) * 100 + 0.5),
 			tonumber(context.EnemyCount) or 0,
 			tonumber(context.Wave) or 0,
@@ -958,6 +958,9 @@ return function(Import)
 			routeState,
 			context.ModifierSummary and context.ModifierSummary ~= "None"
 				and " | Modifiers: " .. context.ModifierSummary
+				or "",
+			context.ResistanceSummary and context.ResistanceSummary ~= "None"
+				and " | Matchups: " .. context.ResistanceSummary
 				or ""
 		)
 		if state.SmartThreatText ~= threat and state.SmartThreatLabel then
