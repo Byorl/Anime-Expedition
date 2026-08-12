@@ -1089,6 +1089,94 @@ assert(
 	"the planner failed to finish profitable farms while the enemy backlog was still safely distant"
 )
 
+local mixedCompletionInformation = {
+	Units = {
+		ShortFarm = {
+			PlacementLimit = 3,
+			UpgradeInfo = {
+				[0] = { Cost = 550, Farm = 550, HitboxType = "Farm" },
+				[1] = { Cost = 1100, Farm = 1100, HitboxType = "Farm" },
+				[2] = { Cost = 2200, Farm = 2750, HitboxType = "Farm" },
+				[3] = { Cost = 3500, Farm = 4500, HitboxType = "Farm" },
+			},
+		},
+		LongFarm = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 750, Farm = 425, HitboxType = "Farm" },
+				[1] = { Cost = 1750, Farm = 1000, HitboxType = "Farm" },
+				[2] = { Cost = 2500, Farm = 1900, HitboxType = "Farm" },
+				[3] = { Cost = 4000, Farm = 3300, HitboxType = "Farm" },
+				[4] = { Cost = 8000, Farm = 6000, HitboxType = "Farm" },
+				[5] = { Cost = 10500, Farm = 9000, HitboxType = "Farm" },
+				[6] = { Cost = 12500, Farm = 11500, HitboxType = "Farm" },
+			},
+		},
+		Damage = {
+			PlacementLimit = 3,
+			UpgradeInfo = {
+				[0] = { Cost = 1000, Damage = 2000, SPA = 1, Range = 35 },
+				[1] = { Cost = 3000, Damage = 6000, SPA = 1, Range = 40 },
+			},
+		},
+	},
+}
+local mixedCompletionSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "short" }, ["2"] = { ID = "long" }, ["3"] = { ID = "damage" } } },
+	{
+		UnitData = {
+			short = { Asset = "ShortFarm" },
+			long = { Asset = "LongFarm" },
+			damage = { Asset = "Damage" },
+		},
+	},
+	mixedCompletionInformation,
+	6
+)
+local finishReadyFarmInsteadOfStartingLongChain = Smart.Decide({
+	GameState = {
+		Wave = 7,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = controlledBacklogEnemies,
+	LiveProgress = controlledBacklogProgress,
+	Slots = mixedCompletionSlots,
+	Placed = {
+		[1] = {
+			{ GameUnitID = "short-1", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(10, 0, 45), Data = {} },
+			{ GameUnitID = "short-2", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(18, 0, 50), Data = {} },
+			{ GameUnitID = "short-3", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(26, 0, 55), Data = {} },
+		},
+		[2] = {
+			{ GameUnitID = "long-1", Upgrade = 0, MaxUpgrade = 6, CFrame = CFrame.new(32, 0, 55), Data = {} },
+		},
+		[3] = {
+			{ GameUnitID = "damage-1", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 30), Data = {} },
+			{ GameUnitID = "damage-2", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(12, 0, 55), Data = {} },
+			{ GameUnitID = "damage-3", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(20, 0, 75), Data = {} },
+		},
+	},
+	PlacementCounts = { ShortFarm = 3, LongFarm = 1, Damage = 3 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	Information = mixedCompletionInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	finishReadyFarmInsteadOfStartingLongChain.Kind == "Upgrade"
+		and finishReadyFarmInsteadOfStartingLongChain.Slot.Index == 1
+		and finishReadyFarmInsteadOfStartingLongChain.CompletesFarm == true,
+	"the farm-completion window started a long upgrade chain instead of finishing ready farms"
+)
+
 local backlogEnemies = {}
 local backlogProgress = {}
 for index = 1, 120 do

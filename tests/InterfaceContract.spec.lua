@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.29.6", "interface release version is wrong")
+assert(Build.Version == "1.29.7", "interface release version is wrong")
 local Manifest = rbxmk.loadFile("manifest.lua")()
 assert(Manifest.Version == Build.Version, "manifest and interface versions differ")
 assert(
