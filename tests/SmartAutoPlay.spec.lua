@@ -611,6 +611,78 @@ assert(
 	"a weak high-coverage placement beat an affordable carry upgrade"
 )
 
+local modifierCarryInformation = {
+	Units = {
+		Carry = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Damage = 3000, SPA = 1, Range = 28, HitboxType = "Circle", HitboxSize = 16 },
+				[1] = { Cost = 2000, Damage = 12000, SPA = 1, Range = 32, HitboxType = "Circle", HitboxSize = 18 },
+			},
+		},
+		Backup = {
+			PlacementLimit = 4,
+			UpgradeInfo = {
+				[0] = { Cost = 750, Damage = 600, SPA = 2, Range = 24, HitboxType = "Circle", HitboxSize = 12 },
+				[1] = { Cost = 900, Damage = 1000, SPA = 2, Range = 26, HitboxType = "Circle", HitboxSize = 14 },
+			},
+		},
+	},
+	EnemyModifiers = {
+		List = {
+			Resistance = { DisplayName = "Resistance" },
+			Shielded = { DisplayName = "Shielded" },
+			Splitter = { DisplayName = "Splitter", SummonHealthPercent = 33, SummonEnemies = { { Amount = 3 } } },
+			Stunner = { DisplayName = "Stunner", Interval = 15, StunDuration = 5, StunCount = 3 },
+		},
+	},
+}
+local modifierCarrySlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "carry" }, ["2"] = { ID = "backup" } } },
+	{ UnitData = { carry = { Asset = "Carry" }, backup = { Asset = "Backup" } } },
+	modifierCarryInformation,
+	6
+)
+local modifierCarry = Smart.Decide({
+	GameState = {
+		Wave = 10,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = {
+		{ Health = 40000, MaxHealth = 40000, Progress = 0.3, Modifiers = { "Resistance", "Shielded", "Splitter", "Stunner" } },
+	},
+	LiveProgress = { 0.3 },
+	Slots = modifierCarrySlots,
+	Placed = {
+		[1] = { { GameUnitID = "carry", Upgrade = 0, MaxUpgrade = 1, NextCost = 2000, CFrame = CFrame.new(5, 0, 35), Data = {} } },
+		[2] = {
+			{ GameUnitID = "backup-one", Upgrade = 0, MaxUpgrade = 1, NextCost = 900, CFrame = CFrame.new(12, 0, 55), Data = {} },
+			{ GameUnitID = "backup-two", Upgrade = 0, MaxUpgrade = 1, NextCost = 900, CFrame = CFrame.new(18, 0, 75), Data = {} },
+		},
+	},
+	PlacementCounts = { Carry = 1, Backup = 2 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	Information = modifierCarryInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	modifierCarry.Context.ModifierDamagePressure >= 0.3,
+	"Resistance and Shielded were not recognized as damage-demand modifiers"
+)
+assert(
+	modifierCarry.Kind == "Upgrade" and modifierCarry.Slot.Index == 1,
+	"modifier-heavy late planning spread yen into another shallow placement instead of concentrating carry damage"
+)
+
 local source = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(string.find(source, "if state.SmartEnabled then", 1, true), "Smart mode does not override Normal mode")
 assert(

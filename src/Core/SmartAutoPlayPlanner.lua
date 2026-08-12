@@ -214,6 +214,7 @@ return function(Import)
 			SpawnMultiplier = 1,
 			PressureBonus = 0,
 			CoverageBoost = 0,
+			DamagePressure = 0,
 			Redundancy = 0,
 			StunRisk = 0,
 			NoFarms = false,
@@ -255,6 +256,17 @@ return function(Import)
 				profile.CoverageBoost = profile.CoverageBoost + profile.StunRisk * 0.2
 				profile.PressureBonus = profile.PressureBonus + profile.StunRisk * 0.12
 			end
+			if hasText(key, "resistance") or hasText(key, "resistant") or hasText(key, "armored") then
+				profile.DamagePressure = profile.DamagePressure + 0.22
+				profile.PressureBonus = profile.PressureBonus + 0.04
+			end
+			if hasText(key, "shield") or hasText(key, "barrier") then
+				profile.DamagePressure = profile.DamagePressure + 0.16
+				profile.PressureBonus = profile.PressureBonus + 0.03
+			end
+			if hasText(key, "regen") or hasText(key, "tank") then
+				profile.DamagePressure = profile.DamagePressure + 0.18
+			end
 			if hasText(key, "nofarm") or hasText(key, "no farm") then
 				profile.NoFarms = activeValue ~= false
 			end
@@ -265,6 +277,7 @@ return function(Import)
 		table.sort(profile.Names)
 		profile.CoverageBoost = clamp(profile.CoverageBoost, 0, 0.38)
 		profile.PressureBonus = clamp(profile.PressureBonus, 0, 0.36)
+		profile.DamagePressure = clamp(profile.DamagePressure, 0, 0.65)
 		profile.Summary = #profile.Names > 0 and table.concat(profile.Names, ", ") or "None"
 		return profile
 	end
@@ -377,6 +390,7 @@ return function(Import)
 			Modifiers = modifiers.Names,
 			ModifierSummary = modifiers.Summary,
 			ModifierCoverageBoost = modifiers.CoverageBoost,
+			ModifierDamagePressure = modifiers.DamagePressure,
 			ModifierRedundancy = modifiers.Redundancy,
 			ModifierStunRisk = modifiers.StunRisk,
 			ModifierSpeed = modifiers.SpeedMultiplier,
@@ -640,7 +654,7 @@ return function(Import)
 			if context.Emergency or strategy == "Rush" or strategy == "Boss" then
 				desired = desired + 1
 			end
-			desired = desired + math.max(0, math.floor(number(context.ModifierRedundancy, 0)))
+			desired = desired + math.min(1, math.max(0, math.floor(number(context.ModifierRedundancy, 0))))
 		end
 		return math.max(0, math.min(math.floor(intrinsic), desired))
 	end
@@ -881,6 +895,7 @@ return function(Import)
 	local function upgradeChoices(snapshot, context, strategy)
 		local choices = {}
 		local weights = strategyWeights[strategy]
+		local strongestCombatPower = 0
 		for _, slot in ipairs(snapshot.Slots) do
 			for _, unit in ipairs(snapshot.Placed[slot.Index] or {}) do
 				if unit.Upgrade < unit.MaxUpgrade then
@@ -889,7 +904,9 @@ return function(Import)
 					if cost < math.huge then
 						local role = Smart.Role(slot, nextStats)
 						local positionProgress = deployedProgress(snapshot, unit)
-						local damageGain = math.max(0, combatPower(nextStats, context) - combatPower(current, context))
+						local currentPower = combatPower(current, context)
+						local nextPower = combatPower(nextStats, context)
+						local damageGain = math.max(0, nextPower - currentPower)
 						local rangeGain = math.max(0, nextStats.Range - current.Range)
 						local economyGain = math.max(0, nextStats.Farm - current.Farm)
 							* math.max(1, context.RemainingWaves)
@@ -922,6 +939,9 @@ return function(Import)
 								score = score * 1.12
 							end
 						end
+						if role ~= "Farm" then
+							strongestCombatPower = math.max(strongestCombatPower, nextPower)
+						end
 						table.insert(choices, {
 							Kind = "Upgrade",
 							Slot = slot,
@@ -930,6 +950,9 @@ return function(Import)
 							Score = score,
 							Role = role,
 							CombatGain = damageGain,
+							CurrentPower = currentPower,
+							NextPower = nextPower,
+							UpgradeDepth = unit.MaxUpgrade > 0 and clamp(unit.Upgrade / unit.MaxUpgrade, 0, 1) or 0,
 							UpgradeValue = upgradeValue,
 							PaybackWaves = paybackWaves,
 							Reason = role == "Farm"
@@ -942,6 +965,23 @@ return function(Import)
 								),
 						})
 					end
+				end
+			end
+		end
+		local waveProgress = context.MaxWave > 0 and context.Wave / context.MaxWave or 0
+		local focusUrgency = clamp(
+			math.max(0, waveProgress - 0.35) * 1.2
+				+ number(context.ModifierDamagePressure, 0)
+				+ (context.Boss and 0.45 or 0),
+			0,
+			1
+		)
+		if strongestCombatPower > 0 and focusUrgency > 0 then
+			for _, choice in ipairs(choices) do
+				if choice.Role ~= "Farm" then
+					local carryShare = clamp(choice.NextPower / strongestCombatPower, 0, 1)
+					local concentration = 0.78 + carryShare * 0.42 + choice.UpgradeDepth * 0.18
+					choice.Score = choice.Score * (1 + (concentration - 1) * focusUrgency)
 				end
 			end
 		end
@@ -1032,7 +1072,8 @@ return function(Import)
 		if context.Wave >= 8 or context.Pressure >= 0.8 then
 			requiredCombat = 4
 		end
-		requiredCombat = requiredCombat + math.max(0, math.floor(number(context.ModifierRedundancy, 0)))
+		requiredCombat = requiredCombat
+			+ math.min(1, math.max(0, math.floor(number(context.ModifierRedundancy, 0))))
 		local coverageGoal = (context.Wave >= 4 and 0.66 or context.Wave >= 2 and 0.5 or 0.32)
 			+ number(context.ModifierCoverageBoost, 0)
 		coverageGoal = clamp(coverageGoal, 0.32, 0.94)
@@ -1062,15 +1103,12 @@ return function(Import)
 		end
 		local needsDefense = combatPlaced == 0
 			or (context.BacklineEnemies > 0 or context.RecentLeak) and routeCoverage < minimumCoverage
-		local worthwhileDeployment = not upgrades[1]
-			or not deployment[1]
-			or deployment[1].Score >= upgrades[1].Score * 0.9
 		local coverageCrisis = (context.BacklineEnemies > 0 or context.RecentLeak)
 			and routeCoverage < minimumCoverage
 		local baselineShort = combatPlaced == 0
 		local forceDeployment = #deployment > 0
 			and needsDefense
-			and (coverageCrisis or baselineShort or worthwhileDeployment)
+			and (coverageCrisis or baselineShort)
 		local earlyFarm = context.Wave <= 2
 			and context.HealthRatio >= 0.99
 			and context.MaxProgress < 0.5
@@ -1106,11 +1144,10 @@ return function(Import)
 			and economySafe
 			and context.RemainingWaves >= 5
 			and context.Wave <= math.max(6, math.floor(context.MaxWave * 0.64))
-		local hardDefenseCrisis = combatPlaced == 0
-			or context.RecentLeak
-			or context.BacklineEnemies > 0
-			or context.HealthRatio < 0.99
-			or context.MaxProgress >= 0.68
+		local hardDefenseCrisis = baselineShort or coverageCrisis
+		local lateCombatFocus = context.Boss
+			or context.RemainingWaves <= math.max(3, math.floor(context.MaxWave * 0.3))
+			or number(context.ModifierDamagePressure, 0) >= 0.3
 		local secondAnchorNeeded = farmPlacementComplete
 			and combatPlaced < math.min(requiredCombat, 2)
 			and #deployment > 0
@@ -1150,10 +1187,13 @@ return function(Import)
 			choices = deployment
 		elseif expandFarm then
 			choices = farmExpansion
+		elseif lateCombatFocus and combatPlaced >= math.min(requiredCombat, 3) and #upgrades > 0 then
+			choices = {}
 		else
 			choices = placements
 		end
-		if not forceDeployment
+		if not economyCommit
+			and not forceDeployment
 			and not preferFarm
 			and not expandFarm
 			and not farmPlacementOpening
