@@ -979,7 +979,7 @@ local completionInformation = {
 				[0] = { Cost = 500, Farm = 500, HitboxType = "Farm" },
 				[1] = { Cost = 1000, Farm = 900, HitboxType = "Farm" },
 				[2] = { Cost = 2000, Farm = 1400, HitboxType = "Farm" },
-				[3] = { Cost = 4000, Farm = 3000, HitboxType = "Farm" },
+				[3] = { Cost = 4000, Farm = 2250, HitboxType = "Farm" },
 			},
 		},
 		Damage = {
@@ -1035,6 +1035,58 @@ assert(
 		and completeProfitableFarm.Slot.Index == 1
 		and completeProfitableFarm.CompletesFarm == true,
 	"a profitable final farm tier was abandoned by the old fixed wave cutoff"
+)
+
+local controlledBacklogEnemies = {}
+local controlledBacklogProgress = {}
+for index = 1, 94 do
+	controlledBacklogEnemies[index] = { Health = 4000, MaxHealth = 4000, Progress = 0.43 }
+	controlledBacklogProgress[index] = 0.43
+end
+local finishFarmEngineBeforeBacklogArrives = Smart.Decide({
+	GameState = {
+		Wave = 7,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = controlledBacklogEnemies,
+	LiveProgress = controlledBacklogProgress,
+	Slots = completionSlots,
+	Placed = {
+		[1] = {
+			{ GameUnitID = "farm-1", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(10, 0, 45), Data = {} },
+			{ GameUnitID = "farm-2", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(18, 0, 50), Data = {} },
+			{ GameUnitID = "farm-3", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(26, 0, 55), Data = {} },
+		},
+		[2] = {
+			{ GameUnitID = "damage-1", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 30), Data = {} },
+			{ GameUnitID = "damage-2", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(12, 0, 55), Data = {} },
+			{ GameUnitID = "damage-3", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(20, 0, 75), Data = {} },
+		},
+	},
+	PlacementCounts = { Farm = 3, Damage = 3 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	Information = completionInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	finishFarmEngineBeforeBacklogArrives.Context.BacklogCrisis == true
+		and finishFarmEngineBeforeBacklogArrives.Context.FarmCompletionWindow == true,
+	"a distant backlog did not open the controlled farm-completion window"
+)
+assert(
+	finishFarmEngineBeforeBacklogArrives.Kind == "Upgrade"
+		and finishFarmEngineBeforeBacklogArrives.Slot.Index == 1
+		and finishFarmEngineBeforeBacklogArrives.CompletesFarm == true,
+	"the planner failed to finish profitable farms while the enemy backlog was still safely distant"
 )
 
 local backlogEnemies = {}

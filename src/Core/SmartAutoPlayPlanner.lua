@@ -1192,7 +1192,7 @@ return function(Import)
 		local profitableFarmUpgrades = {}
 		local fastFarmUpgrades = {}
 		for _, upgrade in ipairs(farmUpgrades) do
-			local paybackShare = upgrade.CompletesFarm and 0.84 or 0.7
+			local paybackShare = upgrade.CompletesFarm and 1 or 0.7
 			if upgrade.PaybackWaves <= context.RemainingWaves * paybackShare then
 				table.insert(profitableFarmUpgrades, upgrade)
 				if upgrade.PaybackWaves <= 2 then
@@ -1256,6 +1256,15 @@ return function(Import)
 			and context.MaxProgress < 0.44
 			and not context.RecentLeak
 			and context.RemainingWaves >= 7
+		local farmCompletionOpening = farmPlacementComplete
+			and #profitableFarmUpgrades > 0
+			and combatPlaced >= math.min(requiredCombat, 3)
+			and context.HealthRatio >= 0.99
+			and context.BacklineEnemies == 0
+			and context.MaxProgress < 0.64
+			and not context.RecentLeak
+			and context.RemainingWaves >= 4
+		context.FarmCompletionWindow = farmCompletionOpening
 		local hardDefenseCrisis = baselineShort or coverageCrisis
 		local secondAnchorNeeded = farmPlacementComplete
 			and combatPlaced < math.min(requiredCombat, 2)
@@ -1291,6 +1300,9 @@ return function(Import)
 		elseif fastFarmUpgradeOpening then
 			choices = fastFarmUpgrades
 			economyCommit = true
+		elseif farmCompletionOpening then
+			choices = profitableFarmUpgrades
+			economyCommit = true
 		elseif farmUpgradeOpening then
 			choices = profitableFarmUpgrades
 			economyCommit = true
@@ -1308,6 +1320,7 @@ return function(Import)
 			and not farmPlacementOpening
 			and not secondAnchorNeeded
 			and not fastFarmUpgradeOpening
+			and not farmCompletionOpening
 			and not farmUpgradeOpening
 		then
 			for _, choice in ipairs(upgrades) do
