@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.28.7", "interface release version is wrong")
+assert(Build.Version == "1.28.8", "interface release version is wrong")
 assert(
 	Build.MacLibUrl
 		== "https://raw.githubusercontent.com/Byorl/Maclib/7a99c23bde4eee7d19b054462b17985d06a74ae5/src/maclib.lua",
@@ -12,6 +12,7 @@ local configManagerSource = fs.read("src/Core/ConfigManager.lua", "bin")
 local gameAdapterSource = fs.read("src/Core/GameAdapter.lua", "bin")
 local loaderSource = fs.read("loader.lua", "bin")
 local miscSource = fs.read("src/Modules/Misc.lua", "bin")
+local privacySource = fs.read("src/Core/PrivacyManager.lua", "bin")
 assert(string.find(mainSource, "MountMobileLauncher", 1, true), "mobile launcher is not mounted")
 assert(string.find(uiManagerSource, "AnimeExpeditions_MobileLauncher", 1, true), "mobile launcher UI is missing")
 assert(string.find(uiManagerSource, "not UserInputService.TouchEnabled", 1, true), "mobile launcher is not keyed directly to touch support")
@@ -107,5 +108,12 @@ assert(
 )
 assert(string.find(settingsSource, "Step = 1", 1, true), "UI size does not use whole-percent steps")
 assert(string.find(settingsSource, 'Name = "Hide UI on Load"', 1, true), "Settings is missing Hide UI on Load")
+assert(string.find(settingsSource, 'Name = "Hide Personal Info"', 1, true), "Settings is missing Hide Personal Info")
+assert(string.find(mainSource, "PrivacyManager.new", 1, true), "privacy manager is not initialized")
+assert(string.find(mainSource, "Privacy = Privacy", 1, true), "privacy manager is not provided to Settings")
+assert(string.find(privacySource, 'rootName == "PlayerList"', 1, true), "player-list privacy masking is missing")
+assert(string.find(privacySource, 'rootName == "BottomHUD"', 1, true), "level HUD privacy masking is missing")
+assert(string.find(privacySource, 'screenName(instance, self.PlayerGui) ~= "PlayerOverhead"', 1, true), "overhead privacy masking is missing")
+assert(string.find(privacySource, '"Hidden Player"', 1, true), "private leaderboard replacement is missing")
 
 print("Interface contract tests passed")

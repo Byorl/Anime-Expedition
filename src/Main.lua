@@ -8,6 +8,7 @@ return function(Import)
 	local SessionManager = Import("SessionManager")
 	local ModuleManager = Import("ModuleManager")
 	local UIManager = Import("UIManager")
+	local PrivacyManager = Import("PrivacyManager")
 	local MacLibProvider = Import("MacLibProvider")
 	local GameAdapter = Import("GameAdapter")
 	local JoinCoordinator = Import("JoinCoordinator")
@@ -105,6 +106,9 @@ return function(Import)
 		if self.UIManager then
 			self.UIManager:Destroy()
 		end
+		if self.Privacy then
+			self.Privacy:Destroy()
+		end
 		if self.Config then
 			local flushOk, flushError = self.Config:Flush(true)
 			if not flushOk then
@@ -155,6 +159,9 @@ return function(Import)
 		Runtime:Shutdown("config initialization failed", true)
 		error(configError)
 	end
+	local Privacy = PrivacyManager.new(LocalPlayer)
+	Runtime.Privacy = Privacy
+	Privacy:SetEnabled(Config.Account.UI.HidePrivateInfo ~= false)
 
 	local parent = guiParent()
 	local beforeGui = captureChildren(parent)
@@ -191,6 +198,7 @@ return function(Import)
 		Default = Config.Account.UI.HidePrivateInfo ~= false,
 		Callback = function(hidden)
 			Window:SetUserInfoState(hidden ~= true)
+			Privacy:SetEnabled(hidden == true)
 			Config:UpdateAccount(function(account)
 				account.UI.HidePrivateInfo = hidden == true
 			end, false)
@@ -249,6 +257,7 @@ return function(Import)
 		Player = LocalPlayer,
 		Build = Build,
 		UIManager = ResponsiveUI,
+		Privacy = Privacy,
 		Game = Adapter,
 		Join = Join,
 		Results = Results,

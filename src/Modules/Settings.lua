@@ -1,7 +1,7 @@
 return function()
 	return {
 		Name = "Settings",
-		Version = 5,
+		Version = 6,
 		Priority = 20,
 		Dependencies = {},
 
@@ -227,6 +227,21 @@ return function()
 					end
 					ctx.Config:UpdateAccount(function(account)
 						account.UI.HiddenOnLoad = value == true
+					end, false)
+				end,
+			})
+			appearance:Toggle({
+				Name = "Hide Personal Info",
+				Default = ctx.Config.Account.UI.HidePrivateInfo ~= false,
+				Callback = function(value)
+					if not isActive() then
+						return
+					end
+					local hidden = value == true
+					ctx.Window:SetUserInfoState(not hidden)
+					ctx.Privacy:SetEnabled(hidden)
+					ctx.Config:UpdateAccount(function(account)
+						account.UI.HidePrivateInfo = hidden
 					end, false)
 				end,
 			})
