@@ -683,6 +683,52 @@ assert(
 	"modifier-heavy late planning spread yen into another shallow placement instead of concentrating carry damage"
 )
 
+local strongBackupInformation = {
+	Units = {
+		Carry = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Damage = 5000, SPA = 1, Range = 30 },
+				[1] = { Cost = 13750, Damage = 5600, SPA = 1, Range = 30 },
+			},
+		},
+		Backup = {
+			PlacementLimit = 2,
+			UpgradeInfo = { [0] = { Cost = 1500, Damage = 4200, SPA = 1, Range = 28 } },
+		},
+	},
+}
+local strongBackupSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "carry" }, ["2"] = { ID = "backup" } } },
+	{ UnitData = { carry = { Asset = "Carry" }, backup = { Asset = "Backup" } } },
+	strongBackupInformation,
+	6
+)
+local lateStrongPlacement = Smart.Decide({
+	GameState = {
+		Wave = 15, MaxWave = 15, BaseHealth = 3, BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = { { Health = 80000, MaxHealth = 80000, Progress = 0.55 } },
+	LiveProgress = { 0.55 },
+	Slots = strongBackupSlots,
+	Placed = {
+		[1] = { { GameUnitID = "carry", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 35), Data = {} } },
+		[2] = { { GameUnitID = "backup-one", Upgrade = 0, MaxUpgrade = 0, CFrame = CFrame.new(12, 0, 55), Data = {} } },
+	},
+	PlacementCounts = { Carry = 1, Backup = 1 },
+	Yen = 15000,
+	Path = path,
+	Paths = { path },
+	Information = strongBackupInformation,
+}, {
+	Strategy = "Win", AdaptivePlacement = true, SmartEconomy = true, ReactToEnemies = true,
+})
+assert(
+	lateStrongPlacement.Kind == "Place" and lateStrongPlacement.Slot.Index == 2,
+	"late combat focus suppressed a high-value second combat body in favor of a poor carry upgrade"
+)
+
 local resistanceInformation = {
 	Units = {
 		Resisted = {

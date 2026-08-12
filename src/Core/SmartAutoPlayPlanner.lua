@@ -1201,9 +1201,6 @@ return function(Import)
 			and economySafe
 			and context.RemainingWaves >= 2
 		local hardDefenseCrisis = baselineShort or coverageCrisis
-		local lateCombatFocus = context.Boss
-			or context.RemainingWaves <= math.max(3, math.floor(context.MaxWave * 0.3))
-			or number(context.ModifierDamagePressure, 0) >= 0.3
 		local secondAnchorNeeded = farmPlacementComplete
 			and combatPlaced < math.min(requiredCombat, 2)
 			and #deployment > 0
@@ -1241,8 +1238,6 @@ return function(Import)
 			choices = deployment
 		elseif expandFarm then
 			choices = farmExpansion
-		elseif lateCombatFocus and combatPlaced >= math.min(requiredCombat, 3) and #upgrades > 0 then
-			choices = {}
 		else
 			choices = placements
 		end

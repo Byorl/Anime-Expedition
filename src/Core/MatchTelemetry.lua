@@ -114,14 +114,67 @@ return function()
 		}
 	end
 
-	local function compactEnemies(enemies)
+	local function compactEnemies(enemies, maximum)
 		local result = {}
 		for key, enemy in pairs(type(enemies) == "table" and enemies or {}) do
 			local converted = compactEnemy(key, enemy)
 			if converted then table.insert(result, converted) end
-			if #result >= 140 then break end
+			if #result >= (maximum or 48) then break end
 		end
 		return result
+	end
+
+	local function compactRenderedEnemies(enemies, maximum)
+		local result = {}
+		for key, enemy in pairs(type(enemies) == "table" and enemies or {}) do
+			if type(enemy) == "table" then
+				table.insert(result, {
+					Id = tostring(enemy.ID or enemy.Id or enemy.UUID or enemy.EnemyID or key),
+					Name = tostring(enemy.DisplayName or enemy.Name or enemy.Asset or enemy.Enemy or "Unknown"),
+					Position = position(enemy),
+				})
+			end
+			if #result >= (maximum or 48) then break end
+		end
+		return result
+	end
+
+	local function compactEnemySummary(enemies)
+		local count, health, maximumHealth, shields = 0, 0, 0, 0
+		local modifiers, resistances = {}, {}
+		for _, enemy in pairs(type(enemies) == "table" and enemies or {}) do
+			if type(enemy) == "table" then
+				count = count + 1
+				health = health + math.max(0, tonumber(enemy.Health or enemy.HP) or 0)
+				maximumHealth = maximumHealth + math.max(0, tonumber(enemy.MaxHealth or enemy.MaxHP) or 0)
+				shields = shields + math.max(0, tonumber(enemy.Shield or enemy.ShieldHealth) or 0)
+				for key, value in pairs(type(enemy.Modifiers or enemy.ModifierData or enemy.EnemyModifiers) == "table"
+					and (enemy.Modifiers or enemy.ModifierData or enemy.EnemyModifiers) or {}) do
+					local name = type(key) == "number" and tostring(value) or tostring(key)
+					modifiers[name] = (modifiers[name] or 0) + 1
+				end
+				for key, value in pairs(type(enemy.Resistances or enemy.Resistance or enemy.DamageResistances) == "table"
+					and (enemy.Resistances or enemy.Resistance or enemy.DamageResistances) or {}) do
+					local amount = tonumber(value)
+					if amount then
+						local entry = resistances[tostring(key)] or { Count = 0, Sum = 0 }
+						entry.Count = entry.Count + 1
+						entry.Sum = entry.Sum + amount
+						resistances[tostring(key)] = entry
+					end
+				end
+			end
+		end
+		local averages = {}
+		for key, entry in pairs(resistances) do averages[key] = rounded(entry.Sum / math.max(1, entry.Count)) end
+		return {
+			Count = count,
+			Health = rounded(health),
+			MaxHealth = rounded(maximumHealth),
+			Shields = rounded(shields),
+			Modifiers = modifiers,
+			AverageResistances = averages,
+		}
 	end
 
 	local function compactSlots(slots)
@@ -299,8 +352,8 @@ return function()
 		self.LastPath = string.format("%s/match_%d_%s.json", folder, now, guid)
 		local paths = compactPaths(snapshot.Paths)
 		self.Active = {
-			Schema = 2,
-			RecorderVersion = "1.1",
+			Schema = 3,
+			RecorderVersion = "1.2",
 			HubVersion = self.Build and self.Build.Version or nil,
 			StartedAt = now,
 			EndedAt = nil,
@@ -318,7 +371,7 @@ return function()
 				GameParameters = copy(type(snapshot.GameState) == "table" and snapshot.GameState.Parameters, 4, 500),
 				GameModifiers = copy(type(snapshot.ModifierState) == "table" and snapshot.ModifierState.GameModifiers, 4, 500),
 			},
-			Limits = { SampleInterval = self.SampleInterval, MaxSamples = self.MaxSamples, MaxEnemiesPerSample = 140 },
+			Limits = { SampleInterval = self.SampleInterval, MaxSamples = self.MaxSamples, MaxEnemiesPerSample = 48 },
 			Samples = {},
 			RouteRevisions = {},
 			Events = {},
@@ -368,8 +421,9 @@ return function()
 			PlacementCounts = copy(snapshot.PlacementCounts, 2, 120),
 			Route = { Reverse = snapshot.RouteReverse == true, Confident = snapshot.RouteConfident == true },
 			LiveProgress = copy(snapshot.LiveProgress, 2, 300),
-			Enemies = compactEnemies(snapshot.Enemies),
-			RenderedEnemies = compactEnemies(snapshot.RenderedEnemies),
+			EnemySummary = compactEnemySummary(snapshot.Enemies),
+			Enemies = compactEnemies(snapshot.Enemies, 48),
+			RenderedEnemies = compactRenderedEnemies(snapshot.RenderedEnemies, 48),
 			Placed = compactPlaced(snapshot.Placed),
 			GameState = {
 				Gamemode = gameState.Gamemode or gameState.GameMode,
