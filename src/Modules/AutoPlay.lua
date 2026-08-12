@@ -1,6 +1,7 @@
 return function(Import)
 	local Planner = Import("AutoPlayPlanner")
 	local SmartPlanner = Import("SmartAutoPlayPlanner")
+	local MatchTelemetry = Import("MatchTelemetry")
 	local JoinCatalog = Import("JoinCatalog")
 	local AutoPlay = {}
 	local Players = game:GetService("Players")
@@ -116,6 +117,31 @@ return function(Import)
 			end
 		end
 		return positions
+	end
+
+	local function renderedEnemyTelemetry()
+		local result = {}
+		for _, enemy in ipairs(CollectionService:GetTagged("Enemy")) do
+			local ok, data = pcall(function()
+				local pivot = enemy:IsA("BasePart") and enemy.CFrame or enemy:GetPivot()
+				local attributes = enemy:GetAttributes()
+				return {
+					ID = attributes.EnemyID or attributes.ID or attributes.UUID or enemy.Name,
+					Name = enemy.Name,
+					CFrame = pivot,
+					Attributes = attributes,
+				}
+			end)
+			if ok then table.insert(result, data) end
+			if #result >= 140 then break end
+		end
+		return result
+	end
+
+	local function playerCFrame()
+		local character = Players.LocalPlayer and Players.LocalPlayer.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		return root and root.CFrame or nil
 	end
 
 	local function reversePath(path)
@@ -707,9 +733,12 @@ return function(Import)
 			Slots = slots,
 			Placed = placed,
 			Yen = math.max(0, tonumber(type(playerState) == "table" and playerState.Yen) or 0),
+			PlayerState = playerState,
+			PlayerCFrame = playerCFrame(),
 			Path = path,
 			Paths = paths,
 			Enemies = enemies,
+			RenderedEnemies = renderedEnemyTelemetry(),
 			LiveProgress = liveProgress,
 			RouteConfident = state.RouteConfident,
 			RouteReverse = state.RouteReverse,
@@ -752,9 +781,11 @@ return function(Import)
 			{ Wave = wave, Time = elapsed, Total = total }
 		)
 		if reset then
+			if state.Telemetry then state.Telemetry:Finalize("Seamless retry") end
 			resetRound(state)
 		end
 		state.LastWave, state.LastTime, state.LastTotal = wave, elapsed, total
+		return reset
 	end
 
 	local function findUnit(current, gameUnitID)
@@ -781,6 +812,7 @@ return function(Import)
 				end
 			end
 			if slot and Planner.PlacementCount(slot, current.Placed, current.PlacementCounts) > pending.Before then
+				if state.Telemetry then state.Telemetry:Event("ActionConfirmed", pending) end
 				state.PlaceRetries[pending.Slot] = 0
 				state.BlockedSlots[pending.Slot] = nil
 				state.Pending = nil
@@ -790,6 +822,7 @@ return function(Import)
 		else
 			local unit = findUnit(current, pending.GameUnitID)
 			if unit and unit.Upgrade > pending.Before then
+				if state.Telemetry then state.Telemetry:Event("ActionConfirmed", pending) end
 				state.UpgradeRetries[tostring(pending.GameUnitID)] = 0
 				state.BlockedUpgrades[tostring(pending.GameUnitID)] = nil
 				state.Pending = nil
@@ -807,6 +840,7 @@ return function(Import)
 			state.UpgradeRetries[key] = (state.UpgradeRetries[key] or 0) + 1
 			state.BlockedUpgrades[key] = os.clock() + 1.5
 		end
+		if state.Telemetry then state.Telemetry:Event("ActionTimedOut", pending) end
 		state.Pending = nil
 		state.NextActionAt = os.clock() + 0.65
 		return true
@@ -818,6 +852,7 @@ return function(Import)
 			cframe, err = findPlacement(state, current, choice)
 		end
 		if not cframe then
+			if state.Telemetry then state.Telemetry:Event("PlacementRejected", { Slot = choice.Slot.Index, Error = err }) end
 			notify(ctx, state, "placement", err)
 			state.BlockedSlots[choice.Slot.Index] = os.clock() + 1.25
 			state.NextActionAt = os.clock() + 0.15
@@ -825,6 +860,7 @@ return function(Import)
 		end
 		local ok, fireError = ctx.Game:GamePlayerAction("PlaceGameUnit", choice.Slot.Index, cframe)
 		if not ok then
+			if state.Telemetry then state.Telemetry:Event("ActionFailed", { Kind = "Place", Slot = choice.Slot.Index, Error = fireError, Position = cframe }) end
 			notify(ctx, state, "place_fire", fireError)
 			state.BlockedSlots[choice.Slot.Index] = os.clock() + 1.25
 			return false
@@ -836,6 +872,7 @@ return function(Import)
 			Before = choice.Count,
 			Started = os.clock(),
 		}
+		if state.Telemetry then state.Telemetry:Event("ActionAttempt", { Kind = "Place", Slot = choice.Slot.Index, Asset = choice.Slot.Asset, Position = cframe, Before = choice.Count }) end
 		state.BlockedSlots[choice.Slot.Index] = nil
 		state.NextActionAt = os.clock() + 0.35
 		return true
@@ -843,11 +880,13 @@ return function(Import)
 
 	local function upgrade(ctx, state, choice)
 		if choice.Unit.GameUnitID == nil then
+			if state.Telemetry then state.Telemetry:Event("ActionFailed", { Kind = "Upgrade", Error = "Missing game unit ID" }) end
 			notify(ctx, state, "upgrade_id", "A placed unit did not expose its game unit ID.")
 			return false
 		end
 		local ok, err = ctx.Game:GamePlayerAction("UpgradeGameUnit", choice.Unit.GameUnitID)
 		if not ok then
+			if state.Telemetry then state.Telemetry:Event("ActionFailed", { Kind = "Upgrade", GameUnitID = choice.Unit.GameUnitID, Error = err }) end
 			notify(ctx, state, "upgrade_fire", err)
 			state.BlockedUpgrades[tostring(choice.Unit.GameUnitID)] = os.clock() + 1.5
 			return false
@@ -858,6 +897,7 @@ return function(Import)
 			Before = choice.Unit.Upgrade,
 			Started = os.clock(),
 		}
+		if state.Telemetry then state.Telemetry:Event("ActionAttempt", { Kind = "Upgrade", GameUnitID = choice.Unit.GameUnitID, Before = choice.Unit.Upgrade, Slot = choice.Slot and choice.Slot.Index }) end
 		state.NextActionAt = os.clock() + 0.3
 		return true
 	end
@@ -1078,6 +1118,7 @@ return function(Import)
 			resolved, placementError = findPlacement(state, current, visual)
 		end
 		updateSmartVisualization(state, decision, resolved)
+		if state.Telemetry then state.Telemetry:Decision(decision, resolved) end
 		if decision.Kind == "Place" then
 			if resolved then
 				place(ctx, state, current, decision, resolved)
@@ -1104,6 +1145,13 @@ return function(Import)
 				end
 				local result = ctx.Results and select(1, ctx.Results:Snapshot()) or nil
 				if type(result) == "table" then
+					if state.Telemetry and state.Telemetry.Active then
+						local outcome = result.Victory == true and "Victory" or result.Defeat == true and "Defeat" or result.Result or "Match complete"
+						local saved, path, telemetryError = state.Telemetry:Finalize(outcome, result)
+						if saved == false then notify(ctx, state, "telemetry_write", telemetryError) end
+						state.LastTelemetryPath = path
+						if state.TelemetryStatusLabel then state.TelemetryStatusLabel:UpdateName(state.Telemetry:Status()) end
+					end
 					state.Pending = nil
 					state.NextActionAt = math.huge
 					if state.SmartEnabled then
@@ -1125,6 +1173,10 @@ return function(Import)
 					return
 				end
 				reconcileRound(state, current)
+				if state.RecordTelemetry and state.SmartEnabled and state.Telemetry then
+					state.Telemetry:Capture(current)
+					if state.TelemetryStatusLabel then state.TelemetryStatusLabel:UpdateName(state.Telemetry:Status()) end
+				end
 				if state.SmartEnabled then
 					smartAct(ctx, state, current)
 				elseif state.Visualize and (state.VisualDirty or os.clock() - state.LastVisual >= 1) then
@@ -1162,7 +1214,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 16,
+		Version = 17,
 		Priority = 9,
 		Dependencies = {},
 
@@ -1180,6 +1232,7 @@ return function(Import)
 				ReactToEnemies = true,
 				SmartVisualize = true,
 				ShowSmartDecisions = true,
+				RecordTelemetry = false,
 				UsePriority = false,
 				Spacing = 6,
 				PathPosition = 50,
@@ -1207,6 +1260,7 @@ return function(Import)
 				MatchDetected = false,
 				Generation = ctx.Runtime.Generation,
 				UnitUtils = loadHelper("UnitUtils"),
+				Telemetry = MatchTelemetry.new(ctx.FileSystem, ctx.Player, ctx.Build),
 			}
 			local automation = ctx.Tabs.AutoPlayNormal:Section({ Side = "Left" })
 			automation:Header({ Text = "Auto Play" })
@@ -1336,6 +1390,9 @@ return function(Import)
 				Default = false,
 				Callback = function(value)
 					state.SmartEnabled = value == true
+					if not value and state.Telemetry and state.Telemetry.Active then
+						state.LastTelemetryPath = select(2, state.Telemetry:Finalize("Smart Auto Play disabled"))
+					end
 					if not state.Pending then
 						state.NextActionAt = 0
 					end
@@ -1397,6 +1454,20 @@ return function(Import)
 					state.SmartDecisionText = nil
 				end,
 			}, "auto_play.smart.show_decisions")
+			ctx.Registry:Toggle(smart, {
+				Name = "Record Match Telemetry",
+				Default = false,
+				Callback = function(value)
+					state.RecordTelemetry = value == true
+					state.Telemetry:SetEnabled(state.RecordTelemetry)
+					if state.TelemetryStatusLabel then state.TelemetryStatusLabel:UpdateName(state.Telemetry:Status()) end
+				end,
+			}, "auto_play.smart.record_telemetry")
+			state.TelemetryStatusLabel = smart:Label({ Text = "Telemetry: Off" })
+			smart:Paragraph({
+				Header = "Match telemetry",
+				Body = "Records routes, enemies, positions, loadout, placements, upgrades, Yen, modifiers, decisions and results to AnimeExpeditionsHubData/telemetry/matches/<userid>.",
+			})
 
 			local live = ctx.Tabs.AutoPlaySmart:Section({ Side = "Right" })
 			live:Header({ Text = "Live Planner" })
@@ -1410,6 +1481,7 @@ return function(Import)
 			})
 			ctx:RegisterCleanup(function()
 				state.Alive = false
+				if state.Telemetry then state.Telemetry:Finalize("Script unloaded") end
 				destroyMarkers(state)
 			end)
 			return state
@@ -1428,6 +1500,7 @@ return function(Import)
 			state.Enabled = false
 			state.SmartEnabled = false
 			state.Pending = nil
+			if state.Telemetry then state.Telemetry:Finalize("Module disabled") end
 			destroyMarkers(state)
 		end,
 	}

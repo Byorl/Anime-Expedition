@@ -1,5 +1,5 @@
 local Build = rbxmk.loadFile("src/Build.lua")()()
-assert(Build.Version == "1.28.9", "interface release version is wrong")
+assert(Build.Version == "1.29.0", "interface release version is wrong")
 local Manifest = rbxmk.loadFile("manifest.lua")()
 assert(Manifest.Version == Build.Version, "manifest and interface versions differ")
 assert(
@@ -81,6 +81,8 @@ assert(
 	string.find(autoPlaySource, "Scenario: Waiting for match to start", 1, true),
 	"Smart Auto Play has no pre-match planner state"
 )
+assert(string.find(autoPlaySource, "Record Match Telemetry", 1, true), "match telemetry toggle is missing")
+assert(string.find(autoPlaySource, "auto_play.smart.record_telemetry", 1, true), "match telemetry is not configurable")
 
 local organizedSections = {
 	["src/Modules/GameMatch.lua"] = { "Match Automation", "AFK Chamber" },

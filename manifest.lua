@@ -1,5 +1,5 @@
 return {
-	Version = "1.28.9",
+	Version = "1.29.0",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -20,6 +20,7 @@ return {
 		AutomationCatalog = "src/Core/AutomationCatalog.lua",
 		AutoPlayPlanner = "src/Core/AutoPlayPlanner.lua",
 		SmartAutoPlayPlanner = "src/Core/SmartAutoPlayPlanner.lua",
+		MatchTelemetry = "src/Core/MatchTelemetry.lua",
 		ResultsHub = "src/Core/ResultsHub.lua",
 		WebhookReporter = "src/Core/WebhookReporter.lua",
 		JoinStory = "src/Modules/JoinStory.lua",

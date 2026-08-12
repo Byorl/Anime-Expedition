@@ -229,6 +229,7 @@ local factories = {
 		return Planner
 	end,
 	SmartAutoPlayPlanner = rbxmk.loadFile("src/Core/SmartAutoPlayPlanner.lua")(),
+	MatchTelemetry = rbxmk.loadFile("src/Core/MatchTelemetry.lua")(),
 	JoinCatalog = rbxmk.loadFile("src/Core/JoinCatalog.lua")(),
 	AutoPlay = rbxmk.loadFile("src/Modules/AutoPlay.lua")(),
 }
@@ -271,6 +272,9 @@ local context = {
 	},
 	Registry = registry,
 	Runtime = { Alive = false, Generation = 1, Notify = function() end },
+	FileSystem = { Root = "TestData", WriteJson = function() return true end },
+	Player = { UserId = 1, Name = "Tester" },
+	Build = { Version = "test" },
 	RegisterCleanup = function() end,
 }
 local module = Import("AutoPlay")
