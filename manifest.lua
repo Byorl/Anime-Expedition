@@ -1,5 +1,5 @@
 return {
-	Version = "1.28.8",
+	Version = "1.28.7",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -11,7 +11,6 @@ return {
 		SessionManager = "src/Core/SessionManager.lua",
 		ModuleManager = "src/Core/ModuleManager.lua",
 		UIManager = "src/Core/UIManager.lua",
-		PrivacyManager = "src/Core/PrivacyManager.lua",
 		MacLibProvider = "src/Core/MacLibProvider.lua",
 		GameAdapter = "src/Core/GameAdapter.lua",
 		JoinCatalog = "src/Core/JoinCatalog.lua",
