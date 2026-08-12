@@ -549,6 +549,17 @@ return function(Import)
 		return clamp(result, 0.05, 4)
 	end
 
+	local function matchupPriorityMultiplier(stats, context)
+		if context.ResistanceSummary == "None" then
+			return 1
+		end
+		local matchup = matchupMultiplier(stats, context)
+		if matchup >= 1 then
+			return 1 + clamp(matchup - 1, 0, 1.5) * 0.45
+		end
+		return 1 - clamp(1 - matchup, 0, 0.8) * 0.45
+	end
+
 	local function combatPower(stats, context)
 		local crit = 1 + clamp(stats.CritChance, 0, 100) / 100 * math.max(0, stats.CritDamage - 100) / 100
 		local aoe = 1
@@ -868,6 +879,8 @@ return function(Import)
 						+ (role == "Support" and power * 0.2 or 0)
 					local score = impactEfficiency(combatValue, base.Cost)
 						+ economy * weights.Economy / math.max(1, base.Cost)
+					local matchupPriority = role ~= "Farm" and matchupPriorityMultiplier(base, context) or 1
+					score = score * matchupPriority
 					score = score / (1 + current * (0.95 + waveProgress * 0.7))
 					if current == 0 then
 						score = score * 1.12
@@ -900,6 +913,7 @@ return function(Import)
 						Role = role,
 						Stats = base,
 						CombatPower = power,
+						MatchupPriority = matchupPriority,
 						RangeUptime = rangeUptime,
 						MarginalCoverage = location.MarginalCoverage,
 						PaybackWaves = role == "Farm" and base.Cost / math.max(1, base.Farm) or math.huge,
@@ -980,6 +994,8 @@ return function(Import)
 						if score <= 0 then
 							score = impactEfficiency(combatPower(nextStats, context) * 0.025 + 0.01, cost)
 						end
+						local matchupPriority = role ~= "Farm" and matchupPriorityMultiplier(nextStats, context) or 1
+						score = score * matchupPriority
 						local paybackWaves = economyGain > 0 and cost / math.max(0.01, nextStats.Farm - current.Farm) or math.huge
 						local completesFarm = role == "Farm" and unit.Upgrade + 1 >= unit.MaxUpgrade
 						if role == "Farm" and paybackWaves > context.RemainingWaves * 0.72 then
@@ -1013,6 +1029,7 @@ return function(Import)
 							CombatGain = damageGain,
 							CurrentPower = currentPower,
 							NextPower = nextPower,
+							MatchupPriority = matchupPriority,
 							UpgradeDepth = unit.MaxUpgrade > 0 and clamp(unit.Upgrade / unit.MaxUpgrade, 0, 1) or 0,
 							UpgradeValue = upgradeValue,
 							PaybackWaves = paybackWaves,
@@ -1312,6 +1329,9 @@ return function(Import)
 		context.Spendable = spendable
 		local best = choices[1]
 		local bestCombatImpact = actionCombatImpact(best)
+		local desperateBackline = context.MaxProgress >= 0.92
+			and context.BacklineEnemies >= math.max(3, math.floor(number(context.ExpectedActiveEnemies, 0) * 0.08))
+		context.DesperateBackline = desperateBackline
 		for index, choice in ipairs(choices) do
 			local fallbackRatio = context.Emergency and 0.5 or 0.72
 			local fallbackImpactRatio = context.Emergency and 0.5 or 0.65
@@ -1322,7 +1342,13 @@ return function(Import)
 				and best
 				and choice.Score >= best.Score * fallbackRatio
 				and combatImpactAcceptable
-			if choice.Cost <= spendable and choice.Score > 0 and (index == 1 or acceptableEmergencyFallback) then
+			local desperateAffordableFallback = desperateBackline
+				and choice.Role ~= "Farm"
+				and choiceCombatImpact > 0
+			if choice.Cost <= spendable
+				and choice.Score > 0
+				and (index == 1 or acceptableEmergencyFallback or desperateAffordableFallback)
+			then
 				context.Spacing = choice.Spacing
 				choice.Context = context
 				choice.Strategy = strategy

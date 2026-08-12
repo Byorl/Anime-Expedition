@@ -847,6 +847,130 @@ assert(
 	"live resistance percentages were not converted into damage multipliers"
 )
 
+local persistentMatchupInformation = {
+	Units = {
+		RawCarry = {
+			Element = "Light",
+			Archetype = "Magical",
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Damage = 3000, SPA = 1, Range = 25 },
+				[1] = { Cost = 3000, Damage = 6200, SPA = 1, Range = 27 },
+			},
+		},
+		Counter = {
+			Element = "Hydro",
+			Archetype = "Magical",
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Damage = 1600, SPA = 1, Range = 25 },
+				[1] = { Cost = 3000, Damage = 3500, SPA = 1, Range = 27 },
+			},
+		},
+	},
+}
+local persistentMatchupSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "raw-carry" }, ["2"] = { ID = "counter" } } },
+	{ UnitData = { ["raw-carry"] = { Asset = "RawCarry" }, counter = { Asset = "Counter" } } },
+	persistentMatchupInformation,
+	6
+)
+local persistentMatchupDecision = Smart.Decide({
+	GameState = {
+		Wave = 10,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = {
+		{ Health = 75000, MaxHealth = 75000, Progress = 0.4, Resistances = { Light = 50, Hydro = -85 } },
+	},
+	LiveProgress = { 0.4 },
+	Slots = persistentMatchupSlots,
+	Placed = {
+		[1] = { { GameUnitID = "raw-carry", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 35), Data = {} } },
+		[2] = { { GameUnitID = "counter", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(12, 0, 55), Data = {} } },
+	},
+	PlacementCounts = { RawCarry = 1, Counter = 1 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	Information = persistentMatchupInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	persistentMatchupDecision.Kind == "Upgrade" and persistentMatchupDecision.Slot.Index == 2,
+	"a persistent elemental weakness did not overcome a resisted unit's modest raw-stat lead"
+)
+
+local desperateFallbackInformation = {
+	Units = {
+		Ideal = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Damage = 5000, SPA = 1, Range = 30 },
+				[1] = { Cost = 9750, Damage = 9000, SPA = 1, Range = 30 },
+			},
+		},
+		Affordable = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Damage = 1000, SPA = 1, Range = 30 },
+				[1] = { Cost = 4000, Damage = 2200, SPA = 1, Range = 30 },
+			},
+		},
+	},
+}
+local desperateFallbackSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "ideal" }, ["2"] = { ID = "affordable" } } },
+	{ UnitData = { ideal = { Asset = "Ideal" }, affordable = { Asset = "Affordable" } } },
+	desperateFallbackInformation,
+	6
+)
+local desperateEnemies = {}
+local desperateProgress = {}
+for index = 1, 22 do
+	desperateEnemies[index] = { Health = 15000, MaxHealth = 15000, Progress = 0.94 + index / 1000 }
+	desperateProgress[index] = 0.94 + index / 1000
+end
+local desperateFallback = Smart.Decide({
+	GameState = {
+		Wave = 15,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = desperateEnemies,
+	LiveProgress = desperateProgress,
+	Slots = desperateFallbackSlots,
+	Placed = {
+		[1] = { { GameUnitID = "ideal", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 35), Data = {} } },
+		[2] = { { GameUnitID = "affordable", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(12, 0, 55), Data = {} } },
+	},
+	PlacementCounts = { Ideal = 1, Affordable = 1 },
+	Yen = 4525,
+	Path = path,
+	Paths = { path },
+	Information = desperateFallbackInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	desperateFallback.Kind == "Upgrade"
+		and desperateFallback.Slot.Index == 2
+		and desperateFallback.Context.DesperateBackline == true,
+	"critical backline pressure still waited for an unreachable upgrade instead of buying available damage"
+)
+
 local completionInformation = {
 	Units = {
 		Farm = {
