@@ -1173,10 +1173,14 @@ return function(Import)
 			return compare(a, b)
 		end)
 		local profitableFarmUpgrades = {}
+		local fastFarmUpgrades = {}
 		for _, upgrade in ipairs(farmUpgrades) do
 			local paybackShare = upgrade.CompletesFarm and 0.84 or 0.7
 			if upgrade.PaybackWaves <= context.RemainingWaves * paybackShare then
 				table.insert(profitableFarmUpgrades, upgrade)
+				if upgrade.PaybackWaves <= 2 then
+					table.insert(fastFarmUpgrades, upgrade)
+				end
 			end
 		end
 		local minimumCoverage = clamp(0.18 + number(context.ModifierCoverageBoost, 0) * 0.45, 0.18, 0.42)
@@ -1227,6 +1231,14 @@ return function(Import)
 			and combatPlaced >= math.min(requiredCombat, 2)
 			and economySafe
 			and context.RemainingWaves >= 2
+		local fastFarmUpgradeOpening = farmPlacementComplete
+			and #fastFarmUpgrades > 0
+			and combatPlaced >= math.min(requiredCombat, 3)
+			and context.HealthRatio >= 0.99
+			and context.BacklineEnemies == 0
+			and context.MaxProgress < 0.44
+			and not context.RecentLeak
+			and context.RemainingWaves >= 7
 		local hardDefenseCrisis = baselineShort or coverageCrisis
 		local secondAnchorNeeded = farmPlacementComplete
 			and combatPlaced < math.min(requiredCombat, 2)
@@ -1259,6 +1271,9 @@ return function(Import)
 			economyCommit = true
 		elseif secondAnchorNeeded then
 			choices = deployment
+		elseif fastFarmUpgradeOpening then
+			choices = fastFarmUpgrades
+			economyCommit = true
 		elseif farmUpgradeOpening then
 			choices = profitableFarmUpgrades
 			economyCommit = true
@@ -1275,6 +1290,7 @@ return function(Import)
 			and not expandFarm
 			and not farmPlacementOpening
 			and not secondAnchorNeeded
+			and not fastFarmUpgradeOpening
 			and not farmUpgradeOpening
 		then
 			for _, choice in ipairs(upgrades) do

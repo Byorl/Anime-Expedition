@@ -246,6 +246,7 @@ return function()
 		"Scenario", "Mode", "Map", "Act", "Difficulty", "Wave", "MaxWave", "RemainingWaves",
 		"Yen", "Spendable", "NextCost", "ReservePercent", "Spacing", "BaseHealth", "BaseMaxHealth",
 		"HealthRatio", "EnemyCount", "TotalHealth", "MaxProgress", "AverageProgress", "BacklineEnemies",
+		"ExpectedActiveEnemies", "BacklogRatio", "BacklogPressure", "BacklogCrisis",
 		"Pressure", "Emergency", "RecentLeak", "CalmFor", "RouteConfident", "RouteCoverage", "Boss",
 		"ModifierSummary", "ModifierDamagePressure", "ModifierCoverageBoost", "ModifierRedundancy",
 		"ModifierStunRisk", "ModifierSpeed", "ModifierSpawn", "NoFarms", "ResistanceSummary",
@@ -353,7 +354,7 @@ return function()
 		local paths = compactPaths(snapshot.Paths)
 		self.Active = {
 			Schema = 3,
-			RecorderVersion = "1.2",
+			RecorderVersion = "1.3",
 			HubVersion = self.Build and self.Build.Version or nil,
 			StartedAt = now,
 			EndedAt = nil,

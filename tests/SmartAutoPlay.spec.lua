@@ -958,6 +958,77 @@ assert(
 	"planner continued investing in farms while the live enemy backlog required damage"
 )
 
+local fastEconomyInformation = {
+	Units = {
+		Farm = {
+			PlacementLimit = 3,
+			UpgradeInfo = {
+				[0] = { Cost = 550, Farm = 550, HitboxType = "Farm" },
+				[1] = { Cost = 1100, Farm = 1100, HitboxType = "Farm" },
+				[2] = { Cost = 2200, Farm = 2750, HitboxType = "Farm" },
+			},
+		},
+		Damage = {
+			PlacementLimit = 3,
+			UpgradeInfo = {
+				[0] = { Cost = 950, Damage = 2200, SPA = 1, Range = 35 },
+				[1] = { Cost = 2800, Damage = 7000, SPA = 1, Range = 40 },
+			},
+		},
+	},
+}
+local fastEconomySlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "farm" }, ["2"] = { ID = "damage" } } },
+	{ UnitData = { farm = { Asset = "Farm" }, damage = { Asset = "Damage" } } },
+	fastEconomyInformation,
+	6
+)
+local earlyBacklogEnemies = {}
+local earlyBacklogProgress = {}
+for index = 1, 80 do
+	earlyBacklogEnemies[index] = { Health = 4000, MaxHealth = 4000, Progress = 0.34 }
+	earlyBacklogProgress[index] = 0.34
+end
+local finishFastFarmEngine = Smart.Decide({
+	GameState = {
+		Wave = 5,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = earlyBacklogEnemies,
+	LiveProgress = earlyBacklogProgress,
+	Slots = fastEconomySlots,
+	Placed = {
+		[1] = {
+			{ GameUnitID = "farm-1", Upgrade = 0, MaxUpgrade = 2, CFrame = CFrame.new(10, 0, 45), Data = {} },
+			{ GameUnitID = "farm-2", Upgrade = 0, MaxUpgrade = 2, CFrame = CFrame.new(18, 0, 50), Data = {} },
+			{ GameUnitID = "farm-3", Upgrade = 0, MaxUpgrade = 2, CFrame = CFrame.new(26, 0, 55), Data = {} },
+		},
+		[2] = {
+			{ GameUnitID = "damage-1", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 35), Data = {} },
+			{ GameUnitID = "damage-2", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(12, 0, 65), Data = {} },
+			{ GameUnitID = "damage-3", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(20, 0, 75), Data = {} },
+		},
+	},
+	PlacementCounts = { Farm = 3, Damage = 3 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	Information = fastEconomyInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(finishFastFarmEngine.Context.BacklogCrisis == true, "early enemy backlog was not recognized")
+assert(
+	finishFastFarmEngine.Kind == "Upgrade" and finishFastFarmEngine.Slot.Index == 1,
+	"a controlled short-payback farm upgrade was abandoned before the economy came online"
+)
+
 local routeFreeFarmInformation = {
 	Units = {
 		Farm = {
