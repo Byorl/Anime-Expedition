@@ -379,6 +379,10 @@ return function(Import)
 			end
 		end
 		local countPressure = clamp(enemyCount * modifiers.SpawnMultiplier / 100, 0, 1)
+		local expectedActiveEnemies = math.max(24, 18 + wave * 6)
+		local backlogRatio = enemyCount / expectedActiveEnemies
+		local backlogPressure = clamp((backlogRatio - 0.8) / 1.2, 0, 1)
+		local backlogCrisis = enemyCount >= 36 and backlogRatio >= 1.35
 		local progressPressure = maxProgress ^ 1.7
 		local averageProgress = progressTotal / math.max(
 			1,
@@ -410,6 +414,10 @@ return function(Import)
 			RemainingWaves = remainingWaves,
 			EnemyCount = enemyCount,
 			TotalHealth = totalHealth,
+			ExpectedActiveEnemies = expectedActiveEnemies,
+			BacklogRatio = backlogRatio,
+			BacklogPressure = backlogPressure,
+			BacklogCrisis = backlogCrisis,
 			MaxProgress = maxProgress,
 			AverageProgress = averageProgress,
 			BacklineEnemies = backlineEnemies,
@@ -864,10 +872,13 @@ return function(Import)
 					if current == 0 then
 						score = score * 1.12
 					end
-					if context.Emergency and role ~= "Farm" then
+					if (context.Emergency or context.BacklogCrisis) and role ~= "Farm" then
 						score = score * (1.35 + context.Pressure * 0.4)
-					elseif context.Pressure > 0.45 and role == "Farm" then
+					elseif (context.Pressure > 0.45 or context.BacklogCrisis) and role == "Farm" then
 						score = score * 0.22
+					end
+					if context.BacklogCrisis and role == "Farm" then
+						score = 0
 					end
 					if role == "Farm" and (base.Farm <= 0 or base.Cost / math.max(1, base.Farm) > context.RemainingWaves * 0.7) then
 						score = score * 0.05
@@ -1049,6 +1060,19 @@ return function(Import)
 		return a.Slot.Index < b.Slot.Index
 	end
 
+	local function actionCombatImpact(choice)
+		if type(choice) ~= "table" or choice.Role == "Farm" then
+			return 0
+		end
+		if choice.Kind == "Place" then
+			return math.max(0, number(choice.CombatPower, 0))
+		end
+		if choice.Kind == "Upgrade" then
+			return math.max(0, number(choice.CombatGain, 0))
+		end
+		return 0
+	end
+
 	function Smart.Decide(snapshot, options)
 		options = type(options) == "table" and options or {}
 		local strategy = strategyWeights[options.Strategy] and options.Strategy or "Win"
@@ -1181,10 +1205,13 @@ return function(Import)
 		local farmCapacitySafe = openPlacementSlots > defenseSlotsNeeded
 		local preferFarm = #farmSeed > 0
 			and farmCapacitySafe
+			and not context.BacklogCrisis
 			and (earlyFarm or not context.Emergency and not context.RecentLeak)
 		local economySafe = context.HealthRatio >= 0.99
 			and context.BacklineEnemies == 0
 			and context.MaxProgress < 0.62
+			and not context.Emergency
+			and not context.BacklogCrisis
 			and not context.RecentLeak
 		local economyWindow = context.RemainingWaves >= 6
 			and context.Wave <= math.max(5, math.floor(context.MaxWave * 0.6))
@@ -1217,6 +1244,7 @@ return function(Import)
 			and farmCapacitySafe
 			and combatPlaced >= 1
 			and context.HealthRatio >= 0.99
+			and not context.BacklogCrisis
 			and (context.Pressure < 0.58 or fastFarmWindow)
 			and context.RemainingWaves >= 6
 		local choices = {}
@@ -1250,7 +1278,7 @@ return function(Import)
 			and not farmUpgradeOpening
 		then
 			for _, choice in ipairs(upgrades) do
-				local suppressFarm = choice.Role == "Farm" and context.Emergency
+				local suppressFarm = choice.Role == "Farm" and (context.Emergency or context.BacklogCrisis)
 				if not suppressFarm and (options.SmartEconomy ~= false or choice.Role ~= "Farm") then
 					table.insert(choices, choice)
 				end
@@ -1267,11 +1295,17 @@ return function(Import)
 		local spendable = math.max(0, snapshot.Yen - reserve)
 		context.Spendable = spendable
 		local best = choices[1]
+		local bestCombatImpact = actionCombatImpact(best)
 		for index, choice in ipairs(choices) do
 			local fallbackRatio = context.Emergency and 0.5 or 0.72
+			local fallbackImpactRatio = context.Emergency and 0.5 or 0.65
+			local choiceCombatImpact = actionCombatImpact(choice)
+			local combatImpactAcceptable = bestCombatImpact <= 0
+				or choiceCombatImpact >= bestCombatImpact * fallbackImpactRatio
 			local acceptableEmergencyFallback = (context.Emergency or context.BacklineEnemies > 0 or context.RecentLeak)
 				and best
 				and choice.Score >= best.Score * fallbackRatio
+				and combatImpactAcceptable
 			if choice.Cost <= spendable and choice.Score > 0 and (index == 1 or acceptableEmergencyFallback) then
 				context.Spacing = choice.Spacing
 				choice.Context = context

@@ -729,6 +729,52 @@ assert(
 	"late combat focus suppressed a high-value second combat body in favor of a poor carry upgrade"
 )
 
+local weakFallbackInformation = {
+	Units = {
+		Carry = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 500, Damage = 5000, SPA = 1, Range = 30 },
+				[1] = { Cost = 4000, Damage = 8000, SPA = 1, Range = 30 },
+			},
+		},
+		Filler = {
+			PlacementLimit = 3,
+			UpgradeInfo = { [0] = { Cost = 500, Damage = 700, SPA = 1, Range = 28 } },
+		},
+	},
+}
+local weakFallbackSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "carry" }, ["2"] = { ID = "filler" } } },
+	{ UnitData = { carry = { Asset = "Carry" }, filler = { Asset = "Filler" } } },
+	weakFallbackInformation,
+	6
+)
+local rejectWeakFallback = Smart.Decide({
+	GameState = {
+		Wave = 15, MaxWave = 15, BaseHealth = 1, BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = { { Health = 80000, MaxHealth = 80000, Progress = 0.86, Boss = true } },
+	LiveProgress = { 0.86 },
+	Slots = weakFallbackSlots,
+	Placed = {
+		[1] = { { GameUnitID = "carry", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 35), Data = {} } },
+		[2] = { { GameUnitID = "filler-one", Upgrade = 0, MaxUpgrade = 0, CFrame = CFrame.new(12, 0, 55), Data = {} } },
+	},
+	PlacementCounts = { Carry = 1, Filler = 1 },
+	Yen = 1000,
+	Path = path,
+	Paths = { path },
+	Information = weakFallbackInformation,
+}, {
+	Strategy = "Win", AdaptivePlacement = true, SmartEconomy = true, ReactToEnemies = true,
+})
+assert(
+	rejectWeakFallback.Kind == "Wait" and rejectWeakFallback.Cost == 4000,
+	"emergency spending bought a low-impact fallback instead of saving for meaningful damage"
+)
+
 local resistanceInformation = {
 	Units = {
 		Resisted = {
@@ -865,6 +911,51 @@ assert(
 		and completeProfitableFarm.Slot.Index == 1
 		and completeProfitableFarm.CompletesFarm == true,
 	"a profitable final farm tier was abandoned by the old fixed wave cutoff"
+)
+
+local backlogEnemies = {}
+local backlogProgress = {}
+for index = 1, 120 do
+	backlogEnemies[index] = { Health = 4000, MaxHealth = 4000, Progress = 0.35 }
+	backlogProgress[index] = 0.35
+end
+local defendBacklogBeforeFarm = Smart.Decide({
+	GameState = {
+		Wave = 10,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = backlogEnemies,
+	LiveProgress = backlogProgress,
+	Slots = completionSlots,
+	Placed = {
+		[1] = {
+			{ GameUnitID = "farm-1", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(10, 0, 45), Data = {} },
+			{ GameUnitID = "farm-2", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(18, 0, 50), Data = {} },
+			{ GameUnitID = "farm-3", Upgrade = 2, MaxUpgrade = 3, CFrame = CFrame.new(26, 0, 55), Data = {} },
+		},
+		[2] = {
+			{ GameUnitID = "damage-1", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 35), Data = {} },
+			{ GameUnitID = "damage-2", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(12, 0, 65), Data = {} },
+		},
+	},
+	PlacementCounts = { Farm = 3, Damage = 2 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	Information = completionInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(defendBacklogBeforeFarm.Context.BacklogCrisis == true, "large live enemy backlog was not recognized")
+assert(
+	defendBacklogBeforeFarm.Kind == "Upgrade" and defendBacklogBeforeFarm.Slot.Index == 2,
+	"planner continued investing in farms while the live enemy backlog required damage"
 )
 
 local routeFreeFarmInformation = {
