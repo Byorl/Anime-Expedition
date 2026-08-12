@@ -1146,7 +1146,7 @@ return function(Import)
 				local result = ctx.Results and select(1, ctx.Results:Snapshot()) or nil
 				if type(result) == "table" then
 					if state.Telemetry and state.Telemetry.Active then
-						local outcome = result.Victory == true and "Victory" or result.Defeat == true and "Defeat" or result.Result or "Match complete"
+						local outcome = result.Victory == true and "Victory" or "Defeat"
 						local saved, path, telemetryError = state.Telemetry:Finalize(outcome, result)
 						if saved == false then notify(ctx, state, "telemetry_write", telemetryError) end
 						state.LastTelemetryPath = path

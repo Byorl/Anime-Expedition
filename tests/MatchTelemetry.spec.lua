@@ -1,3 +1,17 @@
+local guid = 0
+game = {
+	PlaceId = 84515722934860,
+	JobId = "test-job",
+	GetService = function(_, name)
+		assert(name == "HttpService", "unexpected service " .. tostring(name))
+		return {
+			GenerateGUID = function()
+				guid = guid + 1
+				return "00000000-0000-0000-0000-" .. string.format("%012d", guid)
+			end,
+		}
+	end,
+}
 local Telemetry = rbxmk.loadFile("src/Core/MatchTelemetry.lua")()()
 local writes = {}
 local fileSystem = {
@@ -38,7 +52,7 @@ recorder:Event("ActionAttempt", { Kind = "Place", Slot = 1 })
 local ok, path = recorder:Finalize("Victory", { Victory = true, Rewards = { Gold = 100 } })
 assert(ok and type(path) == "string", "telemetry did not finalize")
 local output = writes[path]
-assert(output and output.Schema == 1 and output.Outcome == "Victory", "telemetry output metadata is invalid")
+assert(output and output.Schema == 2 and output.Outcome == "Victory", "telemetry output metadata is invalid")
 assert(output.Scenario.Mode == "Raid" and output.Scenario.Act == "Act 3", "scenario was not recorded")
 assert(#output.Route.Paths == 1 and #output.Route.Paths[1] == 2, "path geometry was not recorded")
 assert(#output.Samples == 1 and output.Samples[1].Yen == 1200, "economy sample was not recorded")
@@ -46,6 +60,12 @@ assert(output.Samples[1].PlayerPosition[1] == 3, "player position was not record
 assert(output.Samples[1].RenderedEnemies[1].Position[3] == 40, "rendered enemy position was not recorded")
 assert(output.Samples[1].Placed[1].Position[1] == 10, "unit placement position was not recorded")
 assert(#output.Events >= 4, "planner and action events were not recorded")
+local plannerEvent
+for _, event in ipairs(output.Events) do
+	if event.Kind == "PlannerDecision" then plannerEvent = event break end
+end
+assert(plannerEvent and plannerEvent.Data.Decision.Slot.Index == 1, "compact planner decision lost its slot")
+assert(plannerEvent.Data.Decision.Path == nil, "planner decision duplicated full route geometry")
 assert(recorder.Active == nil, "finished telemetry remained active")
 assert(string.find(recorder:Status(), "match_", 1, true), "saved telemetry filename is not exposed")
 print("Match telemetry tests passed")

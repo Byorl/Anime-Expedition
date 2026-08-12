@@ -189,6 +189,59 @@ return function()
 		return result
 	end
 
+	local decisionContextKeys = {
+		"Scenario", "Mode", "Map", "Act", "Difficulty", "Wave", "MaxWave", "RemainingWaves",
+		"Yen", "Spendable", "NextCost", "ReservePercent", "Spacing", "BaseHealth", "BaseMaxHealth",
+		"HealthRatio", "EnemyCount", "TotalHealth", "MaxProgress", "AverageProgress", "BacklineEnemies",
+		"Pressure", "Emergency", "RecentLeak", "CalmFor", "RouteConfident", "RouteCoverage", "Boss",
+		"ModifierSummary", "ModifierDamagePressure", "ModifierCoverageBoost", "ModifierRedundancy",
+		"ModifierStunRisk", "ModifierSpeed", "ModifierSpawn", "NoFarms", "ResistanceSummary",
+	}
+
+	local function compactContext(context)
+		local result = {}
+		for _, key in ipairs(decisionContextKeys) do
+			local value = type(context) == "table" and context[key] or nil
+			if value ~= nil then result[key] = copy(value, 3, 180) end
+		end
+		return result
+	end
+
+	local function compactDecision(decision)
+		if type(decision) ~= "table" then return nil end
+		local slot = decision.Slot or type(decision.Preview) == "table" and decision.Preview.Slot
+		local stats = decision.Stats or type(decision.Preview) == "table" and decision.Preview.Stats
+		local preview = type(decision.Preview) == "table" and decision.Preview or nil
+		return {
+			Kind = decision.Kind,
+			Reason = decision.Reason,
+			Cost = rounded(tonumber(decision.Cost)),
+			Score = rounded(tonumber(decision.Score)),
+			Role = decision.Role or preview and preview.Role,
+			Slot = slot and { Index = slot.Index, Name = slot.Name, Asset = slot.Asset },
+			GameUnitID = decision.Unit and decision.Unit.GameUnitID,
+			Count = decision.Count or preview and preview.Count,
+			Cap = decision.Cap or preview and preview.Cap,
+			Percent = decision.Percent or preview and preview.Percent,
+			Spacing = decision.Spacing or preview and preview.Spacing,
+			CombatPower = rounded(tonumber(decision.CombatPower)),
+			CombatGain = rounded(tonumber(decision.CombatGain)),
+			CurrentPower = rounded(tonumber(decision.CurrentPower)),
+			NextPower = rounded(tonumber(decision.NextPower)),
+			RangeUptime = rounded(tonumber(decision.RangeUptime)),
+			MarginalCoverage = rounded(tonumber(decision.MarginalCoverage)),
+			PaybackWaves = rounded(tonumber(decision.PaybackWaves)),
+			CompletesFarm = decision.CompletesFarm,
+			Stats = stats and {
+				Cost = rounded(tonumber(stats.Cost)), Damage = rounded(tonumber(stats.Damage)),
+				SPA = rounded(tonumber(stats.SPA)), Range = rounded(tonumber(stats.Range)),
+				Farm = rounded(tonumber(stats.Farm)), Element = stats.Element, Archetype = stats.Archetype,
+				HitboxType = stats.HitboxType, HitboxSize = rounded(tonumber(stats.HitboxSize)),
+			} or nil,
+			Context = compactContext(decision.Context),
+		}
+	end
+
 	local function scenario(snapshot)
 		local state = type(snapshot) == "table" and snapshot.GameState or {}
 		local parameters = type(state.Parameters) == "table" and state.Parameters or {}
@@ -246,8 +299,8 @@ return function()
 		self.LastPath = string.format("%s/match_%d_%s.json", folder, now, guid)
 		local paths = compactPaths(snapshot.Paths)
 		self.Active = {
-			Schema = 1,
-			RecorderVersion = "1.0",
+			Schema = 2,
+			RecorderVersion = "1.1",
 			HubVersion = self.Build and self.Build.Version or nil,
 			StartedAt = now,
 			EndedAt = nil,
@@ -261,6 +314,10 @@ return function()
 				Confident = snapshot.RouteConfident == true,
 			},
 			Loadout = compactSlots(snapshot.Slots),
+			InitialState = {
+				GameParameters = copy(type(snapshot.GameState) == "table" and snapshot.GameState.Parameters, 4, 500),
+				GameModifiers = copy(type(snapshot.ModifierState) == "table" and snapshot.ModifierState.GameModifiers, 4, 500),
+			},
 			Limits = { SampleInterval = self.SampleInterval, MaxSamples = self.MaxSamples, MaxEnemiesPerSample = 140 },
 			Samples = {},
 			RouteRevisions = {},
@@ -314,9 +371,13 @@ return function()
 			Enemies = compactEnemies(snapshot.Enemies),
 			RenderedEnemies = compactEnemies(snapshot.RenderedEnemies),
 			Placed = compactPlaced(snapshot.Placed),
-			GameState = copy(snapshot.GameState, 4, 1200),
-			PlayerState = copy(snapshot.PlayerState, 4, 900),
-			Modifiers = copy(snapshot.ModifierState, 5, 1600),
+			GameState = {
+				Gamemode = gameState.Gamemode or gameState.GameMode,
+				Difficulty = gameState.Difficulty,
+				MapName = gameState.MapName,
+				ActName = gameState.ActName or gameState.StageName,
+			},
+			Modifiers = copy(type(snapshot.ModifierState) == "table" and snapshot.ModifierState.GameModifiers, 4, 500),
 		})
 		if #self.Active.Samples % 30 == 0 then self:RequestFlush() end
 		return true
@@ -336,7 +397,7 @@ return function()
 		local now = os.clock()
 		if key == self.LastDecisionKey and now - self.LastDecisionAt < 2 then return end
 		self.LastDecisionKey, self.LastDecisionAt = key, now
-		self:Event("PlannerDecision", { Decision = decision, ResolvedPlacement = resolvedCFrame })
+		self:Event("PlannerDecision", { Decision = compactDecision(decision), ResolvedPlacement = resolvedCFrame })
 	end
 
 	function MatchTelemetry:Flush()

@@ -1161,7 +1161,8 @@ return function(Import)
 		end
 		local needsDefense = combatPlaced == 0
 			or (context.BacklineEnemies > 0 or context.RecentLeak) and routeCoverage < minimumCoverage
-		local coverageCrisis = (context.BacklineEnemies > 0 or context.RecentLeak)
+		local coverageCrisis = context.BacklineEnemies > 0
+			and context.MaxProgress >= 0.72
 			and routeCoverage < minimumCoverage
 		local baselineShort = combatPlaced == 0
 		local forceDeployment = #deployment > 0
@@ -1191,14 +1192,12 @@ return function(Import)
 			and farmPlaced < farmTarget
 			and farmCapacitySafe
 			and combatPlaced >= 1
-			and routeCoverage >= math.min(coverageGoal, 0.14)
 			and economySafe
 			and economyWindow
 		local farmPlacementComplete = farmTarget > 0 and farmPlaced >= farmTarget
 		local farmUpgradeOpening = farmPlacementComplete
 			and #profitableFarmUpgrades > 0
 			and combatPlaced >= math.min(requiredCombat, 2)
-			and routeCoverage >= math.min(coverageGoal, 0.28)
 			and economySafe
 			and context.RemainingWaves >= 2
 		local hardDefenseCrisis = baselineShort or coverageCrisis
@@ -1210,7 +1209,6 @@ return function(Import)
 			and #deployment > 0
 		local fastFarmWindow = farmCapacitySafe
 			and combatPlaced >= 1
-			and routeCoverage >= math.min(coverageGoal, 0.14)
 			and context.HealthRatio >= 0.99
 			and not context.RecentLeak
 			and not context.Emergency
@@ -1221,7 +1219,6 @@ return function(Import)
 		local expandFarm = #farmExpansion > 0
 			and farmCapacitySafe
 			and combatPlaced >= 1
-			and routeCoverage >= math.min(coverageGoal, 0.5)
 			and context.HealthRatio >= 0.99
 			and (context.Pressure < 0.58 or fastFarmWindow)
 			and context.RemainingWaves >= 6

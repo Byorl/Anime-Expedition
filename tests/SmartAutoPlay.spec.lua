@@ -821,6 +821,69 @@ assert(
 	"a profitable final farm tier was abandoned by the old fixed wave cutoff"
 )
 
+local routeFreeFarmInformation = {
+	Units = {
+		Farm = {
+			PlacementLimit = 3,
+			UpgradeInfo = {
+				[0] = { Cost = 550, Farm = 550, HitboxType = "Farm" },
+				[1] = { Cost = 1100, Farm = 1100, HitboxType = "Farm" },
+			},
+		},
+		Carry = {
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 1650, Damage = 2300, SPA = 6, Range = 19, HitboxType = "Circle", HitboxSize = 12 },
+			},
+		},
+	},
+}
+local routeFreeFarmSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "farm" }, ["2"] = { ID = "carry" } } },
+	{ UnitData = { farm = { Asset = "Farm" }, carry = { Asset = "Carry" } } },
+	routeFreeFarmInformation,
+	6
+)
+local completeFarmWithoutCoverage = Smart.Decide({
+	GameState = {
+		Wave = 4, MaxWave = 15, BaseHealth = 3, BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = { { Health = 10000, MaxHealth = 10000, Progress = 0.22 } },
+	LiveProgress = { 0.22 },
+	Slots = routeFreeFarmSlots,
+	Placed = {
+		[1] = { { GameUnitID = "farm-one", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(10, 0, 45), Data = {} } },
+		[2] = { { GameUnitID = "carry-one", Upgrade = 0, MaxUpgrade = 0, CFrame = CFrame.new(200, 0, 35), Data = {} } },
+	},
+	PlacementCounts = { Farm = 1, Carry = 1 },
+	Yen = 550,
+	Path = path,
+	Paths = { path },
+	Information = routeFreeFarmInformation,
+}, {
+	Strategy = "Win", AdaptivePlacement = true, SmartEconomy = true, ReactToEnemies = true,
+})
+assert(
+	completeFarmWithoutCoverage.Kind == "Place" and completeFarmWithoutCoverage.Slot.Index == 1,
+	"safe early farm completion was blocked by a stale route-coverage estimate"
+)
+
+coverageTrap.GameState.Wave = 15
+coverageTrap.GameState.BaseHealth = 3
+coverageTrap.Enemies = {}
+coverageTrap.LiveProgress = {}
+coverageTrap.Yen = 2000
+local staleLeakHistory = { BaseHealth = 3, LastHealthLossAt = 100, LastBacklineAt = 100 }
+local lateUpgradeAfterLeak = Smart.Decide(coverageTrap, {
+	Strategy = "Win", AdaptivePlacement = true, SmartEconomy = true, ReactToEnemies = true,
+	History = staleLeakHistory, Now = 105,
+})
+assert(
+	lateUpgradeAfterLeak.Kind == "Wait" and lateUpgradeAfterLeak.Cost == 4000,
+	"a stale leak flag forced a late weak placement without a live backline threat"
+)
+
 local source = fs.read("src/Modules/AutoPlay.lua", "bin")
 assert(string.find(source, "if state.SmartEnabled then", 1, true), "Smart mode does not override Normal mode")
 assert(
