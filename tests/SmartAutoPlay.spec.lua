@@ -1043,7 +1043,7 @@ for index = 1, 94 do
 	controlledBacklogEnemies[index] = { Health = 4000, MaxHealth = 4000, Progress = 0.43 }
 	controlledBacklogProgress[index] = 0.43
 end
-local finishFarmEngineBeforeBacklogArrives = Smart.Decide({
+local defendDuringBacklogInsteadOfLateFarmCompletion = Smart.Decide({
 	GameState = {
 		Wave = 7,
 		MaxWave = 15,
@@ -1078,15 +1078,14 @@ local finishFarmEngineBeforeBacklogArrives = Smart.Decide({
 	ReactToEnemies = true,
 })
 assert(
-	finishFarmEngineBeforeBacklogArrives.Context.BacklogCrisis == true
-		and finishFarmEngineBeforeBacklogArrives.Context.FarmCompletionWindow == true,
-	"a distant backlog did not open the controlled farm-completion window"
+	defendDuringBacklogInsteadOfLateFarmCompletion.Context.BacklogCrisis == true
+		and defendDuringBacklogInsteadOfLateFarmCompletion.Context.FarmCompletionWindow == false,
+	"a long-payback farm completion remained enabled during a live backlog crisis"
 )
 assert(
-	finishFarmEngineBeforeBacklogArrives.Kind == "Upgrade"
-		and finishFarmEngineBeforeBacklogArrives.Slot.Index == 1
-		and finishFarmEngineBeforeBacklogArrives.CompletesFarm == true,
-	"the planner failed to finish profitable farms while the enemy backlog was still safely distant"
+	defendDuringBacklogInsteadOfLateFarmCompletion.Kind == "Upgrade"
+		and defendDuringBacklogInsteadOfLateFarmCompletion.Slot.Index == 2,
+	"the planner bought a six-wave farm payback while an active enemy backlog required damage"
 )
 
 local mixedCompletionInformation = {
@@ -1132,6 +1131,43 @@ local mixedCompletionSlots = Planner.Slots(
 	},
 	mixedCompletionInformation,
 	6
+)
+local expandBestFarmBeforeSeedingSlowerFarm = Smart.Decide({
+	GameState = {
+		Wave = 1,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = { { Health = 1000, MaxHealth = 1000, Progress = 0.1 } },
+	LiveProgress = { 0.1 },
+	Slots = mixedCompletionSlots,
+	Placed = {
+		[3] = {
+			{ GameUnitID = "damage-1", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 30), Data = {} },
+		},
+	},
+	PlacementCounts = { ShortFarm = 1, Damage = 1 },
+	Yen = 1000,
+	Path = path,
+	Paths = { path },
+	Information = mixedCompletionInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	expandBestFarmBeforeSeedingSlowerFarm.Kind == "Place"
+		and expandBestFarmBeforeSeedingSlowerFarm.Slot.Index == 1,
+	string.format(
+		"the farm opening seeded a slower farm type before expanding the best-payback farm (kind=%s slot=%s reason=%s)",
+		tostring(expandBestFarmBeforeSeedingSlowerFarm.Kind),
+		tostring(expandBestFarmBeforeSeedingSlowerFarm.Slot and expandBestFarmBeforeSeedingSlowerFarm.Slot.Index),
+		tostring(expandBestFarmBeforeSeedingSlowerFarm.Reason)
+	)
 )
 local finishReadyFarmInsteadOfStartingLongChain = Smart.Decide({
 	GameState = {

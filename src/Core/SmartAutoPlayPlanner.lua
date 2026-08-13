@@ -1182,6 +1182,19 @@ return function(Import)
 		table.sort(deployment, compare)
 		table.sort(farmSeed, compare)
 		table.sort(farmExpansion, compare)
+		local farmOpeningChoices = {}
+		for _, placement in ipairs(farmSeed) do
+			table.insert(farmOpeningChoices, placement)
+		end
+		for _, placement in ipairs(farmExpansion) do
+			table.insert(farmOpeningChoices, placement)
+		end
+		table.sort(farmOpeningChoices, function(a, b)
+			if a.PaybackWaves ~= b.PaybackWaves then
+				return a.PaybackWaves < b.PaybackWaves
+			end
+			return compare(a, b)
+		end)
 		table.sort(upgrades, compare)
 		table.sort(farmUpgrades, function(a, b)
 			if a.PaybackWaves ~= b.PaybackWaves then
@@ -1228,7 +1241,7 @@ return function(Import)
 			or math.huge
 		local defenseSlotsNeeded = math.max(0, 1 - combatPlaced)
 		local farmCapacitySafe = openPlacementSlots > defenseSlotsNeeded
-		local preferFarm = #farmSeed > 0
+		local preferFarm = #farmOpeningChoices > 0
 			and farmCapacitySafe
 			and not context.BacklogCrisis
 			and (earlyFarm or not context.Emergency and not context.RecentLeak)
@@ -1268,6 +1281,10 @@ return function(Import)
 			and context.MaxProgress < 0.64
 			and not context.RecentLeak
 			and context.RemainingWaves >= 4
+			and (
+				not (context.Emergency or context.BacklogCrisis)
+				or completingFarmUpgrades[1].PaybackWaves <= 2
+			)
 		context.FarmCompletionWindow = farmCompletionOpening
 		local hardDefenseCrisis = baselineShort or coverageCrisis
 		local secondAnchorNeeded = farmPlacementComplete
@@ -1291,9 +1308,11 @@ return function(Import)
 			and context.RemainingWaves >= 6
 		local choices = {}
 		local economyCommit = false
+		local farmOpeningCommit = false
 		if preferFarm then
-			choices = farmSeed
+			choices = farmOpeningChoices
 			economyCommit = true
+			farmOpeningCommit = true
 		elseif hardDefenseCrisis and forceDeployment then
 			choices = deployment
 		elseif farmPlacementOpening then
@@ -1334,7 +1353,16 @@ return function(Import)
 				end
 			end
 		end
-		table.sort(choices, compare)
+		if farmOpeningCommit then
+			table.sort(choices, function(a, b)
+				if a.PaybackWaves ~= b.PaybackWaves then
+					return a.PaybackWaves < b.PaybackWaves
+				end
+				return compare(a, b)
+			end)
+		else
+			table.sort(choices, compare)
+		end
 		local reservePercent = economyCommit and 0 or automaticReserve(context, strategy)
 		context.ReservePercent = reservePercent
 		context.Yen = math.max(0, number(snapshot.Yen, 0))
