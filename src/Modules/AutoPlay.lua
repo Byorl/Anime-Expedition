@@ -419,7 +419,7 @@ return function(Import)
 		return false
 	end
 
-	local function taggedPlacementCFrame(state, slot, pathPoint, tangent, reservations, spacing, maxPathDistance)
+	local function taggedPlacementCFrame(state, slot, path, pathPoint, tangent, reservations, spacing, maxPathDistance, combatRange)
 		local placementType = type(slot.Info) == "table" and slot.Info.PlacementType or nil
 		local tag = placementType == "Ground" and "GroundPlacement" or "HillPlacement"
 		local map = Workspace:FindFirstChild("Map")
@@ -445,8 +445,9 @@ return function(Import)
 		look = look.Unit
 		local side = Vector3.new(-look.Z, 0, look.X)
 		local offsets = placementType == "Ground"
-			and { -7, 7, -9, 9, -12, 12, -15, 15, -18, 18, -22, 22, -26, 26 }
+			and { -4, 4, -6, 6, -8, 8, -10, 10, -12, 12, -15, 15, -18, 18, -22, 22, -26, 26 }
 			or { -10, 10, -15, 15, -20, 20, -25, 25, -30, 30, -36, 36, -42, 42 }
+		local best, bestScore
 		for _, offset in ipairs(offsets) do
 			local target = pathPoint + side * offset
 			for _, part in ipairs(parts) do
@@ -466,13 +467,21 @@ return function(Import)
 							not overlapsReservation(slot, cframe, reservations, spacing)
 							and isAllowed(state, slot.Asset, cframe)
 						then
-							return cframe
+							if not combatRange then
+								return cframe
+							end
+							local routeCoverage = SmartPlanner.RouteCoverage(path, cframe, combatRange)
+							local score = routeCoverage * 8 - pathDistance / math.max(1, combatRange)
+							if not best or score > bestScore then
+								best = cframe
+								bestScore = score
+							end
 						end
 					end
 				end
 			end
 		end
-		return nil
+		return best
 	end
 
 	local function findPlacement(state, snapshot, choice, options)
@@ -490,7 +499,7 @@ return function(Import)
 		local spacing = tonumber(choice.Spacing) or state.Spacing
 		local combatRange = type(choice.Stats) == "table" and tonumber(choice.Stats.Range) or nil
 		local maxPathDistance = choice.Role ~= "Farm" and combatRange
-			and math.clamp(combatRange * 0.62, 5, 15)
+			and math.clamp(combatRange * 0.48, 4, 10)
 			or nil
 		local reservations = options.Reserved
 		if reservations == nil then
@@ -505,6 +514,7 @@ return function(Import)
 		end
 		local shifts = { 0, -10, 10, -20, 20, -30, 30 }
 		local distances = 16
+		local bestTagged, bestTaggedScore
 		for _, shift in ipairs(shifts) do
 			local percent = math.clamp((choice.Percent or state.PathPosition) + shift, 8, 92)
 			local pathPoint, tangent = Planner.SamplePath(path, percent)
@@ -513,15 +523,29 @@ return function(Import)
 				and taggedPlacementCFrame(
 					state,
 					choice.Slot,
+					path,
 					pathPoint,
 					tangent,
 					reservations,
 					spacing,
-					maxPathDistance
+					maxPathDistance,
+					combatRange
 				)
 			if candidate then
-				return candidate
+				if not combatRange then
+					return candidate
+				end
+				local routeCoverage = SmartPlanner.RouteCoverage(path, candidate, combatRange)
+				local targetPenalty = math.abs(shift) / 300
+				local score = routeCoverage * 8 - targetPenalty
+				if not bestTagged or score > bestTaggedScore then
+					bestTagged = candidate
+					bestTaggedScore = score
+				end
 			end
+		end
+		if bestTagged then
+			return bestTagged
 		end
 		for offset = 0, 47 do
 			local attempt = start + offset
@@ -1110,13 +1134,16 @@ return function(Import)
 			tostring(context.Act or "Unknown"),
 			tostring(context.Difficulty or "Unknown")
 		)
-		state.LastSmartDecision = decision
-		updateSmartLabels(state, decision)
 		local visual = decision.Kind == "Place" and decision or decision.Preview
 		local resolved, placementError
 		if visual and visual.Kind == "Place" then
 			resolved, placementError = findPlacement(state, current, visual)
+			if resolved then
+				SmartPlanner.ReconcilePlacement(decision, resolved)
+			end
 		end
+		state.LastSmartDecision = decision
+		updateSmartLabels(state, decision)
 		updateSmartVisualization(state, decision, resolved)
 		if state.Telemetry then state.Telemetry:Decision(decision, resolved) end
 		if decision.Kind == "Place" then

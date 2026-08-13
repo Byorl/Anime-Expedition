@@ -11,6 +11,26 @@ local path = {
 	Vector3.new(20, 0, 60),
 	Vector3.new(20, 0, 100),
 }
+local honestCoverage = Smart.RouteCoverage(path, CFrame.new(10, 0, 50), 12)
+assert(honestCoverage > 0 and honestCoverage < 0.72, "route coverage retained the fabricated 72% floor")
+local reconciledPlacement = {
+	Kind = "Place",
+	Slot = { Name = "Puppet" },
+	Count = 0,
+	Cap = 2,
+	Path = path,
+	Stats = { Range = 12 },
+	Role = "Damage",
+	CombatPower = 100,
+	ShieldOverlap = 0,
+	Reason = "unreconciled",
+}
+Smart.ReconcilePlacement(reconciledPlacement, CFrame.new(10, 0, 50))
+assert(reconciledPlacement.RangeUptime == honestCoverage, "resolved placement coverage was not reconciled")
+assert(
+	string.find(reconciledPlacement.Reason, "route coverage", 1, true),
+	"resolved placement diagnostics still advertise synthetic range uptime"
+)
 local enemy = {
 	Health = 10000,
 	MaxHealth = 10000,

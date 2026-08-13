@@ -617,6 +617,10 @@ return function(Import)
 		return total > 0 and hits / total or 0
 	end
 
+	function Smart.RouteCoverage(path, cframe, range)
+		return coverage(path, cframe, math.max(0, number(range, 0)))
+	end
+
 	local function unitPosition(unit)
 		local value = unit.CFrame
 		if typeof(value) == "CFrame" then
@@ -855,12 +859,13 @@ return function(Import)
 					end
 					local shieldCoordination = number(context.ShieldRisk, 0)
 						* (1 - number(context.ModifierStunRisk, 0) * 0.55)
+					local coordinatedShieldCoverage = shieldOverlap * clamp(covered / 0.18, 0.15, 1)
 					local score = covered
 						+ marginal * 1.7
 						+ intersection * 0.7
 						+ tactical * 0.45
 						+ rangeUtilization * 0.8
-						+ shieldOverlap * shieldCoordination * 2.4
+						+ coordinatedShieldCoverage * shieldCoordination * 2.4
 						+ separation * context.ModifierStunRisk * 0.65
 					if role ~= "Farm" and rangeRatio > 0.72 then
 						score = score * 0.3
@@ -926,13 +931,10 @@ return function(Import)
 					local economy = base.Farm * math.max(1, context.RemainingWaves)
 					local weights = strategyWeights[strategy]
 					local waveProgress = context.MaxWave > 0 and context.Wave / context.MaxWave or 0
-					local rangeUptime = clamp(
-						0.72 + number(location.RangeUtilization, 0) * 0.18 + math.min(location.RouteCoverage, 0.5) * 0.2,
-						0.72,
-						1
-					)
+					local rangeUptime = clamp(number(location.RouteCoverage, 0), 0, 1)
+					local combatUtilization = clamp(rangeUptime / 0.18, 0.35, 1)
 					local safetyBonus = 1 + math.min(location.MarginalCoverage, 0.45) * 0.2
-					local combatValue = power * weights.Damage * rangeUptime * safetyBonus
+					local combatValue = power * weights.Damage * combatUtilization * safetyBonus
 						+ (role == "Support" and power * 0.2 or 0)
 					local score = impactEfficiency(combatValue, base.Cost)
 						+ economy * weights.Economy / math.max(1, base.Cost)
@@ -979,7 +981,7 @@ return function(Import)
 						Reason = role == "Farm"
 							and string.format("deploy %s with %.1f-wave payback", slot.Name, base.Cost / math.max(1, base.Farm))
 							or string.format(
-								"deploy %s for %.0f effective combat power at %.0f%% expected range uptime%s%s",
+								"deploy %s for %.0f effective combat power with %.0f%% route coverage%s%s",
 								slot.Name,
 								power,
 								rangeUptime * 100,
@@ -993,6 +995,38 @@ return function(Import)
 			end
 		end
 		return choices
+	end
+
+	function Smart.ReconcilePlacement(decision, cframe)
+		local visual = type(decision) == "table" and (decision.Kind == "Place" and decision or decision.Preview) or nil
+		if type(visual) ~= "table" or visual.Kind ~= "Place" or typeof(cframe) ~= "CFrame" then
+			return decision
+		end
+		local stats = type(visual.Stats) == "table" and visual.Stats or {}
+		local range = math.max(0, number(stats.Range, 0))
+		local routeCoverage = coverage(visual.Path, cframe, range)
+		local _, pathDistance = Planner.NearestProgress(visual.Path, cframe.Position)
+		local rangeRatio = clamp(number(pathDistance, range) / math.max(1, range), 0, 2)
+		visual.CFrame = cframe
+		visual.RouteCoverage = routeCoverage
+		visual.RangeUptime = routeCoverage
+		visual.RangeUtilization = rangeRatio < 1 and math.sqrt(math.max(0, 1 - rangeRatio * rangeRatio)) or 0
+		if visual.Role ~= "Farm" then
+			visual.Reason = string.format(
+				"deploy %s for %.0f effective combat power with %.0f%% route coverage%s%s",
+				visual.Slot.Name,
+				number(visual.CombatPower, 0),
+				routeCoverage * 100,
+				visual.Count > 0 and string.format(" (%d/%d)", visual.Count + 1, visual.Cap) or "",
+				number(visual.ShieldOverlap, 0) > 0.2
+					and string.format("; %.0f%% shield kill-zone overlap", visual.ShieldOverlap * 100)
+					or ""
+			)
+			if decision.Kind == "Wait" then
+				decision.Reason = "save yen for " .. visual.Reason
+			end
+		end
+		return decision
 	end
 
 	local function unitStats(slot, unit)
