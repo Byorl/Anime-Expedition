@@ -1223,6 +1223,7 @@ return function(Import)
 		local combatPlaced = 0
 		local farmPlaced = 0
 		local farmTarget = 0
+		local farmSlotCount = 0
 		local routeCoverage = defenseCoverage(snapshot)
 		context.RouteCoverage = routeCoverage
 		if strategy ~= "Economy" then
@@ -1233,6 +1234,7 @@ return function(Import)
 				if role ~= "Farm" then
 					combatPlaced = combatPlaced + count
 				elseif options.SmartEconomy ~= false then
+					farmSlotCount = farmSlotCount + 1
 					farmPlaced = farmPlaced + count
 					farmTarget = farmTarget + smartCap(slot, role, strategy, context, base)
 				end
@@ -1300,6 +1302,7 @@ return function(Import)
 		local profitableFarmUpgrades = {}
 		local fastFarmUpgrades = {}
 		local completingFarmUpgrades = {}
+		local foundationalFarmUpgrades = {}
 		for _, upgrade in ipairs(farmUpgrades) do
 			local paybackShare = upgrade.CompletesFarm and 1 or 0.7
 			if upgrade.PaybackWaves <= context.RemainingWaves * paybackShare then
@@ -1309,6 +1312,9 @@ return function(Import)
 				end
 				if upgrade.PaybackWaves <= 2 then
 					table.insert(fastFarmUpgrades, upgrade)
+				end
+				if upgrade.UpgradeDepth < 0.5 then
+					table.insert(foundationalFarmUpgrades, upgrade)
 				end
 			end
 		end
@@ -1360,6 +1366,17 @@ return function(Import)
 			and combatPlaced >= math.min(requiredCombat, 2)
 			and economySafe
 			and context.RemainingWaves >= 2
+		local farmFoundationOpening = farmPlacementComplete
+			and farmSlotCount == 1
+			and #foundationalFarmUpgrades > 0
+			and combatPlaced >= math.min(requiredCombat, 3)
+			and context.HealthRatio >= 0.99
+			and context.BacklineEnemies == 0
+			and context.MaxProgress < 0.66
+			and not context.Emergency
+			and not context.RecentLeak
+			and context.Wave <= math.max(4, math.floor(context.MaxWave * 0.4))
+			and foundationalFarmUpgrades[1].PaybackWaves + 3 <= context.RemainingWaves
 		local fastFarmUpgradeOpening = farmPlacementComplete
 			and #fastFarmUpgrades > 0
 			and combatPlaced >= math.min(requiredCombat, 3)
@@ -1415,6 +1432,9 @@ return function(Import)
 			economyCommit = true
 		elseif secondAnchorNeeded then
 			choices = deployment
+		elseif farmFoundationOpening then
+			choices = foundationalFarmUpgrades
+			economyCommit = true
 		elseif fastFarmUpgradeOpening then
 			choices = fastFarmUpgrades
 			economyCommit = true
@@ -1437,6 +1457,7 @@ return function(Import)
 			and not expandFarm
 			and not farmPlacementOpening
 			and not secondAnchorNeeded
+			and not farmFoundationOpening
 			and not fastFarmUpgradeOpening
 			and not farmCompletionOpening
 			and not farmUpgradeOpening

@@ -1270,6 +1270,57 @@ assert(
 	"the farm-completion window started a long upgrade chain instead of finishing ready farms"
 )
 
+local soleLongFarmSlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "long" }, ["2"] = { ID = "damage" } } },
+	{ UnitData = { long = { Asset = "LongFarm" }, damage = { Asset = "Damage" } } },
+	mixedCompletionInformation,
+	6
+)
+local earlyLongFarmBacklogEnemies = {}
+local earlyLongFarmBacklogProgress = {}
+for index = 1, 66 do
+	earlyLongFarmBacklogEnemies[index] = { Health = 4000, MaxHealth = 4000, Progress = 0.34 }
+	earlyLongFarmBacklogProgress[index] = 0.34
+end
+local establishSoleLongFarmDuringEarlyBacklog = Smart.Decide({
+	GameState = {
+		Wave = 3,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = earlyLongFarmBacklogEnemies,
+	LiveProgress = earlyLongFarmBacklogProgress,
+	Slots = soleLongFarmSlots,
+	Placed = {
+		[1] = {
+			{ GameUnitID = "long-1", Upgrade = 0, MaxUpgrade = 6, CFrame = CFrame.new(10, 0, 45), Data = {} },
+		},
+		[2] = {
+			{ GameUnitID = "damage-1", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(5, 0, 30), Data = {} },
+			{ GameUnitID = "damage-2", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(12, 0, 55), Data = {} },
+			{ GameUnitID = "damage-3", Upgrade = 0, MaxUpgrade = 1, CFrame = CFrame.new(20, 0, 75), Data = {} },
+		},
+	},
+	PlacementCounts = { LongFarm = 1, Damage = 3 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	Information = mixedCompletionInformation,
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(establishSoleLongFarmDuringEarlyBacklog.Context.BacklogCrisis == true, "early sole-farm backlog was not recognized")
+assert(
+	establishSoleLongFarmDuringEarlyBacklog.Kind == "Upgrade"
+		and establishSoleLongFarmDuringEarlyBacklog.Slot.Index == 1,
+	"the only economy unit was permanently starved by an early high-spawn backlog"
+)
+
 local backlogEnemies = {}
 local backlogProgress = {}
 for index = 1, 120 do
