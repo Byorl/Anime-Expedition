@@ -217,6 +217,7 @@ return function(Import)
 			DamagePressure = 0,
 			Redundancy = 0,
 			StunRisk = 0,
+			ShieldRisk = 0,
 			NoFarms = false,
 		}
 		for name, activeValue in pairs(active) do
@@ -263,6 +264,7 @@ return function(Import)
 			if hasText(key, "shield") or hasText(key, "barrier") then
 				profile.DamagePressure = profile.DamagePressure + 0.16
 				profile.PressureBonus = profile.PressureBonus + 0.03
+				profile.ShieldRisk = math.max(profile.ShieldRisk, clamp(modifierValue(activeValue, 5) / 5, 0.35, 1))
 			end
 			if hasText(key, "regen") or hasText(key, "tank") then
 				profile.DamagePressure = profile.DamagePressure + 0.18
@@ -315,6 +317,7 @@ return function(Import)
 		local healthRatio = baseMax > 0 and baseHealth / baseMax or 0
 		local enemyCount, totalHealth, totalMaxHealth = 0, 0, 0
 		local maxProgress, speedPressure, shieldPressure, specialPressure = 0, 0, 0, 0
+		local shieldedEnemies = 0
 		local backlineEnemies, progressTotal = 0, 0
 		local resistanceSums, resistanceWeights = {}, {}
 		local boss = false
@@ -332,7 +335,9 @@ return function(Import)
 				local speed = number(enemy.Speed, number(enemy.DefaultSpeed, 1))
 				local defaultSpeed = math.max(0.01, number(enemy.DefaultSpeed, speed))
 				speedPressure = speedPressure + math.max(0, speed / defaultSpeed - 1)
-				shieldPressure = shieldPressure + math.max(0, number(enemy.Shield, number(enemy.Shields, 0)))
+				local shield = math.max(0, number(enemy.Shield, number(enemy.Shields, 0)))
+				shieldPressure = shieldPressure + shield
+				shieldedEnemies = shieldedEnemies + (shield > 0 and 1 or 0)
 				local modifiers, dangerous = modifierCount(enemy.Modifiers)
 				specialPressure = specialPressure + modifiers * 0.03 + (dangerous and 0.12 or 0)
 				local enemyType = enemy.Type or enemy.Asset or enemy.Name
@@ -379,6 +384,8 @@ return function(Import)
 			end
 		end
 		local countPressure = clamp(enemyCount * modifiers.SpawnMultiplier / 100, 0, 1)
+		local liveShieldRisk = clamp(shieldedEnemies / math.max(1, enemyCount) * 2, 0, 1)
+		local shieldRisk = math.max(modifiers.ShieldRisk, liveShieldRisk)
 		local expectedActiveEnemies = math.max(24, 18 + wave * 6)
 		local backlogRatio = enemyCount / expectedActiveEnemies
 		local backlogPressure = clamp((backlogRatio - 0.8) / 1.2, 0, 1)
@@ -432,8 +439,11 @@ return function(Import)
 			ModifierDamagePressure = modifiers.DamagePressure,
 			ModifierRedundancy = modifiers.Redundancy,
 			ModifierStunRisk = modifiers.StunRisk,
+			ModifierShieldRisk = modifiers.ShieldRisk,
 			ModifierSpeed = modifiers.SpeedMultiplier,
 			ModifierSpawn = modifiers.SpawnMultiplier,
+			ShieldedEnemies = shieldedEnemies,
+			ShieldRisk = shieldRisk,
 			ResistanceMultipliers = resistanceMultipliers,
 			ResistanceSummary = #resistanceSummary > 0 and table.concat(resistanceSummary, ", ") or "None",
 			NoFarms = modifiers.NoFarms,
@@ -700,6 +710,48 @@ return function(Import)
 		return target
 	end
 
+	local function shieldKillZoneOverlap(snapshot, path, cframe, range, context)
+		if number(context.ShieldRisk, 0) <= 0 or type(path) ~= "table" or #path < 2 then
+			return 0
+		end
+		local defenders, strongest = {}, 0
+		for _, slot in ipairs(snapshot.Slots) do
+			for _, unit in ipairs(snapshot.Placed[slot.Index] or {}) do
+				local stats = currentUnitStats(slot, unit)
+				if Smart.Role(slot, stats) ~= "Farm" then
+					local position = unitPosition(unit)
+					if position then
+						local power = combatPower(stats, context)
+						strongest = math.max(strongest, power)
+						table.insert(defenders, { Position = position, Range = stats.Range, Power = power })
+					end
+				end
+			end
+		end
+		if strongest <= 0 then
+			return 0
+		end
+		local overlap, samples = 0, 0
+		for percent = 4, 96, 4 do
+			local point = Planner.SamplePath(path, percent)
+			if point then
+				local candidateDelta = Vector3.new(point.X - cframe.Position.X, 0, point.Z - cframe.Position.Z)
+				if candidateDelta.Magnitude <= range then
+					samples = samples + 1
+					local strongestCoverage = 0
+					for _, defender in ipairs(defenders) do
+						local delta = Vector3.new(point.X - defender.Position.X, 0, point.Z - defender.Position.Z)
+						if delta.Magnitude <= defender.Range then
+							strongestCoverage = math.max(strongestCoverage, math.sqrt(defender.Power / strongest))
+						end
+					end
+					overlap = overlap + strongestCoverage
+				end
+			end
+		end
+		return overlap / math.max(1, samples)
+	end
+
 	local function smartCap(slot, role, strategy, context, stats)
 		local intrinsic = slot.PlacementLimit
 		if intrinsic == math.huge then
@@ -784,6 +836,7 @@ return function(Import)
 						end
 					end
 					local tactical = 1 - math.min(1, math.abs(percent - target) / 60)
+					local shieldOverlap = shieldKillZoneOverlap(snapshot, path, cframe, base.Range, context)
 					local separation = 1
 					if context.ModifierStunRisk > 0 then
 						local nearest = math.huge
@@ -800,11 +853,14 @@ return function(Import)
 							separation = clamp(nearest / math.max(10, base.Range * 0.75), 0.2, 1)
 						end
 					end
+					local shieldCoordination = number(context.ShieldRisk, 0)
+						* (1 - number(context.ModifierStunRisk, 0) * 0.55)
 					local score = covered
 						+ marginal * 1.7
 						+ intersection * 0.7
 						+ tactical * 0.45
 						+ rangeUtilization * 0.8
+						+ shieldOverlap * shieldCoordination * 2.4
 						+ separation * context.ModifierStunRisk * 0.65
 					if role ~= "Farm" and rangeRatio > 0.72 then
 						score = score * 0.3
@@ -821,6 +877,7 @@ return function(Import)
 							RouteCoverage = covered,
 							MarginalCoverage = marginal,
 							RangeUtilization = rangeUtilization,
+							ShieldOverlap = shieldOverlap,
 							Stats = base,
 							Role = role,
 						}
@@ -918,14 +975,18 @@ return function(Import)
 						MarginalCoverage = location.MarginalCoverage,
 						PaybackWaves = role == "Farm" and base.Cost / math.max(1, base.Farm) or math.huge,
 						RangeUtilization = location.RangeUtilization,
+						ShieldOverlap = location.ShieldOverlap,
 						Reason = role == "Farm"
 							and string.format("deploy %s with %.1f-wave payback", slot.Name, base.Cost / math.max(1, base.Farm))
 							or string.format(
-								"deploy %s for %.0f effective combat power at %.0f%% expected range uptime%s",
+								"deploy %s for %.0f effective combat power at %.0f%% expected range uptime%s%s",
 								slot.Name,
 								power,
 								rangeUptime * 100,
-								current > 0 and string.format(" (%d/%d)", current + 1, cap) or ""
+								current > 0 and string.format(" (%d/%d)", current + 1, cap) or "",
+								number(location.ShieldOverlap, 0) > 0.2
+									and string.format("; %.0f%% shield kill-zone overlap", location.ShieldOverlap * 100)
+									or ""
 							),
 					})
 				end

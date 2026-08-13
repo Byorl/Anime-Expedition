@@ -679,8 +679,45 @@ assert(
 	"Resistance and Shielded were not recognized as damage-demand modifiers"
 )
 assert(
+	modifierCarry.Context.ShieldRisk > 0 and modifierCarry.Context.ModifierShieldRisk > 0,
+	"persistent shield modifiers were not exposed as a coordinated-placement risk"
+)
+assert(
 	modifierCarry.Kind == "Upgrade" and modifierCarry.Slot.Index == 1,
 	"modifier-heavy late planning spread yen into another shallow placement instead of concentrating carry damage"
+)
+
+local shieldCoordination = Smart.Decide({
+	GameState = {
+		Wave = 8, MaxWave = 15, BaseHealth = 3, BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Trial", Difficulty = "Hard" },
+	},
+	Enemies = { { Health = 40000, MaxHealth = 40000, Progress = 0.4, Shield = 5 } },
+	LiveProgress = { 0.4 },
+	Slots = modifierCarrySlots,
+	Placed = {
+		[1] = {
+			{
+				GameUnitID = "carry", Upgrade = 1, MaxUpgrade = 1,
+				CFrame = Planner.Candidate(path, 60, 6, 1, 0), Data = {},
+			},
+		},
+		[2] = {},
+	},
+	PlacementCounts = { Carry = 1 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	ModifierState = { GameModifiers = { Shielded = 5 } },
+	Information = modifierCarryInformation,
+}, {
+	Strategy = "Win", AdaptivePlacement = true, SmartEconomy = true, ReactToEnemies = true,
+})
+assert(
+	shieldCoordination.Kind == "Place"
+		and shieldCoordination.Slot.Index == 2
+		and shieldCoordination.ShieldOverlap > 0.5,
+	"a shielded lane did not place follow-up damage inside the carry's kill zone"
 )
 
 local strongBackupInformation = {
@@ -1417,5 +1454,6 @@ assert(string.find(source, "enrichSlotStats", 1, true), "profile-adjusted unit s
 assert(string.find(plannerSource, "defenseCoverage", 1, true), "placed-unit route coverage is not re-evaluated")
 assert(string.find(plannerSource, "MarginalCoverage", 1, true), "new placements ignore already covered path sections")
 assert(string.find(plannerSource, "impactEfficiency", 1, true), "combat spending does not favor concentrated impact")
+assert(string.find(plannerSource, "shieldKillZoneOverlap", 1, true), "shielded enemies do not create coordinated kill zones")
 
 print("Smart Auto Play tests passed")

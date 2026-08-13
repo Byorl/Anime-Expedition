@@ -249,7 +249,8 @@ return function()
 		"ExpectedActiveEnemies", "BacklogRatio", "BacklogPressure", "BacklogCrisis",
 		"Pressure", "Emergency", "RecentLeak", "CalmFor", "RouteConfident", "RouteCoverage", "Boss",
 		"ModifierSummary", "ModifierDamagePressure", "ModifierCoverageBoost", "ModifierRedundancy",
-		"ModifierStunRisk", "ModifierSpeed", "ModifierSpawn", "NoFarms", "ResistanceSummary",
+		"ModifierStunRisk", "ModifierShieldRisk", "ModifierSpeed", "ModifierSpawn", "ShieldedEnemies",
+		"ShieldRisk", "NoFarms", "ResistanceSummary",
 	}
 
 	local function compactContext(context)
@@ -284,6 +285,7 @@ return function()
 			NextPower = rounded(tonumber(decision.NextPower)),
 			RangeUptime = rounded(tonumber(decision.RangeUptime)),
 			MarginalCoverage = rounded(tonumber(decision.MarginalCoverage)),
+			ShieldOverlap = rounded(tonumber(decision.ShieldOverlap)),
 			PaybackWaves = rounded(tonumber(decision.PaybackWaves)),
 			CompletesFarm = decision.CompletesFarm,
 			Stats = stats and {
