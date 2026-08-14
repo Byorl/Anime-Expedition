@@ -535,9 +535,14 @@ return function(Import)
 				if not combatRange then
 					return candidate
 				end
-				local routeCoverage = SmartPlanner.RouteCoverage(path, candidate, combatRange)
-				local targetPenalty = math.abs(shift) / 300
-				local score = routeCoverage * 8 - targetPenalty
+				local score = SmartPlanner.PlacementResolutionScore(
+					path,
+					candidate,
+					combatRange,
+					choice.Percent or state.PathPosition,
+					choice.MaxUsefulProgress,
+					choice.LiveProgress
+				)
 				if not bestTagged or score > bestTaggedScore then
 					bestTagged = candidate
 					bestTaggedScore = score
@@ -547,6 +552,7 @@ return function(Import)
 		if bestTagged then
 			return bestTagged
 		end
+		local bestFallback, bestFallbackScore, bestFallbackAttempt
 		for offset = 0, 47 do
 			local attempt = start + offset
 			local percent = math.clamp(
@@ -571,12 +577,33 @@ return function(Import)
 					and not overlapsReservation(choice.Slot, candidate, reservations, spacing)
 					and isAllowed(state, choice.Slot.Asset, candidate)
 				then
-					if recordRetry then
-						state.PlaceRetries[choice.Slot.Index] = attempt
+					if not combatRange then
+						if recordRetry then
+							state.PlaceRetries[choice.Slot.Index] = attempt
+						end
+						return candidate
 					end
-					return candidate
+					local score = SmartPlanner.PlacementResolutionScore(
+						path,
+						candidate,
+						combatRange,
+						choice.Percent or state.PathPosition,
+						choice.MaxUsefulProgress,
+						choice.LiveProgress
+					)
+					if not bestFallback or score > bestFallbackScore then
+						bestFallback = candidate
+						bestFallbackScore = score
+						bestFallbackAttempt = attempt
+					end
 				end
 			end
+		end
+		if bestFallback then
+			if recordRetry then
+				state.PlaceRetries[choice.Slot.Index] = bestFallbackAttempt
+			end
+			return bestFallback
 		end
 		if recordRetry then
 			state.PlaceRetries[choice.Slot.Index] = (start + 48) % (#shifts * distances)

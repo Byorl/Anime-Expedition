@@ -192,6 +192,95 @@ local snapshot = {
 	Path = path,
 	Paths = { path },
 }
+local bossWaveContext = Smart.Context(
+	{
+		Wave = 5,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Mastery", MapName = "King's Tomb", Difficulty = "Hard" },
+	},
+	{ { Health = 1000, MaxHealth = 1000, Progress = 0.12 } },
+	path,
+	{ 0.12 },
+	true,
+	{ GameModifiers = { BossWaves = true } }
+)
+assert(bossWaveContext.Boss and not bossWaveContext.LiveBoss, "Boss Waves was mistaken for a boss currently on the lane")
+local activeFrontDecision = Smart.Decide({
+	GameState = {
+		Wave = 5,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Mastery", MapName = "King's Tomb", Difficulty = "Hard" },
+	},
+	Enemies = { { Health = 1000, MaxHealth = 1000, Progress = 0.12 } },
+	LiveProgress = { 0.12 },
+	Slots = { slots[2] },
+	Placed = { [2] = {} },
+	Yen = 1000,
+	Path = path,
+	Paths = { path },
+	ModifierState = { GameModifiers = { BossWaves = true } },
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(activeFrontDecision.Kind == "Place", "active-front placement regression did not produce a deployment")
+assert(
+	activeFrontDecision.Percent <= activeFrontDecision.MaxUsefulProgress * 100 + 0.001,
+	"Boss Waves placed combat beyond the live engagement frontier"
+)
+local nearFront = Planner.Candidate(path, activeFrontDecision.Percent, 6, 1, 0)
+local deadBackline = Planner.Candidate(path, 80, 6, 1, 0)
+assert(
+	Smart.PlacementResolutionScore(
+		path,
+		nearFront,
+		activeFrontDecision.Stats.Range,
+		activeFrontDecision.Percent,
+		activeFrontDecision.MaxUsefulProgress,
+		activeFrontDecision.LiveProgress
+	) > Smart.PlacementResolutionScore(
+		path,
+		deadBackline,
+		activeFrontDecision.Stats.Range,
+		activeFrontDecision.Percent,
+		activeFrontDecision.MaxUsefulProgress,
+		activeFrontDecision.LiveProgress
+	),
+	"physical placement scoring still prefers an unused backline over the planned combat zone"
+)
+local realBacklineDecision = Smart.Decide({
+	GameState = {
+		Wave = 10,
+		MaxWave = 15,
+		BaseHealth = 2,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Mastery", MapName = "King's Tomb", Difficulty = "Hard" },
+	},
+	Enemies = { { Health = 1000, MaxHealth = 1000, Progress = 0.84 } },
+	LiveProgress = { 0.84 },
+	Slots = { slots[2] },
+	Placed = { [2] = {} },
+	Yen = 1000,
+	Path = path,
+	Paths = { path },
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	realBacklineDecision.Kind == "Place"
+		and realBacklineDecision.MaxUsefulProgress == 1
+		and realBacklineDecision.Percent >= 70,
+	"real backline pressure no longer overrides the live engagement frontier"
+)
 local unresolved = Smart.Decide({
 	GameState = snapshot.GameState,
 	Enemies = {},
@@ -1526,5 +1615,7 @@ assert(string.find(plannerSource, "defenseCoverage", 1, true), "placed-unit rout
 assert(string.find(plannerSource, "MarginalCoverage", 1, true), "new placements ignore already covered path sections")
 assert(string.find(plannerSource, "impactEfficiency", 1, true), "combat spending does not favor concentrated impact")
 assert(string.find(plannerSource, "shieldKillZoneOverlap", 1, true), "shielded enemies do not create coordinated kill zones")
+assert(string.find(plannerSource, "usefulCombatFrontier", 1, true), "placement does not track the active combat frontier")
+assert(string.find(source, "PlacementResolutionScore", 1, true), "physical placement can drift away from its planned combat zone")
 
 print("Smart Auto Play tests passed")

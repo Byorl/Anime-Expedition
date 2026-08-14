@@ -319,6 +319,7 @@ return function(Import)
 		local maxProgress, speedPressure, shieldPressure, specialPressure = 0, 0, 0, 0
 		local shieldedEnemies = 0
 		local backlineEnemies, progressTotal = 0, 0
+		local observedProgress = {}
 		local resistanceSums, resistanceWeights = {}, {}
 		local boss = false
 		for _, enemy in pairs(type(enemies) == "table" and enemies or {}) do
@@ -329,6 +330,7 @@ return function(Import)
 				totalHealth = totalHealth + health
 				totalMaxHealth = totalMaxHealth + maximum
 				local progress = routeReady and pathProgress(enemy, path) or 0
+				table.insert(observedProgress, progress)
 				maxProgress = math.max(maxProgress, progress)
 				progressTotal = progressTotal + progress
 				backlineEnemies = backlineEnemies + (progress >= 0.72 and 1 or 0)
@@ -376,8 +378,10 @@ return function(Import)
 		table.sort(resistanceSummary)
 		if routeReady and type(liveProgress) == "table" and #liveProgress > 0 then
 			maxProgress, progressTotal, backlineEnemies = 0, 0, 0
+			observedProgress = {}
 			for _, progress in ipairs(liveProgress) do
 				progress = clamp(number(progress, 0), 0, 1)
+				table.insert(observedProgress, progress)
 				maxProgress = math.max(maxProgress, progress)
 				progressTotal = progressTotal + progress
 				backlineEnemies = backlineEnemies + (progress >= 0.72 and 1 or 0)
@@ -399,7 +403,8 @@ return function(Import)
 		local scenarioFactor = difficultyFactor(difficulty)
 		local actNumber = tonumber(string.match(tostring(act), "%d+") or "") or 1
 		scenarioFactor = scenarioFactor * (1 + math.max(0, actNumber - 1) * 0.04)
-		boss = boss or modifiers.BossWaves == true
+		local liveBoss = boss
+		boss = liveBoss or modifiers.BossWaves == true
 		local pressure = (
 			progressPressure * 0.5
 			+ averageProgress ^ 1.35 * 0.12
@@ -428,11 +433,13 @@ return function(Import)
 			MaxProgress = maxProgress,
 			AverageProgress = averageProgress,
 			BacklineEnemies = backlineEnemies,
+			LiveProgress = routeReady and observedProgress or {},
 			RouteConfident = routeReady,
 			BaseHealth = baseHealth,
 			BaseMaxHealth = baseMax,
 			HealthRatio = healthRatio,
 			Boss = boss,
+			LiveBoss = liveBoss,
 			Modifiers = modifiers.Names,
 			ModifierSummary = modifiers.Summary,
 			ModifierCoverageBoost = modifiers.CoverageBoost,
@@ -617,8 +624,74 @@ return function(Import)
 		return total > 0 and hits / total or 0
 	end
 
+	local function routeLength(path)
+		local _, _, total = Planner.SamplePath(path, 50)
+		return math.max(0, number(total, 0))
+	end
+
+	local function liveEngagement(path, cframe, range, liveProgress)
+		if type(path) ~= "table" or #path < 2 or not cframe or type(liveProgress) ~= "table" or #liveProgress == 0 then
+			return 0
+		end
+		local length = routeLength(path)
+		local lead = length > 0 and clamp(range / length * 0.45, 0.02, 0.08) or 0.04
+		local hits, samples = 0, 0
+		for _, rawProgress in ipairs(liveProgress) do
+			local progress = clamp(number(rawProgress, 0), 0, 1)
+			for _, sampleProgress in ipairs({ progress, clamp(progress + lead, 0, 1) }) do
+				local point = Planner.SamplePath(path, sampleProgress * 100)
+				if point then
+					samples = samples + 1
+					local flat = Vector3.new(point.X - cframe.Position.X, 0, point.Z - cframe.Position.Z)
+					if flat.Magnitude <= range then
+						hits = hits + 1
+					end
+				end
+			end
+		end
+		return samples > 0 and hits / samples or 0
+	end
+
+	local function usefulCombatFrontier(path, range, context)
+		if
+			context.ReactToEnemies == false
+			or context.RouteConfident == false
+			or context.EnemyCount <= 0
+			or context.BacklineEnemies > 0
+			or context.RecentLeak
+		then
+			return 1
+		end
+		local length = routeLength(path)
+		if length <= 0 then
+			return 1
+		end
+		local rangeProgress = range / length
+		return clamp(context.MaxProgress + rangeProgress * 1.25 + 0.035, 0.2, 0.92)
+	end
+
 	function Smart.RouteCoverage(path, cframe, range)
 		return coverage(path, cframe, math.max(0, number(range, 0)))
+	end
+
+	function Smart.PlacementResolutionScore(path, cframe, range, targetPercent, maxUsefulProgress, liveProgress)
+		range = math.max(1, number(range, 1))
+		local progress, pathDistance = Planner.NearestProgress(path, cframe and cframe.Position)
+		if progress == nil then
+			return -math.huge
+		end
+		local routeCoverage = coverage(path, cframe, range)
+		local engagement = liveEngagement(path, cframe, range, liveProgress)
+		local target = clamp(number(targetPercent, 50) / 100, 0.01, 0.99)
+		local score = routeCoverage * 8
+			+ engagement * 3
+			- math.abs(progress - target) * 12
+			- clamp(number(pathDistance, range) / range, 0, 2)
+		maxUsefulProgress = tonumber(maxUsefulProgress)
+		if maxUsefulProgress and maxUsefulProgress < 1 and progress > maxUsefulProgress then
+			score = score - 3 - (progress - maxUsefulProgress) * 30
+		end
+		return score
 	end
 
 	local function unitPosition(unit)
@@ -686,7 +759,7 @@ return function(Import)
 		if role == "Farm" then
 			return { 50, 35, 65 }
 		end
-		if strategy == "Boss" or context.Boss then
+		if strategy == "Boss" or context.LiveBoss then
 			return { 70, 80, 60, 50, 40, 30, 20, 90 }
 		end
 		return { 20, 30, 40, 50, 60, 70, 80, 90 }
@@ -814,11 +887,12 @@ return function(Import)
 		local target = tacticalTarget(role, ordinal, context)
 		local best
 		for _, path in ipairs(snapshot.Paths) do
+			local maxUsefulProgress = role ~= "Farm" and usefulCombatFrontier(path, base.Range, context) or 1
 			for _, percent in ipairs(placementPercentages(role, context, strategy)) do
 				local cframe = Planner.Candidate(path, percent, spacing, ordinal, 0)
 				if cframe then
 					local covered = coverage(path, cframe, base.Range)
-					local _, pathDistance = Planner.NearestProgress(path, cframe.Position)
+					local candidateProgress, pathDistance = Planner.NearestProgress(path, cframe.Position)
 					local rangeRatio = clamp(pathDistance / math.max(1, base.Range), 0, 2)
 					local rangeUtilization = rangeRatio < 1 and math.sqrt(math.max(0, 1 - rangeRatio * rangeRatio)) or 0
 					local marginal, samples = 0, 0
@@ -840,6 +914,9 @@ return function(Import)
 						end
 					end
 					local tactical = 1 - math.min(1, math.abs(percent - target) / 60)
+					local engagement = role ~= "Farm" and context.ReactToEnemies ~= false
+						and liveEngagement(path, cframe, base.Range, context.LiveProgress)
+						or 0
 					local shieldOverlap = shieldKillZoneOverlap(snapshot, path, cframe, base.Range, context)
 					local separation = 1
 					if context.ModifierStunRisk > 0 then
@@ -865,10 +942,19 @@ return function(Import)
 						+ intersection * 0.7
 						+ tactical * 0.45
 						+ rangeUtilization * 0.8
+						+ engagement * 2.5
 						+ coordinatedShieldCoverage * shieldCoordination * 2.4
 						+ separation * context.ModifierStunRisk * 0.65
 					if role ~= "Farm" and rangeRatio > 0.72 then
 						score = score * 0.3
+					end
+					if
+						role ~= "Farm"
+						and maxUsefulProgress < 1
+						and number(candidateProgress, 1) > maxUsefulProgress
+					then
+						local overrun = candidateProgress - maxUsefulProgress
+						score = score * clamp(0.42 - overrun * 2.5, 0.06, 0.42)
 					end
 					if role == "Farm" then
 						score = 1
@@ -883,6 +969,8 @@ return function(Import)
 							MarginalCoverage = marginal,
 							RangeUtilization = rangeUtilization,
 							ShieldOverlap = shieldOverlap,
+							LiveEngagement = engagement,
+							MaxUsefulProgress = maxUsefulProgress,
 							Stats = base,
 							Role = role,
 						}
@@ -978,6 +1066,9 @@ return function(Import)
 						PaybackWaves = role == "Farm" and base.Cost / math.max(1, base.Farm) or math.huge,
 						RangeUtilization = location.RangeUtilization,
 						ShieldOverlap = location.ShieldOverlap,
+						LiveEngagement = location.LiveEngagement,
+						LiveProgress = context.ReactToEnemies ~= false and context.LiveProgress or {},
+						MaxUsefulProgress = location.MaxUsefulProgress,
 						Reason = role == "Farm"
 							and string.format("deploy %s with %.1f-wave payback", slot.Name, base.Cost / math.max(1, base.Farm))
 							or string.format(
@@ -1197,11 +1288,13 @@ return function(Import)
 			snapshot.ModifierState or snapshot.GameModifiers,
 			snapshot.Information
 		)
+		context.ReactToEnemies = options.ReactToEnemies ~= false
 		updateHistory(context, options.History, options.Now)
 		if options.ReactToEnemies == false then
 			context.Pressure = 0.25
 			context.Emergency = false
 			context.Boss = false
+			context.LiveBoss = false
 		end
 		if type(snapshot.Paths) ~= "table" or #snapshot.Paths == 0 then
 			context.ReservePercent = 100
