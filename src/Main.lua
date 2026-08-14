@@ -102,6 +102,9 @@ return function(Import)
 		if self.Session then
 			self.Session:Destroy()
 		end
+		if self.Game then
+			self.Game:Destroy()
+		end
 		if self.UIManager then
 			self.UIManager:Destroy()
 		end
@@ -232,6 +235,7 @@ return function(Import)
 		Runtime:Shutdown("game binding startup failure")
 		error("Anime Expeditions could not initialize the current game's replicated bindings:\n" .. tostring(Adapter.Error))
 	end
+	Runtime.Game = Adapter
 	local Join = JoinCoordinator.new(Runtime, Adapter)
 	Join:SetSuspended(true)
 	Runtime.Join = Join

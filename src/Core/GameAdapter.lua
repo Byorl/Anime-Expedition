@@ -44,12 +44,14 @@ return function(Import)
 		local dependenciesInstance = waitForChild(fusionPackage, "Dependencies", deadline)
 		local fusionInstance = waitForChild(fusionPackage, "Fusion", deadline)
 		local actionsInstance = waitForChild(fusionPackage, "Actions", deadline)
+		local stateInstance = waitForChild(fusionPackage, "State", deadline)
 		local nodes, nodesError = loadModule(nodesInstance, "ReplicatedStorage.Nodes")
 		local dependencies, dependenciesError =
 			loadModule(dependenciesInstance, "FusionPackage.Dependencies")
 		local fusion, fusionError =
 			loadModule(fusionInstance, "FusionPackage.Fusion")
 		local actions, actionsError = loadModule(actionsInstance, "FusionPackage.Actions")
+		local stateLibrary, stateError = loadModule(stateInstance, "FusionPackage.State")
 		local fusionPeek = type(fusion) == "table" and fusion.peek or nil
 		local peekError
 		if type(fusionPeek) ~= "function" and fusionInstance then
@@ -86,10 +88,54 @@ return function(Import)
 		self.Fusion = fusion
 		self.FusionPeek = fusionPeek
 		self.Actions = actions
+		self.StateLibrary = stateLibrary
+		self.ResultStateError = stateError
 		self.ReplicaClient =
 			select(1, loadModule(shared and shared:FindFirstChild("ReplicaClient"), "Shared.ReplicaClient"))
 		self.Ready = true
 		return self
+	end
+
+	function GameAdapter:ResultData()
+		if not self.Ready then
+			return nil, self.Error
+		end
+		if self.ResultState == nil then
+			if type(self.StateLibrary) ~= "table" or type(self.Fusion.scoped) ~= "function" then
+				return nil, self.ResultStateError or "Fusion ResultData access is unavailable"
+			end
+			local scope
+			local ok, stateOrError = xpcall(function()
+				scope = self.Fusion.scoped(self.Fusion, self.StateLibrary)
+				if type(scope) ~= "table" or type(scope.GetState) ~= "function" then
+					error("Fusion state scope does not expose GetState")
+				end
+				return scope:GetState("ResultData")
+			end, Util.Traceback)
+			if not ok then
+				if scope and type(scope.doCleanup) == "function" then
+					pcall(scope.doCleanup, scope)
+				end
+				self.ResultStateError = tostring(stateOrError)
+				return nil, self.ResultStateError
+			end
+			self.ResultScope = scope
+			self.ResultState = stateOrError
+		end
+		local result = self:DeepPeek(self.ResultState, 8)
+		if type(result) ~= "table" then
+			return nil, "ResultData is empty"
+		end
+		return result
+	end
+
+	function GameAdapter:Destroy()
+		local scope = self.ResultScope
+		self.ResultScope = nil
+		self.ResultState = nil
+		if scope and type(scope.doCleanup) == "function" then
+			pcall(scope.doCleanup, scope)
+		end
 	end
 
 	function GameAdapter:Peek(value)

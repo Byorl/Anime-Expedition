@@ -51,6 +51,7 @@ end
 
 local nodeCallbacks = {}
 local disconnects = 0
+local resultState
 local ResultsHub = Import("ResultsHub")
 local hub = ResultsHub.new({
 	Connect = function(_, name, callback)
@@ -60,6 +61,9 @@ local hub = ResultsHub.new({
 				disconnects = disconnects + 1
 			end,
 		}
+	end,
+	ResultData = function()
+		return resultState
 	end,
 })
 local receivedRuns
@@ -88,11 +92,26 @@ assert(current.Victory == true and runs == 1 and revision == 1 and not visible, 
 nodeCallbacks.SHOW_END_SCREEN()
 current, runs, revision, visible = hub:Snapshot()
 assert(current.Victory == true and visible, "visible result screen was not tracked")
+nodeCallbacks.HIDE_END_SCREEN()
+resultState = {
+	Victory = true,
+	Gamemode = "TowerOfGod",
+	MapName = "FlowerForest",
+	ActName = "Floor 2",
+}
+nodeCallbacks.SHOW_END_SCREEN()
+current, runs, revision, visible = hub:Snapshot()
+assert(
+	current.Gamemode == "TowerOfGod" and runs == 2 and revision == 2 and visible,
+	"Tower result screen did not recover and publish the shared ResultData payload"
+)
+assert(receivedRuns == 2, "Tower fallback did not dispatch webhook subscribers")
+deliveryDone(false)
 unsubscribe()
 unsubscribeProbe()
 unsubscribeDelivery()
 nodeCallbacks.SET_END_PARAMETERS({ Victory = true })
-assert(receivedRuns == 1 and hub.Runs == 2, "results hub unsubscribe failed")
+assert(receivedRuns == 2 and hub.Runs == 3, "results hub unsubscribe failed")
 nodeCallbacks.HIDE_END_SCREEN()
 assert(hub:Snapshot() == nil, "hidden result screen was not cleared")
 hub:Destroy()

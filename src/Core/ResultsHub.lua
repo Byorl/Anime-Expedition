@@ -3,6 +3,33 @@ return function(Import)
 	local ResultsHub = {}
 	ResultsHub.__index = ResultsHub
 
+	function ResultsHub:_Publish(result)
+		if not self.Alive or type(result) ~= "table" then return false end
+		self.Runs = self.Runs + 1
+		self.Revision = self.Revision + 1
+		for revision in pairs(self.Deliveries) do
+			if revision < self.Revision - 2 then self.Deliveries[revision] = nil end
+		end
+		self.Deliveries[self.Revision] = { StartedAt = os.clock(), Pending = {} }
+		self.Current = result
+		self.Visible = false
+		self.ReadyAt = os.clock() + 3.25
+		local completions = {}
+		for name, subscriber in pairs(self.Subscribers) do
+			if subscriber.Delivery then
+				completions[name] = self:BeginDelivery(name, self.Revision)
+			end
+		end
+		for name, subscriber in pairs(self.Subscribers) do
+			local ok, callbackError = xpcall(function()
+				subscriber.Callback(result, self.Runs, self.Revision, completions[name])
+			end, Util.Traceback)
+			if not ok and completions[name] then completions[name](false) end
+			if not ok then Util.Warn("result subscriber " .. tostring(name) .. " failed: " .. tostring(callbackError)) end
+		end
+		return true
+	end
+
 	function ResultsHub.new(gameAdapter)
 		local self = setmetatable({
 			Alive = true,
@@ -15,31 +42,13 @@ return function(Import)
 			StartedAt = os.clock(),
 		}, ResultsHub)
 		local resultConnection, resultError = gameAdapter:Connect("SET_END_PARAMETERS", function(result)
-			if not self.Alive or type(result) ~= "table" then return end
-			self.Runs = self.Runs + 1
-			self.Revision = self.Revision + 1
-			for revision in pairs(self.Deliveries) do
-				if revision < self.Revision - 2 then self.Deliveries[revision] = nil end
-			end
-			self.Deliveries[self.Revision] = { StartedAt = os.clock(), Pending = {} }
-			self.Current = result
-			self.Visible = false
-			self.ReadyAt = os.clock() + 3.25
-			local completions = {}
-			for name, subscriber in pairs(self.Subscribers) do
-				if subscriber.Delivery then
-					completions[name] = self:BeginDelivery(name, self.Revision)
-				end
-			end
-			for name, subscriber in pairs(self.Subscribers) do
-				local ok, callbackError = xpcall(function()
-					subscriber.Callback(result, self.Runs, self.Revision, completions[name])
-				end, Util.Traceback)
-				if not ok and completions[name] then completions[name](false) end
-				if not ok then Util.Warn("result subscriber " .. tostring(name) .. " failed: " .. tostring(callbackError)) end
-			end
+			self:_Publish(result)
 		end)
 		local showConnection, showError = gameAdapter:Connect("SHOW_END_SCREEN", function()
+			if self.Alive and not self.Current and type(gameAdapter.ResultData) == "function" then
+				local result = gameAdapter:ResultData()
+				self:_Publish(result)
+			end
 			if self.Alive and self.Current then
 				self.Visible = true
 				self.ReadyAt = os.clock() + 0.25
