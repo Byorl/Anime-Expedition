@@ -829,6 +829,51 @@ assert(
 	"a shielded lane did not place follow-up damage inside the carry's kill zone"
 )
 
+local shieldBacklog = {}
+local shieldBacklogProgress = {}
+for index = 1, 67 do
+	shieldBacklog[index] = {
+		Health = 12000,
+		MaxHealth = 12000,
+		Progress = 0.62,
+		Shield = 5,
+	}
+	shieldBacklogProgress[index] = 0.62
+end
+local shieldInterception = Smart.Decide({
+	GameState = {
+		Wave = 5, MaxWave = 15, BaseHealth = 3, BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Challenge", Difficulty = "Hard" },
+	},
+	Enemies = shieldBacklog,
+	LiveProgress = shieldBacklogProgress,
+	Slots = modifierCarrySlots,
+	Placed = {
+		[1] = {
+			{
+				GameUnitID = "carry", Upgrade = 1, MaxUpgrade = 1,
+				CFrame = Planner.Candidate(path, 40, 6, 1, 0), Data = {},
+			},
+		},
+		[2] = {},
+	},
+	PlacementCounts = { Carry = 1 },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+	ModifierState = { GameModifiers = { Shielded = 5, Speedy = 47 } },
+	Information = modifierCarryInformation,
+}, {
+	Strategy = "Win", AdaptivePlacement = true, SmartEconomy = true, ReactToEnemies = true,
+})
+assert(
+	shieldInterception.Kind == "Place"
+		and shieldInterception.Slot.Index == 2
+		and shieldInterception.Percent >= 60
+		and shieldInterception.ShieldInterceptionTarget ~= nil,
+	"an advancing shield backlog stacked follow-up damage in the breached first kill zone"
+)
+
 local strongBackupInformation = {
 	Units = {
 		Carry = {
@@ -1615,6 +1660,7 @@ assert(string.find(plannerSource, "defenseCoverage", 1, true), "placed-unit rout
 assert(string.find(plannerSource, "MarginalCoverage", 1, true), "new placements ignore already covered path sections")
 assert(string.find(plannerSource, "impactEfficiency", 1, true), "combat spending does not favor concentrated impact")
 assert(string.find(plannerSource, "shieldKillZoneOverlap", 1, true), "shielded enemies do not create coordinated kill zones")
+assert(string.find(plannerSource, "shieldInterception", 1, true), "advancing shields do not create a downstream interception layer")
 assert(string.find(plannerSource, "usefulCombatFrontier", 1, true), "placement does not track the active combat frontier")
 assert(string.find(source, "PlacementResolutionScore", 1, true), "physical placement can drift away from its planned combat zone")
 
