@@ -381,9 +381,10 @@ assert(
 	"smart combat placement is not bounded by usable unit range around the selected path"
 )
 assert(
-	string.find(source, "SmartPlanner.RouteCoverage", 1, true)
+	string.find(source, "SmartPlanner.PlacementResolutionScore", 1, true)
+		and string.find(source, "choice.CarryShare", 1, true)
 		and string.find(source, "SmartPlanner.ReconcilePlacement", 1, true),
-	"resolved placement candidates are not ranked and reported by real route coverage"
+	"resolved placement candidates are not ranked by the live firing window and reconciled with the planner"
 )
 assert(Planner.RouteVote(0, 0.8, 0.79) < 0, "reverse route movement was not detected")
 assert(Planner.RouteVote(0, 0.2, 0.21) > 0, "forward route movement was not detected")

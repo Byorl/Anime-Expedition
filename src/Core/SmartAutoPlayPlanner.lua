@@ -613,6 +613,10 @@ return function(Import)
 		return math.max(0, value) / math.max(1, cost) ^ 0.92
 	end
 
+	local function placementImpactEfficiency(value, cost)
+		return math.max(0, value) / math.max(1, cost) ^ 0.76
+	end
+
 	local function coverage(path, cframe, range)
 		if type(path) ~= "table" or #path < 2 or not cframe then
 			return 0
@@ -667,13 +671,87 @@ return function(Import)
 			enemyCount > 0 and projectedHits / enemyCount or 0
 	end
 
+	local function liveFront(liveProgress)
+		local front
+		for _, rawProgress in ipairs(type(liveProgress) == "table" and liveProgress or {}) do
+			local progress = clamp(number(rawProgress, 0), 0, 1)
+			front = front and math.max(front, progress) or progress
+		end
+		return front
+	end
+
+	local function attackWindowMetrics(path, cframe, range, liveProgress)
+		local front = liveFront(liveProgress)
+		if type(path) ~= "table" or #path < 2 or not cframe or range <= 0 then
+			return 0, nil, nil, 1, false, front
+		end
+		local windows = {}
+		local windowStart
+		for percent = 1, 99 do
+			local point = Planner.SamplePath(path, percent)
+			local inside = false
+			if point then
+				local flat = Vector3.new(point.X - cframe.Position.X, 0, point.Z - cframe.Position.Z)
+				inside = flat.Magnitude <= range
+			end
+			if inside and not windowStart then
+				windowStart = percent / 100
+			elseif not inside and windowStart then
+				table.insert(windows, { Start = windowStart, Finish = (percent - 1) / 100 })
+				windowStart = nil
+			end
+		end
+		if windowStart then
+			table.insert(windows, { Start = windowStart, Finish = 0.99 })
+		end
+		if #windows == 0 then
+			return 0, nil, nil, 1, false, front
+		end
+		if front == nil then
+			local selected = windows[#windows]
+			return 0.5, selected.Start, selected.Finish, 0, false, nil
+		end
+		local best
+		for _, window in ipairs(windows) do
+			local width = math.max(0.01, window.Finish - window.Start)
+			local quality, traversal, preContact
+			if front < window.Start - 0.005 then
+				local gap = window.Start - front
+				quality = clamp(1 - gap / 0.4, 0.35, 1)
+				traversal = 0
+				preContact = true
+			elseif front <= window.Finish then
+				traversal = clamp((front - window.Start) / width, 0, 1)
+				quality = clamp((1 - traversal) * 0.24, 0.015, 0.24)
+				preContact = false
+			else
+				quality = 0
+				traversal = 1
+				preContact = false
+			end
+			if
+				not best
+				or quality > best.Quality + 0.0001
+				or (math.abs(quality - best.Quality) <= 0.0001 and window.Start < best.Start)
+			then
+				best = {
+					Quality = quality,
+					Start = window.Start,
+					Finish = window.Finish,
+					Traversal = traversal,
+					PreContact = preContact,
+				}
+			end
+		end
+		return best.Quality, best.Start, best.Finish, best.Traversal, best.PreContact, front
+	end
+
 	local function usefulCombatFrontier(path, range, context)
 		if
 			context.ReactToEnemies == false
 			or context.RouteConfident == false
 			or context.EnemyCount <= 0
 			or context.BacklineEnemies > 0
-			or context.RecentLeak
 		then
 			return 1
 		end
@@ -689,19 +767,41 @@ return function(Import)
 		return coverage(path, cframe, math.max(0, number(range, 0)))
 	end
 
-	function Smart.PlacementResolutionScore(path, cframe, range, targetPercent, maxUsefulProgress, liveProgress)
+	function Smart.PlacementResolutionScore(
+		path,
+		cframe,
+		range,
+		targetPercent,
+		maxUsefulProgress,
+		liveProgress,
+		carryShare
+	)
 		range = math.max(1, number(range, 1))
+		carryShare = clamp(number(carryShare, 0), 0, 1)
 		local progress, pathDistance = Planner.NearestProgress(path, cframe and cframe.Position)
 		if progress == nil then
 			return -math.huge
 		end
 		local routeCoverage = coverage(path, cframe, range)
 		local engagement = liveEngagement(path, cframe, range, liveProgress)
+		local interception, _, windowEnd, traversal, preContact, front = attackWindowMetrics(
+			path,
+			cframe,
+			range,
+			liveProgress
+		)
 		local target = clamp(number(targetPercent, 50) / 100, 0.01, 0.99)
 		local score = routeCoverage * 8
-			+ engagement * 3
+			+ engagement * 1.5
+			+ interception * (7 + carryShare * 8)
 			- math.abs(progress - target) * 12
 			- clamp(number(pathDistance, range) / range, 0, 2)
+		if front ~= nil and not preContact then
+			score = score - (4 + carryShare * 8) - traversal * (7 + carryShare * 9)
+			if windowEnd and windowEnd < front then
+				score = score - 18 - carryShare * 12
+			end
+		end
 		maxUsefulProgress = tonumber(maxUsefulProgress)
 		if maxUsefulProgress and maxUsefulProgress < 1 and progress > maxUsefulProgress then
 			score = score - 3 - (progress - maxUsefulProgress) * 30
@@ -755,6 +855,25 @@ return function(Import)
 		return false
 	end
 
+	local function pointCoveragePower(snapshot, point, context)
+		local strongest = 0
+		for _, slot in ipairs(snapshot.Slots) do
+			for _, unit in ipairs(snapshot.Placed[slot.Index] or {}) do
+				local stats = currentUnitStats(slot, unit)
+				if Smart.Role(slot, stats) ~= "Farm" then
+					local position = unitPosition(unit)
+					if position then
+						local flat = Vector3.new(point.X - position.X, 0, point.Z - position.Z)
+						if flat.Magnitude <= stats.Range then
+							strongest = math.max(strongest, combatPower(stats, context))
+						end
+					end
+				end
+			end
+		end
+		return strongest
+	end
+
 	local function defenseCoverage(snapshot)
 		local path = snapshot.Path
 		if type(path) ~= "table" or #path < 2 then
@@ -775,9 +894,9 @@ return function(Import)
 			return { 50, 35, 65 }
 		end
 		if strategy == "Boss" or context.LiveBoss then
-			return { 70, 80, 60, 50, 40, 30, 20, 90 }
+			return { 70, 75, 80, 85, 60, 65, 50, 55, 40, 45, 30, 35, 20, 25, 90 }
 		end
-		return { 20, 30, 40, 50, 60, 70, 80, 90 }
+		return { 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90 }
 	end
 
 	local function tacticalTarget(role, ordinal, context)
@@ -787,11 +906,8 @@ return function(Import)
 		if context.BacklineEnemies > 0 then
 			return 86
 		end
-		if context.RecentLeak then
-			return 76
-		end
 		local targets = { 48, 58, 38, 66, 30, 72 }
-		local combatOrdinal = math.max(1, ordinal - 1)
+		local combatOrdinal = math.max(1, ordinal)
 		local target = targets[(combatOrdinal - 1) % #targets + 1]
 		if number(context.ModifierSpeed, 1) > 1 then
 			target = math.min(82, target + clamp((context.ModifierSpeed - 1) * 35, 4, 14))
@@ -928,15 +1044,17 @@ return function(Import)
 		return clamp(math.floor(reserve + 0.5), 0, 28)
 	end
 
-	local function bestPlacement(slot, snapshot, ordinal, context, strategy, spacing)
+	local function bestPlacement(slot, snapshot, placementOrdinal, combatOrdinal, context, strategy, spacing, carryShare)
 		local base = upgradeStats(slot, 0)
 		local role = Smart.Role(slot, base)
-		local target = tacticalTarget(role, ordinal, context)
+		local target = tacticalTarget(role, combatOrdinal, context)
+		local candidatePower = combatPower(base, context)
+		carryShare = clamp(number(carryShare, 0), 0, 1)
 		local best
 		for _, path in ipairs(snapshot.Paths) do
 			local maxUsefulProgress = role ~= "Farm" and usefulCombatFrontier(path, base.Range, context) or 1
 			for _, percent in ipairs(placementPercentages(role, context, strategy)) do
-				local cframe = Planner.Candidate(path, percent, spacing, ordinal, 0)
+				local cframe = Planner.Candidate(path, percent, spacing, placementOrdinal, 0)
 				if cframe then
 					local covered = coverage(path, cframe, base.Range)
 					local candidateProgress, pathDistance = Planner.NearestProgress(path, cframe.Position)
@@ -948,8 +1066,9 @@ return function(Import)
 						if point then
 							samples = samples + 1
 							local flat = Vector3.new(point.X - cframe.Position.X, 0, point.Z - cframe.Position.Z)
-							if flat.Magnitude <= base.Range and not pointCovered(snapshot, path, point) then
-								marginal = marginal + 1
+							if flat.Magnitude <= base.Range then
+								local existingPower = pointCoveragePower(snapshot, point, context)
+								marginal = marginal + 1 - clamp(existingPower / math.max(1, candidatePower), 0, 1)
 							end
 						end
 					end
@@ -962,6 +1081,8 @@ return function(Import)
 					end
 					local tactical = 1 - math.min(1, math.abs(percent - target) / 60)
 					local engagement, currentEngagement, projectedEngagement = 0, 0, 0
+					local interception, attackWindowStart, attackWindowEnd, attackWindowTraversal, preContact, liveFrontProgress =
+						0, nil, nil, 0, false, nil
 					if role ~= "Farm" and context.ReactToEnemies ~= false then
 						engagement, currentEngagement, projectedEngagement = liveEngagement(
 							path,
@@ -969,6 +1090,8 @@ return function(Import)
 							base.Range,
 							context.LiveProgress
 						)
+						interception, attackWindowStart, attackWindowEnd, attackWindowTraversal, preContact, liveFrontProgress =
+							attackWindowMetrics(path, cframe, base.Range, context.LiveProgress)
 					end
 					local shieldOverlap = shieldKillZoneOverlap(snapshot, path, cframe, base.Range, context)
 					local shieldIntercept, shieldInterceptTarget, shieldInterceptPreContact = 0, nil, false
@@ -1006,12 +1129,19 @@ return function(Import)
 						+ intersection * 0.7
 						+ tactical * 0.45
 						+ rangeUtilization * 0.8
-						+ (shieldBreach and projectedEngagement * 1.4 - currentEngagement * 5 or engagement * 2.5)
+						+ (shieldBreach and projectedEngagement * 1.4 - currentEngagement * 5 or engagement * 1.2)
+						+ interception * (2.6 + carryShare * 5.4)
 						+ coordinatedShieldCoverage * shieldCoordination * shieldOverlapWeight
 						+ shieldIntercept * shieldCoordination * (shieldBreach and 4.6 or 0)
 						+ separation * context.ModifierStunRisk * 0.65
 					if shieldBreach and not shieldInterceptPreContact then
 						score = score - 4.5
+					end
+					if role ~= "Farm" and liveFrontProgress ~= nil and not preContact then
+						score = score - (1.8 + carryShare * 5.5) - attackWindowTraversal * (2.5 + carryShare * 5)
+						if attackWindowEnd and attackWindowEnd < liveFrontProgress then
+							score = score - 12
+						end
 					end
 					if role ~= "Farm" and rangeRatio > 0.72 then
 						score = score * 0.3
@@ -1043,6 +1173,12 @@ return function(Import)
 							LiveEngagement = engagement,
 							CurrentLiveEngagement = currentEngagement,
 							ProjectedLiveEngagement = projectedEngagement,
+							AttackWindowQuality = interception,
+							AttackWindowStart = attackWindowStart,
+							AttackWindowEnd = attackWindowEnd,
+							AttackWindowTraversal = attackWindowTraversal,
+							PreContact = preContact,
+							LiveFrontProgress = liveFrontProgress,
 							MaxUsefulProgress = maxUsefulProgress,
 							Stats = base,
 							Role = role,
@@ -1057,13 +1193,24 @@ return function(Import)
 	local function placementChoices(snapshot, context, strategy, options)
 		local choices = {}
 		local ordinal = Planner.TotalPlacementCount(snapshot.Slots, snapshot.Placed, snapshot.PlacementCounts)
+		local combatOrdinal = 0
+		local strongestPower = 0
 		local globalCap = tonumber(snapshot.PlacementCap)
 		if globalCap and ordinal >= globalCap then
 			return choices
 		end
 		for _, slot in ipairs(snapshot.Slots) do
 			local base = upgradeStats(slot, 0)
+			if Smart.Role(slot, base) ~= "Farm" then
+				strongestPower = math.max(strongestPower, combatPower(base, context))
+				combatOrdinal = combatOrdinal + Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
+			end
+		end
+		for _, slot in ipairs(snapshot.Slots) do
+			local base = upgradeStats(slot, 0)
 			local role = Smart.Role(slot, base)
+			local power = combatPower(base, context)
+			local carryShare = role ~= "Farm" and clamp(power / math.max(1, strongestPower), 0, 1) or 0
 			local current = Planner.PlacementCount(slot, snapshot.Placed, snapshot.PlacementCounts)
 			local cap = smartCap(slot, role, strategy, context, base)
 			local spacing = automaticSpacing(slot, context)
@@ -1073,6 +1220,8 @@ return function(Import)
 					local path = snapshot.Paths[1]
 					local cframe = path and Planner.Candidate(path, 50, spacing, ordinal + 1, 0)
 					if cframe then
+						local attackWindowQuality, attackWindowStart, attackWindowEnd, attackWindowTraversal, preContact, liveFrontProgress =
+							attackWindowMetrics(path, cframe, base.Range, context.LiveProgress)
 						location = {
 							Path = path,
 							Percent = 50,
@@ -1080,15 +1229,29 @@ return function(Import)
 							Coverage = 1,
 							RouteCoverage = 1,
 							MarginalCoverage = 1,
+							AttackWindowQuality = attackWindowQuality,
+							AttackWindowStart = attackWindowStart,
+							AttackWindowEnd = attackWindowEnd,
+							AttackWindowTraversal = attackWindowTraversal,
+							PreContact = preContact,
+							LiveFrontProgress = liveFrontProgress,
 							Stats = base,
 							Role = role,
 						}
 					end
 				else
-					location = bestPlacement(slot, snapshot, ordinal + 1, context, strategy, spacing)
+					location = bestPlacement(
+						slot,
+						snapshot,
+						ordinal + 1,
+						combatOrdinal + 1,
+						context,
+						strategy,
+						spacing,
+						carryShare
+					)
 				end
 				if location then
-					local power = combatPower(base, context)
 					local economy = base.Farm * math.max(1, context.RemainingWaves)
 					local weights = strategyWeights[strategy]
 					local waveProgress = context.MaxWave > 0 and context.Wave / context.MaxWave or 0
@@ -1097,7 +1260,22 @@ return function(Import)
 					local safetyBonus = 1 + math.min(location.MarginalCoverage, 0.45) * 0.2
 					local combatValue = power * weights.Damage * combatUtilization * safetyBonus
 						+ (role == "Support" and power * 0.2 or 0)
-					local score = impactEfficiency(combatValue, base.Cost)
+					local carryQuality = role == "Farm" and 1 or 0.72 + math.sqrt(carryShare) * 0.62
+					local attackWindowFactor = 1
+					if role ~= "Farm" and #context.LiveProgress > 0 then
+						if location.PreContact then
+							attackWindowFactor = 0.85 + 0.35 * number(location.AttackWindowQuality, 0)
+						else
+							attackWindowFactor = clamp(
+								0.3 - 0.22 * number(location.AttackWindowTraversal, 1),
+								0.08,
+								0.35
+							)
+						end
+					end
+					local score = placementImpactEfficiency(combatValue, base.Cost)
+						* carryQuality
+						* attackWindowFactor
 						+ economy * weights.Economy / math.max(1, base.Cost)
 					local matchupPriority = role ~= "Farm" and matchupPriorityMultiplier(base, context) or 1
 					score = score * matchupPriority
@@ -1133,6 +1311,7 @@ return function(Import)
 						Role = role,
 						Stats = base,
 						CombatPower = power,
+						CarryShare = carryShare,
 						MatchupPriority = matchupPriority,
 						RangeUptime = rangeUptime,
 						MarginalCoverage = location.MarginalCoverage,
@@ -1145,12 +1324,18 @@ return function(Import)
 						LiveEngagement = location.LiveEngagement,
 						CurrentLiveEngagement = location.CurrentLiveEngagement,
 						ProjectedLiveEngagement = location.ProjectedLiveEngagement,
+						AttackWindowQuality = location.AttackWindowQuality,
+						AttackWindowStart = location.AttackWindowStart,
+						AttackWindowEnd = location.AttackWindowEnd,
+						AttackWindowTraversal = location.AttackWindowTraversal,
+						PreContact = location.PreContact,
+						LiveFrontProgress = location.LiveFrontProgress,
 						LiveProgress = context.ReactToEnemies ~= false and context.LiveProgress or {},
 						MaxUsefulProgress = location.MaxUsefulProgress,
 						Reason = role == "Farm"
 							and string.format("deploy %s with %.1f-wave payback", slot.Name, base.Cost / math.max(1, base.Farm))
 							or string.format(
-								"deploy %s for %.0f effective combat power with %.0f%% route coverage%s%s%s",
+								"deploy %s for %.0f effective combat power with %.0f%% route coverage%s%s%s%s",
 								slot.Name,
 								power,
 								rangeUptime * 100,
@@ -1160,7 +1345,15 @@ return function(Import)
 									or "",
 								location.ShieldInterceptionTarget
 									and string.format("; shield interception at %.0f%%", location.ShieldInterceptionTarget * 100)
-									or ""
+									or "",
+								location.PreContact and location.AttackWindowStart
+									and string.format("; intercepts before contact at %.0f%%", location.AttackWindowStart * 100)
+									or (location.LiveFrontProgress ~= nil
+										and string.format(
+											"; live firing window already %.0f%% traversed",
+											number(location.AttackWindowTraversal, 1) * 100
+										)
+										or "")
 							),
 					})
 				end
@@ -1179,13 +1372,21 @@ return function(Import)
 		local routeCoverage = coverage(visual.Path, cframe, range)
 		local _, pathDistance = Planner.NearestProgress(visual.Path, cframe.Position)
 		local rangeRatio = clamp(number(pathDistance, range) / math.max(1, range), 0, 2)
+		local attackWindowQuality, attackWindowStart, attackWindowEnd, attackWindowTraversal, preContact, liveFrontProgress =
+			attackWindowMetrics(visual.Path, cframe, range, visual.LiveProgress)
 		visual.CFrame = cframe
 		visual.RouteCoverage = routeCoverage
 		visual.RangeUptime = routeCoverage
 		visual.RangeUtilization = rangeRatio < 1 and math.sqrt(math.max(0, 1 - rangeRatio * rangeRatio)) or 0
+		visual.AttackWindowQuality = attackWindowQuality
+		visual.AttackWindowStart = attackWindowStart
+		visual.AttackWindowEnd = attackWindowEnd
+		visual.AttackWindowTraversal = attackWindowTraversal
+		visual.PreContact = preContact
+		visual.LiveFrontProgress = liveFrontProgress
 		if visual.Role ~= "Farm" then
 			visual.Reason = string.format(
-				"deploy %s for %.0f effective combat power with %.0f%% route coverage%s%s%s",
+				"deploy %s for %.0f effective combat power with %.0f%% route coverage%s%s%s%s",
 				visual.Slot.Name,
 				number(visual.CombatPower, 0),
 				routeCoverage * 100,
@@ -1195,7 +1396,15 @@ return function(Import)
 					or "",
 				visual.ShieldInterceptionTarget
 					and string.format("; shield interception at %.0f%%", visual.ShieldInterceptionTarget * 100)
-					or ""
+					or "",
+				preContact and attackWindowStart
+					and string.format("; intercepts before contact at %.0f%%", attackWindowStart * 100)
+					or (liveFrontProgress ~= nil
+						and string.format(
+							"; live firing window already %.0f%% traversed",
+							attackWindowTraversal * 100
+						)
+						or "")
 			)
 			if decision.Kind == "Wait" then
 				decision.Reason = "save yen for " .. visual.Reason
@@ -1403,7 +1612,7 @@ return function(Import)
 		local farmSlotCount = 0
 		local routeCoverage = defenseCoverage(snapshot)
 		context.RouteCoverage = routeCoverage
-		if strategy ~= "Economy" then
+		if strategy ~= "Economy" or options.SmartEconomy ~= false then
 			for _, slot in ipairs(snapshot.Slots) do
 				local base = upgradeStats(slot, 0)
 				local role = Smart.Role(slot, base)

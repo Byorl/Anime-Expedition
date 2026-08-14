@@ -419,7 +419,21 @@ return function(Import)
 		return false
 	end
 
-	local function taggedPlacementCFrame(state, slot, path, pathPoint, tangent, reservations, spacing, maxPathDistance, combatRange)
+	local function taggedPlacementCFrame(
+		state,
+		slot,
+		path,
+		pathPoint,
+		tangent,
+		reservations,
+		spacing,
+		maxPathDistance,
+		combatRange,
+		targetPercent,
+		maxUsefulProgress,
+		liveProgress,
+		carryShare
+	)
 		local placementType = type(slot.Info) == "table" and slot.Info.PlacementType or nil
 		local tag = placementType == "Ground" and "GroundPlacement" or "HillPlacement"
 		local map = Workspace:FindFirstChild("Map")
@@ -470,8 +484,15 @@ return function(Import)
 							if not combatRange then
 								return cframe
 							end
-							local routeCoverage = SmartPlanner.RouteCoverage(path, cframe, combatRange)
-							local score = routeCoverage * 8 - pathDistance / math.max(1, combatRange)
+							local score = SmartPlanner.PlacementResolutionScore(
+								path,
+								cframe,
+								combatRange,
+								targetPercent,
+								maxUsefulProgress,
+								liveProgress,
+								carryShare
+							)
 							if not best or score > bestScore then
 								best = cframe
 								bestScore = score
@@ -529,7 +550,11 @@ return function(Import)
 					reservations,
 					spacing,
 					maxPathDistance,
-					combatRange
+					combatRange,
+					choice.Percent or state.PathPosition,
+					choice.MaxUsefulProgress,
+					choice.LiveProgress,
+					choice.CarryShare
 				)
 			if candidate then
 				if not combatRange then
@@ -541,7 +566,8 @@ return function(Import)
 					combatRange,
 					choice.Percent or state.PathPosition,
 					choice.MaxUsefulProgress,
-					choice.LiveProgress
+					choice.LiveProgress,
+					choice.CarryShare
 				)
 				if not bestTagged or score > bestTaggedScore then
 					bestTagged = candidate
@@ -589,7 +615,8 @@ return function(Import)
 						combatRange,
 						choice.Percent or state.PathPosition,
 						choice.MaxUsefulProgress,
-						choice.LiveProgress
+						choice.LiveProgress,
+						choice.CarryShare
 					)
 					if not bestFallback or score > bestFallbackScore then
 						bestFallback = candidate
@@ -1268,7 +1295,7 @@ return function(Import)
 
 	return {
 		Name = "AutoPlay",
-		Version = 17,
+		Version = 18,
 		Priority = 9,
 		Dependencies = {},
 

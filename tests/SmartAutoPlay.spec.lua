@@ -22,11 +22,17 @@ local reconciledPlacement = {
 	Stats = { Range = 12 },
 	Role = "Damage",
 	CombatPower = 100,
+	CarryShare = 1,
 	ShieldOverlap = 0,
+	LiveProgress = { 0.15 },
 	Reason = "unreconciled",
 }
 Smart.ReconcilePlacement(reconciledPlacement, CFrame.new(10, 0, 50))
 assert(reconciledPlacement.RangeUptime == honestCoverage, "resolved placement coverage was not reconciled")
+assert(
+	reconciledPlacement.PreContact and reconciledPlacement.AttackWindowStart > reconciledPlacement.LiveFrontProgress,
+	"resolved placement did not retain a full firing window ahead of the convoy"
+)
 assert(
 	string.find(reconciledPlacement.Reason, "route coverage", 1, true),
 	"resolved placement diagnostics still advertise synthetic range uptime"
@@ -254,6 +260,87 @@ assert(
 	),
 	"physical placement scoring still prefers an unused backline over the planned combat zone"
 )
+local crossedWindow = Planner.Candidate(path, 8, 6, 1, 0)
+local aheadWindow = Planner.Candidate(path, 58, 6, 1, 0)
+assert(
+	Smart.PlacementResolutionScore(path, aheadWindow, 25, 58, 1, { 0.35 }, 1)
+		> Smart.PlacementResolutionScore(path, crossedWindow, 25, 58, 1, { 0.35 }, 1),
+	"carry resolution still prefers a firing window the convoy already crossed"
+)
+local windingPath = {
+	Vector3.new(0, 0, 0),
+	Vector3.new(0, 0, 40),
+	Vector3.new(40, 0, 40),
+	Vector3.new(40, 0, 0),
+}
+local windingPlacement = {
+	Kind = "Place",
+	Slot = { Name = "Dark Mage" },
+	Count = 0,
+	Cap = 1,
+	Path = windingPath,
+	Stats = { Range = 22 },
+	Role = "Area Damage",
+	CombatPower = 1000,
+	CarryShare = 1,
+	LiveProgress = { 0.2 },
+	Reason = "unreconciled",
+}
+Smart.ReconcilePlacement(windingPlacement, CFrame.new(20, 0, 0))
+assert(
+	windingPlacement.PreContact and windingPlacement.AttackWindowStart > 0.2,
+	"winding routes still select an already-consumed firing window over a later untouched window"
+)
+local carryInformation = {
+	Units = {
+		DarkMage = {
+			DisplayName = "Dark Mage",
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 1500, Damage = 12000, SPA = 4.5, Range = 31, HitboxType = "Circle", HitboxSize = 15 },
+			},
+		},
+		CursedStudent = {
+			DisplayName = "Cursed Student",
+			PlacementLimit = 1,
+			UpgradeInfo = {
+				[0] = { Cost = 1125, Damage = 1800, SPA = 5.5, Range = 23, HitboxType = "Circle", HitboxSize = 12 },
+			},
+		},
+	},
+}
+local carrySlots = Planner.Slots(
+	{ Slots = { ["1"] = { ID = "dark" }, ["2"] = { ID = "cursed" } } },
+	{ UnitData = { dark = { Asset = "DarkMage" }, cursed = { Asset = "CursedStudent" } } },
+	carryInformation,
+	6
+)
+local carryDecision = Smart.Decide({
+	GameState = {
+		Wave = 4,
+		MaxWave = 15,
+		BaseHealth = 3,
+		BaseMaxHealth = 3,
+		Parameters = { Gamemode = "Tower", MapName = "Fairy King Forest", Difficulty = "Hard" },
+	},
+	Enemies = { { Health = 1000, MaxHealth = 1000, Progress = 0.18 } },
+	LiveProgress = { 0.18 },
+	Slots = carrySlots,
+	Placed = { [1] = {}, [2] = {} },
+	Yen = 5000,
+	Path = path,
+	Paths = { path },
+}, {
+	Strategy = "Win",
+	AdaptivePlacement = true,
+	SmartEconomy = true,
+	ReactToEnemies = true,
+})
+assert(
+	carryDecision.Kind == "Place" and carryDecision.Slot.Asset == "DarkMage",
+	"a cheaper weak unit still displaced the strongest affordable carry"
+)
+assert(carryDecision.PreContact, "the strongest carry was not scheduled before live enemy contact")
 local realBacklineDecision = Smart.Decide({
 	GameState = {
 		Wave = 10,
@@ -1662,9 +1749,12 @@ assert(string.find(source, "enrichSlotStats", 1, true), "profile-adjusted unit s
 assert(string.find(plannerSource, "defenseCoverage", 1, true), "placed-unit route coverage is not re-evaluated")
 assert(string.find(plannerSource, "MarginalCoverage", 1, true), "new placements ignore already covered path sections")
 assert(string.find(plannerSource, "impactEfficiency", 1, true), "combat spending does not favor concentrated impact")
+assert(string.find(plannerSource, "placementImpactEfficiency", 1, true), "deployment still over-discounts expensive carries")
+assert(string.find(plannerSource, "AttackWindowQuality", 1, true), "placements ignore their usable firing window")
 assert(string.find(plannerSource, "shieldKillZoneOverlap", 1, true), "shielded enemies do not create coordinated kill zones")
 assert(string.find(plannerSource, "shieldInterception", 1, true), "advancing shields do not create a downstream interception layer")
 assert(string.find(plannerSource, "usefulCombatFrontier", 1, true), "placement does not track the active combat frontier")
 assert(string.find(source, "PlacementResolutionScore", 1, true), "physical placement can drift away from its planned combat zone")
+assert(string.find(source, "choice.CarryShare", 1, true), "physical placement resolution drops the selected carry weight")
 
 print("Smart Auto Play tests passed")
