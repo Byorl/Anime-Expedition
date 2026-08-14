@@ -30,6 +30,7 @@ local cache = {}
 local factories = {
 	Util = rbxmk.loadFile("src/Core/Util.lua")(),
 	RewardScanner = rbxmk.loadFile("src/Core/RewardScanner.lua")(),
+	CodeCatalog = rbxmk.loadFile("src/Core/CodeCatalog.lua")(),
 	AutomationCatalog = rbxmk.loadFile("src/Core/AutomationCatalog.lua")(),
 	AutoClaim = rbxmk.loadFile("src/Modules/AutoClaim.lua")(),
 	AutoSummon = rbxmk.loadFile("src/Modules/AutoSummon.lua")(),

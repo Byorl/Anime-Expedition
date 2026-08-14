@@ -1,5 +1,5 @@
 return {
-	Version = "1.29.14",
+	Version = "1.29.15",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -17,6 +17,7 @@ return {
 		BountyCatalog = "src/Core/BountyCatalog.lua",
 		JoinCoordinator = "src/Core/JoinCoordinator.lua",
 		RewardScanner = "src/Core/RewardScanner.lua",
+		CodeCatalog = "src/Core/CodeCatalog.lua",
 		AutomationCatalog = "src/Core/AutomationCatalog.lua",
 		AutoPlayPlanner = "src/Core/AutoPlayPlanner.lua",
 		SmartAutoPlayPlanner = "src/Core/SmartAutoPlayPlanner.lua",

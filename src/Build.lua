@@ -1,7 +1,7 @@
 return function()
 	return {
 		Name = "Anime Expeditions",
-		Version = "1.29.14",
+		Version = "1.29.15",
 		PlaceId = 84515722934860,
 		Repository = "https://github.com/Byorl/Anime-Expedition",
 		RawBase = "https://jexvral.xyz/game/ap/",

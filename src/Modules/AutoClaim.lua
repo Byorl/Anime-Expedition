@@ -1,11 +1,13 @@
 return function(Import)
 	local Util = Import("Util")
 	local Scanner = Import("RewardScanner")
+	local CodeCatalog = Import("CodeCatalog")
 	local HttpService = game:GetService("HttpService")
 	local AutoClaim = {}
 
 	local TICK_INTERVAL = 0.5
 	local RETRY_INTERVAL = 8
+	local CODE_RETRY_INTERVAL = 20
 	local MAX_INDIVIDUAL_CLAIMS = 20
 
 	local function sortedSignature(values, formatter)
@@ -18,42 +20,50 @@ return function(Import)
 	local function readCodeCache(ctx)
 		local path = ctx.Config.AccountFolder .. "/codes.json"
 		local cache = ctx.FileSystem:ReadJson(path, {})
-		if type(cache) ~= "table" or type(cache.Results) ~= "table" then cache = {Schema = 1, Results = {}} end
-		cache.Schema = 1
+		if type(cache) ~= "table" or type(cache.Results) ~= "table" then cache = {Schema = 2, Results = {}} end
+		cache.Schema = 2
 		cache.UserId = ctx.Player.UserId
 		return path, cache
 	end
 
-	local function describeCodeResult(result)
-		if result == true then return "Accepted", "true" end
-		if result == false then return "Rejected", "false" end
-		if type(result) == "table" then
-			local message = tostring(result.Message or result.Error or result.Status or "response table")
-			local lower = string.lower(message)
-			if result.Success == true then return "Accepted", message end
-			if string.find(lower, "already", 1, true) then return "AlreadyRedeemed", message end
-			if result.Success == false or result.Error then return "Rejected", message end
-			local ok, json = pcall(HttpService.JSONEncode, HttpService, result)
-			return "Attempted", ok and json or message
+	local function updateCodeStatus(state, text)
+		if state.CodeStatus == text then return end
+		state.CodeStatus = text
+		if state.CodeStatusLabel and type(state.CodeStatusLabel.UpdateName) == "function" then
+			Util.SafeCall("code redemption status", state.CodeStatusLabel.UpdateName, state.CodeStatusLabel, "Status: " .. tostring(text))
 		end
-		local message = tostring(result)
-		local lower = string.lower(message)
-		if string.find(lower, "already", 1, true) then return "AlreadyRedeemed", message end
-		if string.find(lower, "invalid", 1, true) or string.find(lower, "expired", 1, true) then return "Rejected", message end
-		if string.find(lower, "success", 1, true) or string.find(lower, "redeem", 1, true) then return "Accepted", message end
-		return "Attempted", message
+	end
+
+	local function directCodeModule()
+		local ok, result = xpcall(function()
+			local replicatedStorage = game:GetService("ReplicatedStorage")
+			local shared = replicatedStorage:FindFirstChild("Shared")
+			local information = shared and shared:FindFirstChild("Information")
+			local module = information and information:FindFirstChild("Codes")
+			return module and require(module) or nil
+		end, Util.Traceback)
+		return ok and result or nil
 	end
 
 	local function mergedCodes(ctx)
-		local output = {}
+		local sources = {}
 		local information = ctx.Game:Information()
-		local static = type(information) == "table" and information.Codes or nil
-		static = type(static) == "table" and (static.Codes or static) or {}
-		for code, info in pairs(static) do output[code] = info end
-		local live = ctx.Game:State("Codes")
-		live = type(live) == "table" and (live.Codes or live) or {}
-		for code, info in pairs(live) do output[code] = info end
-		return output
+		if type(information) == "table" and type(information.Codes) == "table" then
+			table.insert(sources, information.Codes)
+		end
+		local live
+		if type(ctx.Game.StateDeep) == "function" then live = ctx.Game:StateDeep("Codes", 8) end
+		if type(live) ~= "table" then live = ctx.Game:State("Codes") end
+		if type(live) == "table" then table.insert(sources, live) end
+		if type(ctx.Game.Dependencies) == "table" and ctx.Game.Dependencies.Codes ~= nil
+			and type(ctx.Game.DeepPeek) == "function"
+		then
+			local deep = ctx.Game:DeepPeek(ctx.Game.Dependencies.Codes, 8)
+			if type(deep) == "table" then table.insert(sources, deep) end
+		end
+		local direct = directCodeModule()
+		if type(direct) == "table" then table.insert(sources, direct) end
+		return CodeCatalog.Merge(sources)
 	end
 
 	local function explicitGroupClaimState(playerData)
@@ -130,45 +140,71 @@ return function(Import)
 	function AutoClaim:_RedeemNextCode(ctx, state)
 		if state.CodeBusy or not state.Values.Codes then return end
 		local now = workspace:GetServerTimeNow()
-		local candidate, candidateInfo
-		for code, info in pairs(mergedCodes(ctx)) do
-			info = type(info) == "table" and info or {}
-			local starts = tonumber(info.ActiveFrom) or -math.huge
-			local expires = tonumber(info.ActiveUntil) or math.huge
-			local cached = state.CodeCache.Results[string.lower(tostring(code))]
-			local releaseKey = tonumber(info.ActiveUntil) or 0
-			local sameRelease = type(cached) == "table"
-				and cached.Status ~= "RequestFailed"
-				and tonumber(cached.ActiveUntil) == releaseKey
-			if starts <= now and now <= expires and not sameRelease then
-				candidate, candidateInfo = tostring(code), info
-				break
+		local wallNow = os.time()
+		local catalog = mergedCodes(ctx)
+		local keys = {}
+		for key in pairs(catalog) do table.insert(keys, key) end
+		table.sort(keys)
+		local candidate, candidateInfo, releaseKey
+		local activeCount = 0
+		for _, key in ipairs(keys) do
+			local record = catalog[key]
+			local info = type(record.Info) == "table" and record.Info or {}
+			if CodeCatalog.IsActive(info, now) then
+				activeCount = activeCount + 1
+				local currentRelease = CodeCatalog.ReleaseKey(info)
+				if CodeCatalog.CanAttempt(state.CodeCache.Results[key], currentRelease, wallNow) then
+					candidate, candidateInfo, releaseKey = record.Code, info, currentRelease
+					break
+				end
 			end
 		end
-		if not candidate then return end
+		if not candidate then
+			if #keys == 0 then updateCodeStatus(state, "waiting for live code catalog")
+			elseif activeCount == 0 then updateCodeStatus(state, "no active codes found")
+			else updateCodeStatus(state, "all active codes checked") end
+			return
+		end
+		updateCodeStatus(state, "redeeming " .. candidate)
 		state.CodeBusy = true
 		local generation = state.Generation
 		local worker = task.spawn(function()
 			local ok, response = ctx.Game:Request("CLAIM_CODE", 5, candidate)
-			if not state.Alive or state.Generation ~= generation then return end
+			if not state.Alive or state.Generation ~= generation then
+				state.CodeBusy = false
+				return
+			end
 			local status, detail
-			if ok then status, detail = describeCodeResult(response)
+			if ok then
+				status, detail = CodeCatalog.Classify(response, function(value)
+					return HttpService:JSONEncode(value)
+				end)
 			else status, detail = "RequestFailed", tostring(response) end
-			state.CodeCache.Results[string.lower(candidate)] = {
+			local key = string.lower(candidate)
+			local previous = state.CodeCache.Results[key]
+			state.CodeCache.Results[key] = {
 				Code = candidate,
 				Status = status,
 				Detail = string.sub(detail, 1, 300),
-				CheckedAt = os.time(),
+				CheckedAt = wallNow,
+				RetryAt = CodeCatalog.IsTerminal(status) and nil or (wallNow + CODE_RETRY_INTERVAL),
+				Attempts = (type(previous) == "table" and tonumber(previous.Attempts) or 0) + 1,
+				ReleaseKey = releaseKey,
 				ActiveUntil = tonumber(candidateInfo.ActiveUntil) or 0,
 			}
 			local writeOk, writeError = ctx.FileSystem:WriteJson(state.CodeCachePath, state.CodeCache)
 			if not writeOk then self:_Report(ctx, state, "codes cache", writeError) end
+			if status == "Accepted" then updateCodeStatus(state, "redeemed " .. candidate)
+			elseif status == "AlreadyRedeemed" then updateCodeStatus(state, candidate .. " was already redeemed")
+			elseif status == "Rejected" then updateCodeStatus(state, candidate .. " is invalid or expired")
+			else updateCodeStatus(state, "retrying " .. candidate .. " after a transient response") end
 			state.CodeBusy = false
 		end)
 		if worker then ctx:RegisterCleanup(worker) end
 	end
 
 	function AutoClaim:_Scan(ctx, state)
+		self:_RedeemNextCode(ctx, state)
 		local playerData = ctx.Game:PlayerData()
 		if type(playerData) ~= "table" then return end
 		local information = ctx.Game:Information() or {}
@@ -330,7 +366,6 @@ return function(Import)
 			end
 		end
 
-		self:_RedeemNextCode(ctx, state)
 	end
 
 	function AutoClaim:_Start(ctx, state)
@@ -352,7 +387,7 @@ return function(Import)
 
 	return {
 		Name = "AutoClaim",
-		Version = 2,
+		Version = 3,
 		Priority = 11,
 		Dependencies = {"Misc"},
 
@@ -379,6 +414,7 @@ return function(Import)
 			sections.Progression:Header({Text = "Progression Rewards"})
 			sections.Special:Header({Text = "Special Rewards"})
 			sections.Codes:Header({Text = "Codes"})
+			state.CodeStatusLabel = sections.Codes:Label({Name = "Status: disabled"})
 			local controls = {
 				{"Auto Claim Quests", "Quests", "auto_claim.quests", "Daily"},
 				{"Auto Claim Battlepass", "Battlepass", "auto_claim.battlepass", "Daily"},
@@ -400,6 +436,9 @@ return function(Import)
 					Default = false,
 					Callback = function(value)
 						state.Values[valueKey] = value == true
+						if valueKey == "Codes" then
+							updateCodeStatus(state, value and "checking synchronized codes" or "disabled")
+						end
 						if not value then
 							table.clear(state.LastClaims)
 							if valueKey == "GroupRewards" then
