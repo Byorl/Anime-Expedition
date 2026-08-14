@@ -869,9 +869,12 @@ local shieldInterception = Smart.Decide({
 assert(
 	shieldInterception.Kind == "Place"
 		and shieldInterception.Slot.Index == 2
-		and shieldInterception.Percent >= 60
+		and shieldInterception.Percent >= 80
+		and shieldInterception.CurrentLiveEngagement == 0
+		and shieldInterception.ProjectedLiveEngagement > 0
+		and shieldInterception.ShieldInterceptionPreContact == true
 		and shieldInterception.ShieldInterceptionTarget ~= nil,
-	"an advancing shield backlog stacked follow-up damage in the breached first kill zone"
+	"an advancing shield backlog was already inside a newly placed interception unit's range"
 )
 
 local strongBackupInformation = {

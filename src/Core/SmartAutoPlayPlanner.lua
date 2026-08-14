@@ -642,21 +642,29 @@ return function(Import)
 		end
 		local length = routeLength(path)
 		local lead = length > 0 and clamp(range / length * 0.45, 0.02, 0.08) or 0.04
-		local hits, samples = 0, 0
+		local hits, samples, currentHits, projectedHits = 0, 0, 0, 0
 		for _, rawProgress in ipairs(liveProgress) do
 			local progress = clamp(number(rawProgress, 0), 0, 1)
-			for _, sampleProgress in ipairs({ progress, clamp(progress + lead, 0, 1) }) do
+			for sampleIndex, sampleProgress in ipairs({ progress, clamp(progress + lead, 0, 1) }) do
 				local point = Planner.SamplePath(path, sampleProgress * 100)
 				if point then
 					samples = samples + 1
 					local flat = Vector3.new(point.X - cframe.Position.X, 0, point.Z - cframe.Position.Z)
 					if flat.Magnitude <= range then
 						hits = hits + 1
+						if sampleIndex == 1 then
+							currentHits = currentHits + 1
+						else
+							projectedHits = projectedHits + 1
+						end
 					end
 				end
 			end
 		end
-		return samples > 0 and hits / samples or 0
+		local enemyCount = #liveProgress
+		return samples > 0 and hits / samples or 0,
+			enemyCount > 0 and currentHits / enemyCount or 0,
+			enemyCount > 0 and projectedHits / enemyCount or 0
 	end
 
 	local function usefulCombatFrontier(path, range, context)
@@ -852,24 +860,20 @@ return function(Import)
 		end
 		local shieldFront = math.max(number(context.ShieldMaxProgress, 0), number(context.MaxProgress, 0))
 		local rangeProgress = range / length
-		local target = clamp(shieldFront + clamp(rangeProgress * 0.2, 0.015, 0.045), 0.35, 0.86)
+		local target = clamp(shieldFront + rangeProgress * 1.08 + 0.015, 0.35, 0.92)
 		local candidateProgress = Planner.NearestProgress(path, cframe.Position)
 		if candidateProgress == nil then
-			return 0, target
+			return 0, target, false
 		end
-		local targetPoint = Planner.SamplePath(path, target * 100)
-		local coversTarget = 0
-		if targetPoint then
-			local delta = Vector3.new(targetPoint.X - cframe.Position.X, 0, targetPoint.Z - cframe.Position.Z)
-			coversTarget = delta.Magnitude <= range and 1 or 0
+		local frontPoint = Planner.SamplePath(path, shieldFront * 100)
+		local preContact, clearance = false, 0
+		if frontPoint then
+			local delta = Vector3.new(frontPoint.X - cframe.Position.X, 0, frontPoint.Z - cframe.Position.Z)
+			preContact = delta.Magnitude > range
+			clearance = preContact and clamp((delta.Magnitude - range) / math.max(3, range * 0.35), 0, 1) or 0
 		end
-		local proximity = 1 - clamp(math.abs(candidateProgress - target) / 0.22, 0, 1)
-		local downstream = candidateProgress + 0.015 >= shieldFront and 1 or clamp(
-			1 - (shieldFront - candidateProgress) / 0.18,
-			0,
-			1
-		)
-		return (proximity * 0.5 + coversTarget * 0.3 + downstream * 0.2), target
+		local proximity = 1 - clamp(math.abs(candidateProgress - target) / 0.28, 0, 1)
+		return proximity * 0.55 + (preContact and 0.35 or 0) + clearance * 0.1, target, preContact
 	end
 
 	local function smartCap(slot, role, strategy, context, stats)
@@ -957,13 +961,24 @@ return function(Import)
 						end
 					end
 					local tactical = 1 - math.min(1, math.abs(percent - target) / 60)
-					local engagement = role ~= "Farm" and context.ReactToEnemies ~= false
-						and liveEngagement(path, cframe, base.Range, context.LiveProgress)
-						or 0
+					local engagement, currentEngagement, projectedEngagement = 0, 0, 0
+					if role ~= "Farm" and context.ReactToEnemies ~= false then
+						engagement, currentEngagement, projectedEngagement = liveEngagement(
+							path,
+							cframe,
+							base.Range,
+							context.LiveProgress
+						)
+					end
 					local shieldOverlap = shieldKillZoneOverlap(snapshot, path, cframe, base.Range, context)
-					local shieldIntercept, shieldInterceptTarget = 0, nil
+					local shieldIntercept, shieldInterceptTarget, shieldInterceptPreContact = 0, nil, false
 					if role ~= "Farm" then
-						shieldIntercept, shieldInterceptTarget = shieldInterception(path, cframe, base.Range, context)
+						shieldIntercept, shieldInterceptTarget, shieldInterceptPreContact = shieldInterception(
+							path,
+							cframe,
+							base.Range,
+							context
+						)
 					end
 					local separation = 1
 					if context.ModifierStunRisk > 0 then
@@ -985,16 +1000,19 @@ return function(Import)
 						* (1 - number(context.ModifierStunRisk, 0) * 0.55)
 					local coordinatedShieldCoverage = shieldOverlap * clamp(covered / 0.18, 0.15, 1)
 					local shieldBreach = shieldInterceptTarget ~= nil
-					local shieldOverlapWeight = shieldBreach and 0.45 or 2.4
+					local shieldOverlapWeight = shieldBreach and 0.15 or 2.4
 					local score = covered
 						+ marginal * 1.7
 						+ intersection * 0.7
 						+ tactical * 0.45
 						+ rangeUtilization * 0.8
-						+ engagement * 2.5
+						+ (shieldBreach and projectedEngagement * 1.4 - currentEngagement * 5 or engagement * 2.5)
 						+ coordinatedShieldCoverage * shieldCoordination * shieldOverlapWeight
-						+ shieldIntercept * shieldCoordination * (shieldBreach and 3.6 or 0)
+						+ shieldIntercept * shieldCoordination * (shieldBreach and 4.6 or 0)
 						+ separation * context.ModifierStunRisk * 0.65
+					if shieldBreach and not shieldInterceptPreContact then
+						score = score - 4.5
+					end
 					if role ~= "Farm" and rangeRatio > 0.72 then
 						score = score * 0.3
 					end
@@ -1021,7 +1039,10 @@ return function(Import)
 							ShieldOverlap = shieldOverlap,
 							ShieldInterception = shieldIntercept,
 							ShieldInterceptionTarget = shieldInterceptTarget,
+							ShieldInterceptionPreContact = shieldInterceptPreContact,
 							LiveEngagement = engagement,
+							CurrentLiveEngagement = currentEngagement,
+							ProjectedLiveEngagement = projectedEngagement,
 							MaxUsefulProgress = maxUsefulProgress,
 							Stats = base,
 							Role = role,
@@ -1120,7 +1141,10 @@ return function(Import)
 						ShieldOverlap = location.ShieldOverlap,
 						ShieldInterception = location.ShieldInterception,
 						ShieldInterceptionTarget = location.ShieldInterceptionTarget,
+						ShieldInterceptionPreContact = location.ShieldInterceptionPreContact,
 						LiveEngagement = location.LiveEngagement,
+						CurrentLiveEngagement = location.CurrentLiveEngagement,
+						ProjectedLiveEngagement = location.ProjectedLiveEngagement,
 						LiveProgress = context.ReactToEnemies ~= false and context.LiveProgress or {},
 						MaxUsefulProgress = location.MaxUsefulProgress,
 						Reason = role == "Farm"
