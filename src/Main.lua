@@ -230,7 +230,6 @@ return function(Import)
 	Tabs.MiscMinigame = MiscPages:SubTab({ Name = "Minigame", Columns = 2 })
 	Tabs.MiscPerformance = MiscPages:SubTab({ Name = "Performance", Columns = 2 })
 	local AutoPlayPages = Tabs.AutoPlay:SubTabGroup()
-	Tabs.AutoPlayNormal = AutoPlayPages:SubTab({ Name = "Normal", Columns = 2 })
 	Tabs.AutoPlaySmart = AutoPlayPages:SubTab({ Name = "Smart", Columns = 2 })
 
 	local Adapter
@@ -243,6 +242,13 @@ return function(Import)
 			break
 		end
 		adapterError = Adapter.Error
+		if attempt == 1 and game.PlaceId ~= Build.PlaceId then
+			Runtime:Shutdown("wrong game")
+			error(string.format(
+				"This loader targets Anime Expeditions (place %d). You executed in place %d - switch to the correct game window.",
+				Build.PlaceId, game.PlaceId
+			), 0)
+		end
 		if attempt < 3 then
 			Runtime:Notify(
 				"Slow game load",

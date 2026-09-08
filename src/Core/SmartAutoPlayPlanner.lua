@@ -1948,8 +1948,14 @@ return function(Import)
 		context.Spendable = spendable
 		local best = choices[1]
 		local bestCombatImpact = actionCombatImpact(best)
-		local desperateBackline = context.MaxProgress >= 0.92
-			and context.BacklineEnemies >= math.max(3, math.floor(number(context.ExpectedActiveEnemies, 0) * 0.08))
+		-- Terminal-wave desperation: on the last wave(s) there is no future
+		-- income to save for, so any affordable combat action beats waiting
+		-- for a higher-scored unaffordable one.
+		local terminalWave = context.RemainingWaves <= 1
+			or (context.Boss == true and context.RemainingWaves <= 2)
+		local desperateBackline = terminalWave
+			or (context.MaxProgress >= 0.92
+				and context.BacklineEnemies >= math.max(3, math.floor(number(context.ExpectedActiveEnemies, 0) * 0.08)))
 		context.DesperateBackline = desperateBackline
 		for index, choice in ipairs(choices) do
 			local fallbackRatio = context.Emergency and 0.5 or 0.72

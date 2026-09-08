@@ -835,7 +835,13 @@ return function(Import)
 			Path = path,
 			Paths = paths,
 			Enemies = enemies,
-			RenderedEnemies = renderedEnemyTelemetry(),
+			-- Attribute-scanning every tagged enemy is expensive on swarm
+			-- waves; cache at 2 Hz - telemetry resolution is plenty.
+			if not state.RenderedCacheAt or os.clock() - state.RenderedCacheAt >= 0.5 then
+				state.RenderedCacheAt = os.clock()
+				state.RenderedCache = renderedEnemyTelemetry()
+			end
+			RenderedEnemies = state.RenderedCache or renderedEnemyTelemetry(),
 			LiveProgress = liveProgress,
 			RouteConfident = state.RouteConfident,
 			RouteReverse = state.RouteReverse,
@@ -1217,7 +1223,11 @@ return function(Import)
 		end
 		state.LastSmartDecision = decision
 		updateSmartLabels(state, decision)
-		updateSmartVisualization(state, decision, resolved)
+		-- Marker/label redraws cost render time; 4 Hz is plenty for a preview.
+		if os.clock() - (state.LastVizSync or 0) >= 0.25 then
+			state.LastVizSync = os.clock()
+			updateSmartVisualization(state, decision, resolved)
+		end
 		if state.Telemetry then state.Telemetry:Decision(decision, resolved) end
 		if decision.Kind == "Place" then
 			if resolved then
@@ -1362,126 +1372,6 @@ return function(Import)
 				UnitUtils = loadHelper("UnitUtils"),
 				Telemetry = MatchTelemetry.new(ctx.FileSystem, ctx.Player, ctx.Build),
 			}
-			local automation = ctx.Tabs.AutoPlayNormal:Section({ Side = "Left" })
-			automation:Header({ Text = "Auto Play" })
-			ctx.Registry:Toggle(automation, {
-				Name = "Auto Play",
-				Default = false,
-				Callback = function(value)
-					state.Enabled = value == true
-				end,
-			}, "auto_play.enabled")
-			ctx.Registry:Toggle(automation, {
-				Name = "Farm Units First",
-				Default = false,
-				Callback = function(value)
-					state.FarmFirst = value == true
-				end,
-			}, "auto_play.farm_first")
-			ctx.Registry:Toggle(automation, {
-				Name = "Place Units First",
-				Default = false,
-				Callback = function(value)
-					state.PlaceFirst = value == true
-				end,
-			}, "auto_play.place_first")
-			ctx.Registry:Toggle(automation, {
-				Name = "Visualize Placement",
-				Default = false,
-				Callback = function(value)
-					state.Visualize = value == true
-					state.VisualDirty = true
-					if not value and not state.SmartEnabled then
-						destroyMarkers(state)
-					end
-				end,
-			}, "auto_play.visualize")
-			ctx.Registry:Slider(automation, {
-				Name = "Spacing",
-				Default = 6,
-				Minimum = 1,
-				Maximum = 20,
-				Precision = 0,
-				Step = 1,
-				Callback = function(value)
-					state.Spacing = math.floor(value)
-					state.VisualDirty = true
-				end,
-			}, "auto_play.spacing")
-			ctx.Registry:Slider(automation, {
-				Name = "Path Position",
-				Default = 50,
-				Minimum = 1,
-				Maximum = 99,
-				DisplayMethod = "LiteralPercent",
-				Precision = 0,
-				Step = 1,
-				Callback = function(value)
-					state.PathPosition = math.floor(value)
-					state.VisualDirty = true
-				end,
-			}, "auto_play.path_position")
-			automation:Paragraph({ Header = "Path Position", Body = "99 = near base, 1 = near enemy spawn." })
-
-			local priorities = ctx.Tabs.AutoPlayNormal:Section({ Side = "Left" })
-			priorities:Header({ Text = "Upgrade Priority" })
-			ctx.Registry:Toggle(priorities, {
-				Name = "Use Upgrade Priority",
-				Default = false,
-				Callback = function(value)
-					state.UsePriority = value == true
-				end,
-			}, "auto_play.use_priority")
-			for index = 1, 6 do
-				slider(
-					ctx.Registry,
-					priorities,
-					state,
-					state.Priority,
-					index,
-					"Slot " .. index .. " Priority",
-					10,
-					7 - index,
-					"auto_play.priority_" .. index
-				)
-			end
-			priorities:Paragraph({
-				Header = "How it works",
-				Body = "Higher = upgraded first. 0 = never upgrade that slot.",
-			})
-
-			local placements = ctx.Tabs.AutoPlayNormal:Section({ Side = "Right" })
-			placements:Header({ Text = "Placement Limits" })
-			for index = 1, 6 do
-				slider(
-					ctx.Registry,
-					placements,
-					state,
-					state.MaxPlace,
-					index,
-					"Slot " .. index .. " Max Place",
-					20,
-					1,
-					"auto_play.max_place_" .. index
-				)
-			end
-
-			local upgrades = ctx.Tabs.AutoPlayNormal:Section({ Side = "Right" })
-			upgrades:Header({ Text = "Upgrade Limits" })
-			for index = 1, 6 do
-				slider(
-					ctx.Registry,
-					upgrades,
-					state,
-					state.MaxUpgrade,
-					index,
-					"Slot " .. index .. " Max Upgrade",
-					20,
-					20,
-					"auto_play.max_upgrade_" .. index
-				)
-			end
-
 			local smart = ctx.Tabs.AutoPlaySmart:Section({ Side = "Left" })
 			smart:Header({ Text = "Smart Auto Play" })
 			state.SmartStatusLabel = smart:Label({ Text = "Planning: Idle" })
