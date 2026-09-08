@@ -244,7 +244,7 @@ return function(Import)
 						state.CycleStarted = os.clock()
 						if not state.Alive then AutoFishing:_Start(ctx, state) end
 					elseif not state.SuppressIdleOnce then
-						self:_Status(state, "Idle.")
+						AutoFishing:_Status(state, "Idle.")
 					end
 				end,
 			}, "auto_fishing.enabled")
