@@ -263,6 +263,28 @@ return function(Import)
 		return self.Dependencies.Information
 	end
 
+	-- Feature detection: summer-update nodes (FISHING_*, CLAIM_CALENDAR,
+	-- CLIENT_TOGGLE_AUTO_SKIP_WAVES, ...) do not exist on servers running
+	-- older builds; modules check this and degrade to no-ops.
+	function GameAdapter:HasNode(nodeName)
+		if not self.Ready or type(self.Nodes) ~= "table" then
+			return false
+		end
+		return self.Nodes[nodeName] ~= nil
+	end
+
+	function GameAdapter:ItemAmount(asset)
+		local ok, amount = self:InvokeSelf("GET_DATA_VALUE", { "ItemData", tostring(asset), "Amount" })
+		if ok and type(amount) == "number" then
+			return amount
+		end
+		local playerData = self:PlayerData()
+		local collection = type(playerData) == "table" and playerData.ItemData or nil
+		local entry = type(collection) == "table" and collection[asset] or nil
+		if type(entry) == "number" then return entry end
+		return tonumber(type(entry) == "table" and entry.Amount or nil) or 0
+	end
+
 	function GameAdapter:InvokeSelf(nodeName, ...)
 		if not self.Ready then
 			return false, self.Error

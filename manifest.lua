@@ -1,5 +1,5 @@
 return {
-	Version = "1.29.17",
+	Version = "1.30.0",
 	Entry = "Main",
 	Modules = {
 		Build = "src/Build.lua",
@@ -28,6 +28,7 @@ return {
 		JoinChallenge = "src/Modules/JoinChallenge.lua",
 		JoinEvent = "src/Modules/JoinEvent.lua",
 		JoinRaid = "src/Modules/JoinRaid.lua",
+		JoinExpedition = "src/Modules/JoinExpedition.lua",
 		AutoPlay = "src/Modules/AutoPlay.lua",
 		GameMatch = "src/Modules/GameMatch.lua",
 		GameEnd = "src/Modules/GameEnd.lua",
@@ -37,10 +38,12 @@ return {
 		AutoSummon = "src/Modules/AutoSummon.lua",
 		Performance = "src/Modules/Performance.lua",
 		AutoTraitReroll = "src/Modules/AutoTraitReroll.lua",
+		AutoFishing = "src/Modules/AutoFishing.lua",
 		Bounty = "src/Modules/Bounty.lua",
 		GuessUnit = "src/Modules/GuessUnit.lua",
 		JoinPriority = "src/Modules/JoinPriority.lua",
 		Settings = "src/Modules/Settings.lua",
+		Compatibility = "src/Modules/Compatibility.lua",
 		Main = "src/Main.lua",
 	},
 }

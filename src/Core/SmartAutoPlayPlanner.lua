@@ -306,12 +306,35 @@ return function(Import)
 		local mode = findValue(gameState, { "Gamemode", "GameMode", "Mode" }, 4) or "Unknown"
 		local map = findValue(gameState, { "MapName", "MapID", "MapId", "Map" }, 4) or "Unknown"
 		local act = findValue(gameState, { "ActName", "StageName", "Act", "Stage" }, 4) or "Unknown"
+		-- Horde modes never end on a wave number and burst enemies from both
+		-- sides. Detect them from the map's own configuration (HordeWaves /
+		-- TempestHordeWaves / HordeInterval on the map data) so renamed or
+		-- future horde maps are covered without code changes.
+		local maps = type(information) == "table" and information.Maps or nil
+		local mapData
+		if type(maps) == "table" then
+			if type(maps.GetMapData) == "function" then
+				local ok, data = pcall(maps.GetMapData, maps, tostring(mode), tostring(map))
+				if ok and type(data) == "table" then mapData = data end
+			end
+			if mapData == nil and type(maps.MapData) == "table" then
+				local byGamemode = maps.MapData[tostring(mode)]
+				if type(byGamemode) ~= "table" then byGamemode = maps.MapData.Event end
+				if type(byGamemode) == "table" then
+					mapData = byGamemode[map] or byGamemode[tostring(map)]
+				end
+			end
+		end
+		local hordeMode = type(mapData) == "table"
+			and (mapData.HordeWaves ~= nil or mapData.TempestHordeWaves ~= nil or tonumber(mapData.HordeInterval) ~= nil)
+			or false
+		local infinite = hordeMode
+			or string.find(string.lower(tostring(mode)), "infinite", 1, true) ~= nil
 		local wave = math.max(0, math.floor(number(findValue(gameState, { "Wave", "CurrentWave" }, 3), 0)))
-		local maxWave = math.max(
-			wave,
-			math.floor(number(findValue(gameState, { "MaxWave", "TotalWaves", "WaveCount" }, 3), wave + 15))
-		)
-		local remainingWaves = math.max(0, maxWave - wave)
+		local fallbackHorizon = infinite and wave + 40 or wave + 15
+		local reportedMax = number(findValue(gameState, { "MaxWave", "TotalWaves", "WaveCount" }, 3), nil)
+		local maxWave = math.max(wave, reportedMax ~= nil and math.floor(reportedMax) or fallbackHorizon)
+		local remainingWaves = infinite and math.max(20, maxWave - wave) or math.max(0, maxWave - wave)
 		local baseHealth = math.max(0, number(gameState.BaseHealth, 1))
 		local baseMax = math.max(baseHealth, number(gameState.BaseMaxHealth or gameState.MaxBaseHealth, baseHealth))
 		local healthRatio = baseMax > 0 and baseHealth / baseMax or 0
@@ -395,7 +418,10 @@ return function(Import)
 		local countPressure = clamp(enemyCount * modifiers.SpawnMultiplier / 100, 0, 1)
 		local liveShieldRisk = clamp(shieldedEnemies / math.max(1, enemyCount) * 2, 0, 1)
 		local shieldRisk = math.max(modifiers.ShieldRisk, liveShieldRisk)
-		local expectedActiveEnemies = math.max(24, 18 + wave * 6)
+		-- Horde bursts flood far more enemies than the linear wave model
+		-- expects, so the backlog denominator scales up to keep pressure
+		-- proportional instead of pegging at crisis constantly.
+		local expectedActiveEnemies = hordeMode and math.max(40, 30 + wave * 4) or math.max(24, 18 + wave * 6)
 		local backlogRatio = enemyCount / expectedActiveEnemies
 		local backlogPressure = clamp((backlogRatio - 0.8) / 1.2, 0, 1)
 		local backlogCrisis = enemyCount >= 36 and backlogRatio >= 1.35
@@ -426,6 +452,9 @@ return function(Import)
 			Mode = tostring(mode),
 			Map = tostring(map),
 			Act = tostring(act),
+			Infinite = infinite,
+			HordeMode = hordeMode,
+			DualLane = hordeMode,
 			Wave = wave,
 			MaxWave = maxWave,
 			RemainingWaves = remainingWaves,
@@ -1012,6 +1041,10 @@ return function(Import)
 		else
 			desired = context.RemainingWaves <= 6 and 2 or 3
 			if context.Emergency or strategy == "Rush" or strategy == "Boss" then
+				desired = desired + 1
+			end
+			-- Two-lane horde maps need coverage on both approaches.
+			if context.DualLane then
 				desired = desired + 1
 			end
 			desired = desired + math.min(1, math.max(0, math.floor(number(context.ModifierRedundancy, 0))))

@@ -253,7 +253,7 @@ return function(Import)
 		end
 
 		if state.Values.Calendars then
-			local claims = Scanner.Calendars(playerData)
+			local claims = Scanner.Calendars(playerData, ctx.Game:State("CalendarData"))
 			self:_Once(ctx, state, "calendars", sortedSignature(claims, function(v)
 				return tostring(v.Calendar) .. "/" .. tostring(v.Day)
 			end), function()

@@ -38,6 +38,27 @@ return function()
 				ctx.Game:RespondToVote("skip")
 			end
 
+			-- The game ships first-party automation settings (AutoVoteStart,
+			-- AutoSkipWaves); sync them through the settings node so the server
+			-- applies them natively instead of simulating votes. Only sent when
+			-- the stored value differs, and only on builds that expose it.
+			if state.SettingSkip or state.SettingVoteStart then
+				if os.clock() - (state.LastSettingSync or 0) >= 5 then
+					state.LastSettingSync = os.clock()
+					local wanted = {}
+					if state.SettingSkip then wanted["AutoSkipWaves"] = true end
+					if state.SettingVoteStart then wanted["AutoVoteStart"] = true end
+					for name, value in pairs(wanted) do
+						if ctx.Game:HasNode("CLIENT_CHANGE_SETTING") then
+							local ok, current = ctx.Game:InvokeSelf("GET_DATA_VALUE", { "Settings", name })
+							if not ok or current ~= value then
+								ctx.Game:ChangeSetting(name, value)
+							end
+						end
+					end
+				end
+			end
+
 			local session = ctx.Game:State("SessionData")
 			if
 				(state.LeaveAFK or state.PreventAFK)
@@ -57,7 +78,7 @@ return function()
 
 	return {
 		Name = "GameMatch",
-		Version = 4,
+		Version = 5,
 		Priority = 7,
 		Dependencies = {},
 
@@ -70,6 +91,9 @@ return function()
 				StartDelay = 0,
 				LeaveAFK = false,
 				PreventAFK = false,
+				SettingSkip = false,
+				SettingVoteStart = false,
+				LastSettingSync = 0,
 				LastKeepAlive = -math.huge,
 				KeepAliveWarning = false,
 				LastAFKAttempt = 0,
@@ -91,6 +115,20 @@ return function()
 					state.AutoSkip = value == true
 				end,
 			}, "game.match.auto_skip")
+			ctx.Registry:Toggle(automation, {
+				Name = "Native Auto Vote Start (setting)",
+				Default = false,
+				Callback = function(value)
+					state.SettingVoteStart = value == true
+				end,
+			}, "game.match.native_vote_start")
+			ctx.Registry:Toggle(automation, {
+				Name = "Native Auto Skip Waves (setting)",
+				Default = false,
+				Callback = function(value)
+					state.SettingSkip = value == true
+				end,
+			}, "game.match.native_skip")
 			ctx.Registry:Slider(automation, {
 				Name = "Auto Start Delay (0=off)",
 				Default = 0,
@@ -134,6 +172,8 @@ return function()
 			state.Alive = false
 			state.AutoStart = false
 			state.AutoSkip = false
+			state.SettingSkip = false
+			state.SettingVoteStart = false
 		end,
 	}
 end

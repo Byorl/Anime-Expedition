@@ -22,6 +22,10 @@ local ok, result = xpcall(function()
 		"The Drink (Juicebox)",
 		"Vegetable",
 		"Vegetable (Prince)",
+		-- Summer Update units (missing entries are reported and skipped).
+		"Sharkfang",
+		"Sinbad",
+		"Sparkle",
 	}
 	local wanted = {}
 	for _, name in ipairs(targets) do

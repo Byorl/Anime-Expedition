@@ -17,6 +17,7 @@ return function(Import)
 	local JoinChallengeModule = Import("JoinChallenge")
 	local JoinEventModule = Import("JoinEvent")
 	local JoinRaidModule = Import("JoinRaid")
+	local JoinExpeditionModule = Import("JoinExpedition")
 	local AutoPlayModule = Import("AutoPlay")
 	local GameMatchModule = Import("GameMatch")
 	local GameEndModule = Import("GameEnd")
@@ -26,10 +27,12 @@ return function(Import)
 	local AutoSummonModule = Import("AutoSummon")
 	local PerformanceModule = Import("Performance")
 	local AutoTraitRerollModule = Import("AutoTraitReroll")
+	local AutoFishingModule = Import("AutoFishing")
 	local BountyModule = Import("Bounty")
 	local GuessUnitModule = Import("GuessUnit")
 	local JoinPriorityModule = Import("JoinPriority")
 	local SettingsModule = Import("Settings")
+	local CompatibilityModule = Import("Compatibility")
 
 	local Players = game:GetService("Players")
 	local CoreGui = game:GetService("CoreGui")
@@ -230,10 +233,27 @@ return function(Import)
 	Tabs.AutoPlayNormal = AutoPlayPages:SubTab({ Name = "Normal", Columns = 2 })
 	Tabs.AutoPlaySmart = AutoPlayPages:SubTab({ Name = "Smart", Columns = 2 })
 
-	local Adapter = GameAdapter.new()
+	local Adapter
+	local adapterError
+	-- Slow servers (big updates, first join of a shard) can take minutes to
+	-- replicate the bindings; retry with a longer window instead of dying.
+	for attempt = 1, 3 do
+		Adapter = GameAdapter.new(attempt == 1 and 20 or 45)
+		if Adapter.Ready then
+			break
+		end
+		adapterError = Adapter.Error
+		if attempt < 3 then
+			Runtime:Notify(
+				"Slow game load",
+				string.format("Game bindings not ready (attempt %d/3); waiting for replication...", attempt)
+			)
+			task.wait(3)
+		end
+	end
 	if not Adapter.Ready then
 		Runtime:Shutdown("game binding startup failure")
-		error("Anime Expeditions could not initialize the current game's replicated bindings:\n" .. tostring(Adapter.Error))
+		error("Anime Expeditions could not initialize the current game's replicated bindings:\n" .. tostring(adapterError or Adapter.Error))
 	end
 	Runtime.Game = Adapter
 	local Join = JoinCoordinator.new(Runtime, Adapter)
@@ -268,6 +288,7 @@ return function(Import)
 	Modules:Register(JoinChallengeModule)
 	Modules:Register(JoinEventModule)
 	Modules:Register(JoinRaidModule)
+	Modules:Register(JoinExpeditionModule)
 	Modules:Register(AutoPlayModule)
 	Modules:Register(GameMatchModule)
 	Modules:Register(GameEndModule)
@@ -277,10 +298,12 @@ return function(Import)
 	Modules:Register(AutoSummonModule)
 	Modules:Register(PerformanceModule)
 	Modules:Register(AutoTraitRerollModule)
+	Modules:Register(AutoFishingModule)
 	Modules:Register(BountyModule)
 	Modules:Register(GuessUnitModule)
 	Modules:Register(JoinPriorityModule)
 	Modules:Register(SettingsModule)
+	Modules:Register(CompatibilityModule)
 
 	local modulesOk, modulesError = Modules:LoadAll()
 	if not modulesOk then

@@ -129,7 +129,7 @@ return function(Import)
 
 	return {
 		Name = "AutoTraitReroll",
-		Version = 1,
+		Version = 2,
 		Priority = 13,
 		Dependencies = {"Misc"},
 
@@ -168,6 +168,20 @@ return function(Import)
 			unitSelection:Button({Name = "Refresh Units", Callback = function()
 				AutoTrait:_RefreshUnits(ctx, state, state.SelectedUnitId)
 			end})
+			-- Summer update trait swapping: stores/loads the unit's second
+			-- trait slot server-side; only offered on builds exposing it.
+			if ctx.Game:HasNode("UNIT_SWAP_TRAIT") then
+				unitSelection:Button({Name = "Swap Trait (2nd Slot)", Callback = function()
+					if not state.SelectedUnitId then return end
+					local ok, err = ctx.Game:Request("UNIT_SWAP_TRAIT", 3, state.SelectedUnitId)
+					AutoTrait:_Status(state, ok and "Trait slot swapped." or ("Swap failed: " .. tostring(err)))
+					if ok then
+						task.defer(function()
+							AutoTrait:_RefreshUnits(ctx, state, state.SelectedUnitId)
+						end)
+					end
+				end})
+			end
 			automation:Header({Text = "Auto Reroll Trait"})
 			local traitOptions = #state.Traits.Options > 0 and state.Traits.Options or {"No traits available"}
 			ctx.Registry:Dropdown(automation, {

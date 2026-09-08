@@ -38,8 +38,9 @@ end
 
 local function fetch(path, cacheBuster)
 	local lastError
+	local isAbsolute = string.match(path, "^https?://") ~= nil
 	for repositoryIndex, repository in ipairs(REPOSITORIES) do
-		local url = repository .. path
+		local url = isAbsolute and path or (repository .. path)
 		if cacheBuster then url = url .. "?v=" .. tostring(cacheBuster) end
 		for attempt = 1, 2 do
 			local ok, body = pcall(function() return game:HttpGet(url) end)
@@ -59,6 +60,7 @@ local function fetch(path, cacheBuster)
 			end
 			if attempt < 2 then task.wait(0.15 * attempt) end
 		end
+		if isAbsolute then break end
 		if repositoryIndex < #REPOSITORIES then task.wait() end
 	end
 	fail("download", nil, path, string.format("All source endpoints failed: %s", tostring(lastError)))
@@ -70,15 +72,43 @@ if not manifestChunk then fail("compile", "Manifest", "manifest.lua", manifestCo
 local manifestOk, manifest = xpcall(manifestChunk, traceback)
 if not manifestOk then fail("execute", "Manifest", "manifest.lua", manifest) end
 if type(manifest) ~= "table" then fail("validate", "Manifest", "manifest.lua", "Manifest must return a table") end
-if type(manifest.Entry) ~= "string" then fail("validate", "Manifest", "manifest.lua", "Manifest Entry must be a module name") end
-if type(manifest.Modules) ~= "table" then fail("validate", "Manifest", "manifest.lua", "Manifest Modules must be a table") end
+if type(manifest.Entry) ~= "string" then fail("validate", "Manifest", "manifest.lua", "Manifest Entry must be a string") end
+if type(manifest.Modules) ~= "table" then fail("validate", "Manifest", "manifest.lua", "Manifest Modules must return a table") end
+
+-- Module paths may nest arbitrarily deep under the repository root
+-- (e.g. "src/Core/AutomationCatalog.lua" or
+-- "src/Modules/AutoFarm/Sigma/Layers/AutoClaim.lua"); the path is appended
+-- verbatim to each repository base. Absolute https URLs are also allowed and
+-- are fetched as-is. Anything that could escape the repository root is
+-- rejected instead of being sent to the network.
+local function normalizeModulePath(name, path)
+	if type(path) ~= "string" or path == "" then
+		fail("validate", name, path, "Module path must be a non-empty string")
+	end
+	if string.match(path, "^https?://") then
+		return path
+	end
+	local normalized = path:gsub("\\", "/")
+	normalized = normalized:gsub("^%./+", ""):gsub("^/+", "")
+	if normalized == "" or string.find(normalized, "../", 1, true) or string.find(normalized, "/../", 1, true) then
+		fail("validate", name, path, "Module paths must stay inside the repository root")
+	end
+	for segment in string.gmatch(normalized, "[^/]+") do
+		if segment == "." or segment == ".." then
+			fail("validate", name, path, "Module path segments must be plain folder or file names")
+		end
+	end
+	return normalized
+end
 
 local jobs = {}
 for name, path in pairs(manifest.Modules) do
 	if type(name) ~= "string" or type(path) ~= "string" then
 		fail("validate", "Manifest", "manifest.lua", "Manifest module entries must map names to paths")
 	end
-	table.insert(jobs, {Name = name, Path = path})
+	local normalized = normalizeModulePath(name, path)
+	manifest.Modules[name] = normalized
+	table.insert(jobs, {Name = name, Path = normalized})
 end
 table.sort(jobs, function(a, b) return a.Name < b.Name end)
 

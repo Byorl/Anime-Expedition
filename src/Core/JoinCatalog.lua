@@ -210,6 +210,83 @@ return function(Import)
 		}
 	end
 
+	-- Limited events are data-driven: each entry under Information.Events that
+	-- carries a QueueData table can be queued verbatim (Tidal Siege, Bingo,
+	-- creator spotlights, expedition-variant events like MASTRR/TrunksEVO).
+	function JoinCatalog.Events(information)
+		local events = type(information) == "table" and information.Events or nil
+		local now = workspace:GetServerTimeNow()
+		local entries = {}
+		for eventId, event in pairs(type(events) == "table" and events or {}) do
+			if type(event) == "table" and type(event.QueueData) == "table" and event.QueueData.Gamemode then
+				local scheduled = true
+				for _, schedule in ipairs(type(event.Schedule) == "table" and event.Schedule or {}) do
+					local endTime = tonumber(schedule.EndTime)
+					if endTime == nil or endTime > now then
+						scheduled = false
+						break
+					end
+				end
+				table.insert(entries, {
+					Key = tostring(eventId),
+					Label = string.format("%s [%s]", tostring(event.DisplayName or eventId), tostring(eventId)),
+					QueueData = event.QueueData,
+					DisplayName = tostring(event.DisplayName or eventId),
+					Scheduled = scheduled,
+					Order = tonumber(event.LayoutOrder) or math.huge,
+				})
+			end
+		end
+		table.sort(entries, function(a, b)
+			if a.Scheduled ~= b.Scheduled then return not a.Scheduled end
+			if a.Order ~= b.Order then return a.Order < b.Order end
+			return string.lower(a.DisplayName) < string.lower(b.DisplayName)
+		end)
+		local result = {Options = {}, ByLabel = {}, ByKey = {}, Entries = entries}
+		for _, entry in ipairs(entries) do
+			table.insert(result.Options, entry.Label)
+			result.ByLabel[entry.Label] = entry.Key
+			result.ByKey[entry.Key] = entry.Label
+		end
+		return result
+	end
+
+	function JoinCatalog.EventQueue(eventEntry)
+		local entry = type(eventEntry) == "table" and eventEntry or nil
+		if entry == nil then return nil end
+		local queue = entry.QueueData
+		if type(queue) ~= "table" or type(queue.Gamemode) ~= "string" or queue.Gamemode == "" then
+			return nil
+		end
+		-- Copy so downstream consumers never mutate the shared information table.
+		local output = {}
+		for key, value in pairs(queue) do output[key] = value end
+		return output
+	end
+
+	-- Expeditions queue with a numeric DifficultyLevel (1-3); the string
+	-- Difficulties list on the map data ("Normal", "Hard") is presentation only.
+	function JoinCatalog.ExpeditionLevels(information, mapName)
+		local data = JoinCatalog.MapData(information, "Expedition", mapName)
+		local difficulties = type(data) == "table" and data.Difficulties or nil
+		local count = #unique(difficulties)
+		if count <= 0 then count = 3 end
+		return math.clamp(count, 1, 3)
+	end
+
+	function JoinCatalog.ExpeditionQueue(information, mapName, level)
+		if type(mapName) ~= "string" or mapName == "" then return nil end
+		local levelNumber = math.clamp(math.floor(tonumber(level) or 1), 1, JoinCatalog.ExpeditionLevels(information, mapName))
+		local difficulties = unique(type(JoinCatalog.MapData(information, "Expedition", mapName)) == "table"
+			and JoinCatalog.MapData(information, "Expedition", mapName).Difficulties or nil)
+		return {
+			Gamemode = "Expedition",
+			MapName = mapName,
+			Difficulty = difficulties[levelNumber] or difficulties[#difficulties] or "Hard",
+			DifficultyLevel = levelNumber,
+		}
+	end
+
 	function JoinCatalog.QueueUnlocked(information, playerData, queue)
 		if type(queue) ~= "table" or not queue.Gamemode or not queue.MapName then return false end
 		if queue.Gamemode == "Challenge" then return true end

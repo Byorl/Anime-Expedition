@@ -101,12 +101,36 @@ return function()
 		return claims
 	end
 
-	function Scanner.Calendars(playerData)
+	function Scanner.Calendars(playerData, calendarState)
 		local claims = {}
-		local calendars = isTable(playerData) and playerData.CalendarData or nil
-		for calendar, calendarData in pairs(isTable(calendars) and calendars or {}) do
-			for day, claimed in pairs(isTable(calendarData) and isTable(calendarData.Rewards) and calendarData.Rewards or {}) do
-				if claimed == false then table.insert(claims, {Calendar = calendar, Day = tonumber(day) or day}) end
+		local sources = {}
+		-- Legacy shape: per-player CalendarData on the profile. Summer-update
+		-- calendars replicate as separate CalendarData replicas keyed by
+		-- CalendarKey, hooked into state; merge both sources.
+		if isTable(playerData) and isTable(playerData.CalendarData) then
+			for calendar, calendarData in pairs(playerData.CalendarData) do
+				sources[calendar] = calendarData
+			end
+		end
+		if isTable(calendarState) then
+			for calendar, calendarData in pairs(calendarState) do
+				if sources[calendar] == nil then sources[calendar] = calendarData end
+			end
+		end
+		for calendar, calendarData in pairs(sources) do
+			if isTable(calendarData) then
+				-- Claimed days are true; both the old Rewards map and the new
+				-- RewardData map (string day keys) treat nil as unclaimed.
+				for _, fieldName in ipairs({ "Rewards", "RewardData" }) do
+					local days = isTable(calendarData[fieldName]) and calendarData[fieldName] or nil
+					if days then
+						for day, claimed in pairs(days) do
+							if claimed ~= true then
+								table.insert(claims, { Calendar = calendar, Day = tonumber(day) or day })
+							end
+						end
+					end
+				end
 			end
 		end
 		return claims

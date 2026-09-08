@@ -155,18 +155,44 @@ return function(Import)
 		return #output > 0 and table.concat(output, "\n") or "No equipped unit data"
 	end
 
+	local function fishingRankLine(information, playerData)
+		local rank = tonumber(type(playerData) == "table" and playerData.Rank or nil)
+		if rank == nil then return nil end
+		local ranks = type(information) == "table" and information.FishingRodInfo or nil
+		local rankTable = type(ranks) == "table" and ranks.FishingRanks or nil
+		local entries = type(rankTable) == "table" and rankTable.Ranks or nil
+		local name = type(entries) == "table" and type(entries[rank]) == "table"
+			and tostring(entries[rank].DisplayName or rank) or tostring(rank)
+		return "Fishing Rank: " .. name .. " (" .. tostring(rank) .. ")"
+	end
+
 	local function playerStats(information, playerData)
 		local entries = {
 			{"Gold", "Gold"},
 			{"Gems", "Gem"},
 			{"Trait Crystal", "TraitReroll"},
 			{"Equipment Reroll", "EquipmentReroll"},
+			{"Sand Dollar", "SummerCurrency"},
 		}
 		local output = {}
 		for _, entry in ipairs(entries) do
 			table.insert(output, entry[1] .. ": " .. formatNumber(Catalog.OwnedAmount(playerData, information, entry[2])))
 		end
+		local rankLine = fishingRankLine(information, playerData)
+		if rankLine then table.insert(output, rankLine) end
 		return table.concat(output, "\n")
+	end
+
+	-- Zero-stat victories are the signature the game itself could flag
+	-- (instant-extract farming); surface them so the user sees the exposure.
+	local function zeroStatVictory(result)
+		if type(result) ~= "table" or result.Victory ~= true then return false end
+		local kills = tonumber(result.TotalKills or result.Kills)
+		local damage = tonumber(result.TotalDamage or result.Damage)
+		if kills == nil and damage == nil then return false end
+		local killsZero = kills == nil or kills == 0
+		local damageZero = damage == nil or damage == 0
+		return killsZero and damageZero and (kills == 0 or damage == 0)
 	end
 
 	function WebhookReporter.new(player, gameAdapter)
@@ -216,6 +242,9 @@ return function(Import)
 			map, tostring(result.ActName or "Unknown Act"), tostring(result.Gamemode or "Unknown"),
 			tostring(result.Difficulty or "Unknown"), result.Victory == true and "Victory" or "Defeat",
 			formatTime(result.TotalTime), tonumber(runs) or 1)
+		if zeroStatVictory(result) then
+			mapLine = mapLine .. "\n**Anomaly:** zero-stat victory (no kills or damage recorded)"
+		end
 		local description = table.concat({
 			"**User:** ||" .. tostring(self.Player.Name) .. "||",
 			"**Level:** " .. formatNumber(playerData.Level),
