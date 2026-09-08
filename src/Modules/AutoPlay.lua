@@ -822,6 +822,12 @@ return function(Import)
 		local liveProgress
 		paths, liveProgress = orientedRoute(state, paths)
 		path = paths[1]
+		-- Attribute-scanning every tagged enemy is expensive on swarm waves;
+		-- cache at 2 Hz - telemetry resolution is plenty.
+		if not state.RenderedCacheAt or os.clock() - state.RenderedCacheAt >= 0.5 then
+			state.RenderedCacheAt = os.clock()
+			state.RenderedCache = renderedEnemyTelemetry()
+		end
 		return {
 			GameState = gameState,
 			ModifierState = { GameModifiers = gameModifiers, MapState = mapState },
@@ -835,12 +841,6 @@ return function(Import)
 			Path = path,
 			Paths = paths,
 			Enemies = enemies,
-			-- Attribute-scanning every tagged enemy is expensive on swarm
-			-- waves; cache at 2 Hz - telemetry resolution is plenty.
-			if not state.RenderedCacheAt or os.clock() - state.RenderedCacheAt >= 0.5 then
-				state.RenderedCacheAt = os.clock()
-				state.RenderedCache = renderedEnemyTelemetry()
-			end
 			RenderedEnemies = state.RenderedCache or renderedEnemyTelemetry(),
 			LiveProgress = liveProgress,
 			RouteConfident = state.RouteConfident,
