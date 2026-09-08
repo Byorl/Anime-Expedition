@@ -1,5 +1,6 @@
 return function(Import)
 	local Planner = Import("AutoPlayPlanner")
+	local WaveIndex = Import("WaveIndex")
 	local Smart = {}
 
 	local strategyWeights = {
@@ -1026,6 +1027,7 @@ return function(Import)
 		if intrinsic == math.huge then
 			intrinsic = role == "Farm" and 3 or 6
 		end
+		local forecast = context.Forecast
 		local desired
 		if role == "Farm" then
 			if context.NoFarms then
@@ -1036,6 +1038,11 @@ return function(Import)
 			if placementPayback <= context.RemainingWaves * 0.72 then
 				desired = context.RemainingWaves >= 5 and 3 or 2
 			end
+			-- A boss/horde window within two waves makes new farms worthless;
+			-- the payback never lands. Freeze expansion, keep existing income.
+			if forecast and forecast.BossSoon then
+				desired = math.min(desired, 1)
+			end
 		elseif role == "Support" then
 			desired = 1
 		else
@@ -1045,6 +1052,9 @@ return function(Import)
 			end
 			-- Two-lane horde maps need coverage on both approaches.
 			if context.DualLane then
+				desired = desired + 1
+			end
+			if forecast and (forecast.BossSoon or (forecast.NextHordeIn ~= nil and forecast.NextHordeIn <= 1)) then
 				desired = desired + 1
 			end
 			desired = desired + math.min(1, math.max(0, math.floor(number(context.ModifierRedundancy, 0))))
@@ -1068,6 +1078,14 @@ return function(Import)
 		if context.Emergency or context.Boss or context.RemainingWaves <= 2 then
 			return 0
 		end
+		-- Hold cash only while the schedule says it is safe to; a forecast
+		-- boss/horde/shield window means the money is needed now.
+		local forecast = context.Forecast
+		if forecast and forecast.Known then
+			if forecast.BossSoon or forecast.ShieldSoon or (forecast.NextHordeIn ~= nil and forecast.NextHordeIn <= 1) then
+				return 0
+			end
+		end
 		local base = ({ Win = 12, Balanced = 14, Economy = 22, Rush = 5, Boss = 18 })[strategy] or 12
 		local waveProgress = context.MaxWave > 0 and context.Wave / context.MaxWave or 0
 		local reserve = base - context.Pressure * 24 - waveProgress * 8
@@ -1083,8 +1101,10 @@ return function(Import)
 		local target = tacticalTarget(role, combatOrdinal, context)
 		local candidatePower = combatPower(base, context)
 		carryShare = clamp(number(carryShare, 0), 0, 1)
+		local forecastLaneWeight = context.Forecast and context.Forecast.LaneWeight or nil
 		local best
-		for _, path in ipairs(snapshot.Paths) do
+		for pathIndex, path in ipairs(snapshot.Paths) do
+			local laneWeight = (forecastLaneWeight and forecastLaneWeight[pathIndex]) or 1
 			local maxUsefulProgress = role ~= "Farm" and usefulCombatFrontier(path, base.Range, context) or 1
 			for _, percent in ipairs(placementPercentages(role, context, strategy)) do
 				local cframe = Planner.Candidate(path, percent, spacing, placementOrdinal, 0)
@@ -1178,6 +1198,11 @@ return function(Import)
 					end
 					if role ~= "Farm" and rangeRatio > 0.72 then
 						score = score * 0.3
+					end
+					-- Upcoming waves concentrate on one lane (Path fields in
+					-- the wave scripts); tilt placement toward that lane.
+					if role ~= "Farm" and laneWeight ~= 1 then
+						score = score * laneWeight
 					end
 					if
 						role ~= "Farm"
@@ -1614,6 +1639,20 @@ return function(Import)
 			snapshot.ModifierState or snapshot.GameModifiers,
 			snapshot.Information
 		)
+		-- Schedule forecast: what the wave scripts say is coming. Steers when
+		-- to save/spend and where upcoming threat concentrates; the live
+		-- snapshot above stays authoritative for what is on the field now.
+		local forecast = WaveIndex.Forecast(snapshot.Schedule, context.Wave, snapshot.Paths and #snapshot.Paths or nil)
+		context.Forecast = forecast
+		if forecast.BossSoon then
+			context.Pressure = clamp(context.Pressure + 0.08, 0, 1.5)
+			if strategy ~= "Rush" and strategy ~= "Boss" then
+				strategy = "Boss"
+			end
+		end
+		if forecast.ShieldSoon then
+			context.ShieldRisk = math.max(number(context.ShieldRisk, 0), 0.35)
+		end
 		context.ReactToEnemies = options.ReactToEnemies ~= false
 		updateHistory(context, options.History, options.Now)
 		if options.ReactToEnemies == false then

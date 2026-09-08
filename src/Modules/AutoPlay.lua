@@ -1,6 +1,7 @@
 return function(Import)
 	local Planner = Import("AutoPlayPlanner")
 	local SmartPlanner = Import("SmartAutoPlayPlanner")
+	local WaveIndex = Import("WaveIndex")
 	local MatchTelemetry = Import("MatchTelemetry")
 	local JoinCatalog = Import("JoinCatalog")
 	local AutoPlay = {}
@@ -777,9 +778,26 @@ return function(Import)
 		if not state.MatchDetected then
 			return nil
 		end
-		local hotbar = ctx.Game:HotbarData()
-		local playerData = ctx.Game:PlayerData()
-		local information = ctx.Game:Information() or {}
+	local hotbar = ctx.Game:HotbarData()
+	local playerData = ctx.Game:PlayerData()
+	local information = ctx.Game:Information() or {}
+	-- Resolve the map's wave-script schedule once per map; the planner uses
+	-- it to forecast boss/horde/shield windows.
+	local parameters = type(gameState.Parameters) == "table" and gameState.Parameters or {}
+	local scheduleKey = string.format(
+		"%s|%s|%s",
+		tostring(parameters.Gamemode or gameState.Gamemode),
+		tostring(parameters.MapName or gameState.MapName),
+		tostring(parameters.ActName or gameState.ActName)
+	)
+	if state.ScheduleKey ~= scheduleKey then
+		state.ScheduleKey = scheduleKey
+		state.Schedule = WaveIndex.ForMap(
+			information,
+			tostring(parameters.Gamemode or gameState.Gamemode or ""),
+			tostring(parameters.MapName or gameState.MapName or "")
+		)
+	end
 		local gameModifiers = ctx.Game:StateDeep("GameModifiers", 3) or {}
 		local slots = Planner.Slots(hotbar, playerData, information, 6, gameModifiers)
 		enrichSlotFootprints(state, slots)
@@ -808,6 +826,7 @@ return function(Import)
 			GameState = gameState,
 			ModifierState = { GameModifiers = gameModifiers, MapState = mapState },
 			Information = information,
+			Schedule = state.Schedule,
 			Slots = slots,
 			Placed = placed,
 			Yen = math.max(0, tonumber(type(playerState) == "table" and playerState.Yen) or 0),
