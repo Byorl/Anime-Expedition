@@ -11,6 +11,7 @@ return function(Import)
 	local MacLibProvider = Import("MacLibProvider")
 	local GameAdapter = Import("GameAdapter")
 	local JoinCoordinator = Import("JoinCoordinator")
+	local CloudSyncModule = Import("CloudSync")
 	local ResultsHub = Import("ResultsHub")
 	local WebhookReporter = Import("WebhookReporter")
 	local JoinStoryModule = Import("JoinStory")
@@ -287,6 +288,7 @@ return function(Import)
 	local Session = SessionManager.new(Runtime, Config)
 	Context.Session = Session
 	Runtime.Session = Session
+	Context.Cloud = CloudSyncModule
 
 	local Modules = ModuleManager.new(Context)
 	Runtime.Modules = Modules
@@ -333,6 +335,9 @@ return function(Import)
 	Registry.OnChanged = function()
 		Config:ScheduleAutoSave()
 	end
+	task.spawn(function()
+		Util.SafeCall("cloud sync", CloudSyncModule.Start, Context)
+	end)
 	Join:SetSuspended(false)
 
 	if Config.Account.UI.HiddenOnLoad == true then

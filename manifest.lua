@@ -16,6 +16,7 @@ return {
 		JoinCatalog = "src/Core/JoinCatalog.lua",
 		BountyCatalog = "src/Core/BountyCatalog.lua",
 		JoinCoordinator = "src/Core/JoinCoordinator.lua",
+		CloudSync = "src/Core/CloudSync.lua",
 		RewardScanner = "src/Core/RewardScanner.lua",
 		CodeCatalog = "src/Core/CodeCatalog.lua",
 		AutomationCatalog = "src/Core/AutomationCatalog.lua",
